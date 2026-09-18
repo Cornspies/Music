@@ -42,12 +42,12 @@ import com.music.app.LocalAppModel
 import com.music.app.Screen
 import com.music.app.api.Track
 import com.music.app.api.friendlyError
+import kotlinx.coroutines.launch
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.ErrorState
-import com.music.app.ui.components.LoadingBox
 import com.music.app.ui.components.RefreshableContent
+import com.music.app.ui.components.LoadingBox
 import com.music.app.ui.components.TrackRow
-import kotlinx.coroutines.launch
 
 private val SORT_OPTIONS = listOf(
     "created" to "Recently added",
@@ -173,28 +173,40 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
         },
     )
 
+    val swiping = state.dismissDirection != SwipeToDismissBoxValue.Settled
+
     SwipeToDismissBox(
         state = state,
         backgroundContent = {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.errorContainer)
-                    .padding(horizontal = 20.dp),
-                contentAlignment = if (state.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
-                    Alignment.CenterStart
-                } else {
-                    Alignment.CenterEnd
-                },
-            ) {
-                Icon(
-                    Icons.Filled.Delete,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                )
+            // Only drawn while a swipe is actually in progress. The box sits
+            // behind the row at all times, so painting it unconditionally left
+            // a red stripe and a bin icon visible on every row.
+            if (swiping) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 20.dp),
+                    contentAlignment = if (state.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                        Alignment.CenterStart
+                    } else {
+                        Alignment.CenterEnd
+                    },
+                ) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
             }
         },
-        content = { row() },
+        content = {
+            // TrackRow itself is transparent, so the row needs an opaque
+            // backdrop of its own or the background shows through it as it
+            // slides rather than being revealed from behind.
+            Box(Modifier.background(MaterialTheme.colorScheme.background)) { row() }
+        },
     )
 
     if (confirming) {
@@ -204,7 +216,7 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
             text = {
                 Text(
                     "“${track.title}” is removed from the library for everyone, along " +
-                        "with its file. This cannot be undone.",
+                            "with its file. This cannot be undone.",
                 )
             },
             confirmButton = {

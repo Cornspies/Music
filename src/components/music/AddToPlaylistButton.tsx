@@ -74,7 +74,7 @@ export function AddToPlaylistButton({ track }: { track: Track }) {
                 e.preventDefault()
                 addTo(p.id, p.name)
               }}
-              className={cn(added[p.id] && "text-emerald-300 focus:text-emerald-300")}
+              className={cn(added[p.id] && "text-emerald-300")}
             >
               {pending === p.id ? (
                 <Loader2 className="size-4 animate-spin" />

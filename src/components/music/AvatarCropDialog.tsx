@@ -138,7 +138,7 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
                     y: (FRAME - el.naturalHeight * s) / 2,
                   })
                 }}
-                className="max-w-none cursor-grab select-none active:cursor-grabbing"
+                className="max-w-none cursor-grab select-none"
                 style={{ width: drawnW || undefined, height: drawnH || undefined, transform: `translate(${offset.x}px, ${offset.y}px)`, transformOrigin: "top left", position: "absolute", left: 0, top: 0 }}
               />
             ) : null}
