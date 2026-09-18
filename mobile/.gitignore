@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin / Compose
+.kotlin/
+composeApp/build/
+composeApp/xcode/
+
+# Android local config
+local.properties
+
+# Xcode
+iosApp/iosApp.xcodeproj/project.xcworkspace/xcuserdata/
+iosApp/iosApp.xcodeproj/xcuserdata/
+iosApp/DerivedData/
+
+# IDE
+.idea/
+*.iml
+.DS_Store

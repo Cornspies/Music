@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:label="Music"
+        android:theme="@style/Theme.Music"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:usesCleartextTraffic="true"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Shared playlist links. The host is a build setting because the
+              server is self-hosted: set musicHost in gradle.properties (or
+              -PmusicHost=...) to your domain, e.g. music.example.com.
+
+              Without assetlinks.json served at
+              https://<host>/.well-known/assetlinks.json Android will show a
+              chooser rather than opening the app directly. Add that file and
+              set android:autoVerify="true" below to make it seamless.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="${musicHost}" />
+                <data android:pathPrefix="/playlists/" />
+                <data android:scheme="http" />
+                <data android:host="${musicHost}" />
+                <data android:pathPrefix="/playlists/" />
+            </intent-filter>
+
+            <!-- Works regardless of host, for links shared from the app itself. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="music" android:host="playlist" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

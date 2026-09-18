@@ -1,0 +1,358 @@
+"use client"
+
+import { useRef, useState } from "react"
+import { toast } from "sonner"
+import {
+  CheckCircle2,
+  CloudUpload,
+  FileAudio,
+  Loader2,
+  Sparkles,
+  XCircle,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
+import { currentToken, uploadUrl } from "@/lib/api"
+import { formatFileSize } from "@/lib/format"
+import type { Track } from "@/lib/types"
+import { useUIStore } from "@/stores/ui"
+import { useLibraryStore } from "@/stores/library"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Progress } from "@/components/ui/progress"
+import { MetadataReviewDialog } from "@/components/music/MetadataReviewDialog"
+
+type TaskStatus = "measuring" | "uploading" | "done" | "error"
+
+interface UploadTask {
+  key: string
+  name: string
+  size: number
+  progress: number
+  status: TaskStatus
+  message?: string
+}
+
+const AUDIO_EXT = /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|weba|webm)$/i
+
+function isAudioFile(file: File): boolean {
+  return file.type.startsWith("audio/") || AUDIO_EXT.test(file.name)
+}
+
+/** Client-side duration measurement (fallback for server-side tag parsing). */
+function measureDuration(file: File): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const el = new Audio()
+    let settled = false
+    const finish = (d?: number) => {
+      if (settled) return
+      settled = true
+      URL.revokeObjectURL(url)
+      resolve(d)
+    }
+    el.preload = "metadata"
+    el.onloadedmetadata = () => {
+      finish(Number.isFinite(el.duration) && el.duration > 0 ? Math.round(el.duration * 100) / 100 : undefined)
+    }
+    el.onerror = () => finish(undefined)
+    window.setTimeout(() => finish(undefined), 6000)
+    el.src = url
+  })
+}
+
+/** XHR upload (fetch can't report progress). */
+function uploadTrack(
+  file: File,
+  duration: number | undefined,
+  onProgress: (pct: number) => void
+): Promise<Track> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", uploadUrl())
+    const token = currentToken()
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as Track)
+        } catch {
+          reject(new Error("Invalid server response"))
+        }
+      } else {
+        let message = `Upload failed (${xhr.status})`
+        try {
+          const data = JSON.parse(xhr.responseText) as { error?: string }
+          if (data?.error) message = data.error
+        } catch {
+          // non-JSON error body
+        }
+        reject(new Error(message))
+      }
+    }
+    xhr.onerror = () => reject(new Error("Network error during upload"))
+    const fd = new FormData()
+    fd.append("file", file, file.name)
+    if (duration !== undefined) fd.append("duration", String(duration))
+    xhr.send(fd)
+  })
+}
+
+export function UploadDialog() {
+  const uploadOpen = useUIStore((s) => s.uploadOpen)
+  const setUploadOpen = useUIStore((s) => s.setUploadOpen)
+
+  const [tasks, setTasks] = useState<UploadTask[]>([])
+  const [dragActive, setDragActive] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [uploadedTracks, setUploadedTracks] = useState<Track[]>([])
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const patchTask = (key: string, patch: Partial<UploadTask>) => {
+    setTasks((prev) => prev.map((t) => (t.key === key ? { ...t, ...patch } : t)))
+  }
+
+  const handleFiles = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return
+    const files = Array.from(fileList).filter(isAudioFile)
+    const rejected = Array.from(fileList).length - files.length
+    if (rejected > 0) {
+      toast.error(`${rejected} file${rejected === 1 ? "" : "s"} skipped — not an audio file`)
+    }
+    if (files.length === 0) return
+    if (busy) {
+      toast.error("An upload is already in progress")
+      return
+    }
+
+    const newTasks: UploadTask[] = files.map((f) => ({
+      key: `${f.name}-${f.size}-${f.lastModified}-${Math.random().toString(36).slice(2, 7)}`,
+      name: f.name,
+      size: f.size,
+      progress: 0,
+      status: "measuring",
+    }))
+    setTasks(newTasks)
+    setBusy(true)
+
+    const uploaded: Track[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const task = newTasks[i]
+      try {
+        patchTask(task.key, { status: "measuring" })
+        const duration = await measureDuration(file)
+        patchTask(task.key, { status: "uploading", progress: 0 })
+        const track = await uploadTrack(file, duration, (pct) =>
+          patchTask(task.key, { progress: pct })
+        )
+        patchTask(task.key, { status: "done", progress: 100 })
+        uploaded.push(track)
+      } catch (e) {
+        patchTask(task.key, { status: "error", message: (e as Error).message })
+      }
+    }
+
+    setBusy(false)
+    if (uploaded.length > 0) {
+      toast.success(
+        `Uploaded ${uploaded.length} track${uploaded.length === 1 ? "" : "s"} to your library`
+      )
+      useLibraryStore.getState().fetchAll().catch(() => {})
+      setUploadedTracks(uploaded)
+    }
+  }
+
+  const doneCount = tasks.filter((t) => t.status === "done").length
+  const errorCount = tasks.filter((t) => t.status === "error").length
+
+  return (
+    <>
+    <Dialog
+      open={uploadOpen}
+      onOpenChange={(open) => {
+        setUploadOpen(open)
+        if (open) {
+          setTasks([])
+          setUploadedTracks([])
+        }
+      }}
+    >
+      <DialogContent className="max-w-md gap-0 border-zinc-800 bg-zinc-900 p-0">
+        <DialogHeader className="border-b border-zinc-800/80 px-5 py-4">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <CloudUpload className="size-5 text-emerald-400" aria-hidden="true" />
+            Upload music
+          </DialogTitle>
+          <DialogDescription className="text-xs">
+            MP3, WAV, FLAC, OGG, M4A — tags & cover art are read automatically.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="min-w-0 px-5 py-4">
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Drop audio files here or click to browse"
+            onClick={() => inputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                inputRef.current?.click()
+              }
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragActive(true)
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragActive(true)
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragActive(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setDragActive(false)
+              handleFiles(e.dataTransfer.files)
+            }}
+            className={cn(
+              "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors",
+              dragActive
+                ? "border-emerald-500 bg-emerald-500/10"
+                : "border-zinc-700 bg-zinc-950/40 hover:border-zinc-500"
+            )}
+          >
+            <FileAudio
+              className={cn("size-10", dragActive ? "text-emerald-400" : "text-zinc-500")}
+              aria-hidden="true"
+            />
+            <div>
+              <p className="text-sm font-medium text-zinc-200">Drag &amp; drop audio files</p>
+              <p className="mt-1 text-xs text-zinc-500">or</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-800 hover:text-emerald-300"
+              onClick={(e) => {
+                e.stopPropagation()
+                inputRef.current?.click()
+              }}
+            >
+              Choose files
+            </Button>
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              accept="audio/*"
+              className="hidden"
+              onChange={(e) => {
+                handleFiles(e.target.files)
+                e.target.value = ""
+              }}
+            />
+          </div>
+
+          {tasks.length > 0 && (
+            <ul className="mt-4 flex max-h-72 min-w-0 flex-col gap-2 overflow-y-auto pr-1" aria-label="Upload progress">
+              {tasks.map((task) => (
+                <li
+                  key={task.key}
+                  className="min-w-0 rounded-lg border border-zinc-800/80 bg-zinc-950/50 px-3 py-2.5"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-zinc-200">{task.name}</p>
+                      <p className="text-[11px] text-zinc-500">
+                        {formatFileSize(task.size)}
+                        {task.status === "measuring" && " · reading duration…"}
+                        {task.status === "uploading" && ` · uploading… ${task.progress}%`}
+                        {task.status === "done" && " · done"}
+                        {task.status === "error" && task.message ? ` · ${task.message}` : ""}
+                      </p>
+                    </div>
+                    {task.status === "measuring" && (
+                      <Loader2 className="size-4 shrink-0 animate-spin text-zinc-500" aria-hidden="true" />
+                    )}
+                    {task.status === "uploading" && (
+                      <span className="shrink-0 text-xs tabular-nums text-zinc-400">
+                        {task.progress}%
+                      </span>
+                    )}
+                    {task.status === "done" && (
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                    )}
+                    {task.status === "error" && (
+                      <XCircle className="size-4 shrink-0 text-red-400" aria-hidden="true" />
+                    )}
+                  </div>
+                  {task.status === "uploading" && (
+                    <Progress value={task.progress} className="mt-2 h-1.5 bg-zinc-800 [&>div]:bg-emerald-500" />
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {tasks.length > 0 && (
+            <div className="mt-3 flex items-center justify-between text-[11px] text-zinc-500">
+              <span>
+                {doneCount}/{tasks.length} uploaded
+                {errorCount > 0 ? ` · ${errorCount} failed` : ""}
+              </span>
+              {!busy && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-100"
+                  onClick={() => {
+                    setTasks([])
+                    setUploadedTracks([])
+                  }}
+                >
+                  Clear list
+                </Button>
+              )}
+            </div>
+          )}
+
+          {!busy && uploadedTracks.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3 w-full border-emerald-700/60 bg-emerald-600/10 text-xs text-emerald-300 hover:bg-emerald-600/20 hover:text-emerald-200"
+              onClick={() => setReviewOpen(true)}
+            >
+              <Sparkles className="mr-1.5 size-3.5" aria-hidden="true" />
+              Check track details ({uploadedTracks.length})
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <MetadataReviewDialog
+      tracks={uploadedTracks}
+      open={reviewOpen}
+      onOpenChange={setReviewOpen}
+    />
+    </>
+  )
+}

@@ -1,0 +1,2 @@
+// Debug.xcconfig
+#include? "../../composeApp/xcode/Debug.xcconfig"

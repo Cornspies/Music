@@ -1,0 +1,168 @@
+// Token-aware fetch client for the Go music backend.
+//
+// Requests go to this app's own origin and are proxied to the backend by the
+// rewrite in next.config.ts. The port below is only used for the legacy
+// XTransformPort gateway parameter, and is configurable so it can match
+// MUSIC_API_PORT. NEXT_PUBLIC_ is required: it is inlined into the browser
+// bundle at build time, so changing it needs a rebuild.
+
+import { API_PORT, gw } from "@/lib/gateway"
+import type { MetadataCandidatesResponse, Track, User } from "@/lib/types"
+import { useAuthStore } from "@/stores/auth"
+
+// Re-exported so existing call sites can keep importing these from "@/lib/api".
+export { API_PORT, gw }
+
+/** Header the server uses to hand back a renewed session token. */
+const REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
+
+/** Persists a renewed token, if the response carried one. */
+export function noteRefreshedToken(res: Response): void {
+  const fresh = res.headers.get(REFRESHED_TOKEN_HEADER)
+  if (fresh && fresh !== useAuthStore.getState().token) {
+    useAuthStore.setState({ token: fresh })
+  }
+}
+
+/**
+ * Authenticated JSON fetch. Adds the Bearer token from the auth store,
+ * parses JSON, throws Error(message) on !ok. A 401 logs the user out.
+ */
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers)
+  const token = useAuthStore.getState().token
+  if (token) headers.set("Authorization", `Bearer ${token}`)
+  let res: Response
+  try {
+    res = await fetch(gw(path), { ...init, headers })
+  } catch (e) {
+    const err = e as Error
+    if (err?.name === "AbortError") throw err
+    throw new Error("Network error — could not reach the server.")
+  }
+  // Sliding sessions: once a token is past the halfway point of its life the
+  // server returns a replacement here. Storing it keeps the session rolling
+  // forward, so regular use never leads to a forced sign-in.
+  noteRefreshedToken(res)
+
+  if (res.status === 401) {
+    useAuthStore.getState().logout()
+    throw new Error("Session expired. Please sign in again.")
+  }
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const data: unknown = await res.json()
+      const msg = (data as { error?: unknown })?.error
+      if (typeof msg === "string" && msg) message = msg
+    } catch {
+      // ignore JSON parse errors on error responses
+    }
+    throw new Error(message)
+  }
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
+}
+
+/** Token as a URL query param (for <audio>/<img> that can't send headers). */
+function tokenQuery(): string {
+  const token = useAuthStore.getState().token ?? ""
+  return `&token=${encodeURIComponent(token)}`
+}
+
+/** Streaming URL for the <audio> element (reads token at call time). */
+export function streamUrl(track: Pick<Track, "id" | "mimeType" | "hasCompatible">): string {
+  const version = browserCanPlay(track) ? "" : "&version=compatible"
+  return gw(`/api/tracks/${track.id}/stream`) + tokenQuery() + version
+}
+
+/**
+ * Whether this browser can decode the original upload.
+ *
+ * Safari can't play Ogg at all, and other browsers vary by codec, so the
+ * question is asked of the browser rather than guessed from the format. When
+ * the answer is no and the server made a compatible copy at upload time, the
+ * player streams that instead.
+ */
+export function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boolean {
+  if (!track.hasCompatible) return true // nothing else to offer anyway
+  if (typeof document === "undefined") return true // SSR: decided on the client
+  const probe = document.createElement("audio")
+  // canPlayType returns "probably" | "maybe" | "" — only "" is a firm no.
+  return probe.canPlayType(track.mimeType) !== ""
+}
+
+/** Cover art URL for <img> (404 when no cover — handle with onError). */
+export function coverUrl(track: { id: string }): string {
+  return gw(`/api/tracks/${track.id}/cover`) + tokenQuery()
+}
+
+/** Download URL (attachment) for <a href download>. */
+export function downloadUrl(
+  track: Pick<Track, "id">,
+  version: "original" | "compatible" = "original",
+): string {
+  const suffix = version === "compatible" ? "&version=compatible" : ""
+  return gw(`/api/tracks/${track.id}/download`) + tokenQuery() + suffix
+}
+
+/** Upload endpoint (XHR POST with multipart). */
+export function uploadUrl(): string {
+  return gw("/api/tracks")
+}
+
+/** Avatar URL for <img> (404 when the user has none — handle with onError). */
+export function avatarUrl(userId: string): string {
+  return gw(`/api/users/${userId}/avatar`) + tokenQuery()
+}
+
+/**
+ * The square of the source image to keep, as fractions of the image's own
+ * width and height, so it survives whatever scaling was used for display.
+ * `size` is a fraction of the shorter edge. Omit it for a centre crop.
+ */
+export interface AvatarCrop {
+  x: number
+  y: number
+  size: number
+}
+
+/** Replaces the signed-in user's avatar; returns the updated profile. */
+export async function uploadAvatar(file: File, crop?: AvatarCrop): Promise<User> {
+  const form = new FormData()
+  form.append("file", file)
+  if (crop) {
+    form.append("cropX", String(crop.x))
+    form.append("cropY", String(crop.y))
+    form.append("cropSize", String(crop.size))
+  }
+  // No Content-Type header: the browser must set the multipart boundary.
+  return api<User>("/api/auth/avatar", { method: "POST", body: form })
+}
+
+/** Removes the signed-in user's avatar; returns the updated profile. */
+export function removeAvatar(): Promise<User> {
+  return api<User>("/api/auth/avatar", { method: "DELETE" })
+}
+
+/** Current bearer token (for XHR uploads). */
+export function currentToken(): string | null {
+  return useAuthStore.getState().token
+}
+
+/** Online metadata matches for a track, best first. */
+export function fetchMetadataCandidates(
+  trackId: string,
+  signal?: AbortSignal
+): Promise<MetadataCandidatesResponse> {
+  return api<MetadataCandidatesResponse>(`/api/tracks/${trackId}/metadata/candidates`, { signal })
+}
+
+/** Apply a user-chosen metadata match, returning the updated track. */
+export function applyMetadataCandidate(trackId: string, candidateId: string): Promise<Track> {
+  return api<Track>(`/api/tracks/${trackId}/metadata/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ candidateId }),
+  })
+}

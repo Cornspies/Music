@@ -1,0 +1,361 @@
+// !$*UTF8*$!
+{
+        archiveVersion = 1;
+        objectVersion = 56;
+        objects = {
+
+/* Begin PBXBuildFile section */
+                2F57A08A2B5D3C1F00000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F57A0892B5D3C1F00000001 /* ContentView.swift */; };
+                2F57A08D2B5D3C1F00000002 /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F57A08C2B5D3C1F00000002 /* iOSApp.swift */; };
+                2F57A0922B5D3C1F00000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2F57A0912B5D3C1F00000003 /* Assets.xcassets */; };
+                2F57A0962B5D3C1F00000004 /* ComposeApp in Frameworks */ = {isa = PBXBuildFile; productRef = 2F57A0952B5D3C1F00000004 /* ComposeApp */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+                2F57A0892B5D3C1F00000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+                2F57A08C2B5D3C1F00000002 /* iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iOSApp.swift; sourceTree = "<group>"; };
+                2F57A0912B5D3C1F00000003 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+                2F57A09A2B5D3C1F00000005 /* Frameworks */ = {
+                        isa = PBXFrameworksBuildPhase;
+                        buildActionMask = 2147483647;
+                        files = (
+                                2F57A0962B5D3C1F00000004 /* ComposeApp in Frameworks */,
+                        );
+                        runOnlyForDeploymentPostprocessing = 0;
+                };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+                2F57A0802B5D3C1F00000000 = {
+                        isa = PBXGroup;
+                        children = (
+                                2F57A0812B5D3C1F00000000 /* iosApp */,
+                                2F57A0822B5D3C1F00000000 /* Products */,
+                                2F57A0872B5D3C1F00000000 /* Frameworks */,
+                        );
+                        sourceTree = "<group>";
+                };
+                2F57A0812B5D3C1F00000000 /* iosApp */ = {
+                        isa = PBXGroup;
+                        children = (
+                                2F57A0912B5D3C1F00000003 /* Assets.xcassets */,
+                                2F57A0892B5D3C1F00000001 /* ContentView.swift */,
+                                2F57A08C2B5D3C1F00000002 /* iOSApp.swift */,
+                        );
+                        path = iosApp;
+                        sourceTree = "<group>";
+                };
+                2F57A0822B5D3C1F00000000 /* Products */ = {
+                        isa = PBXGroup;
+                        children = (
+                        );
+                        name = Products;
+                        sourceTree = "<group>";
+                };
+                2F57A0872B5D3C1F00000000 /* Frameworks */ = {
+                        isa = PBXGroup;
+                        children = (
+                        );
+                        name = Frameworks;
+                        sourceTree = "<group>";
+                };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+                2F57A0842B5D3C1F00000000 /* iosApp */ = {
+                        isa = PBXNativeTarget;
+                        buildConfigurationList = 2F57A0A02B5D3C1F00000000 /* Build configuration list for PBXNativeTarget "iosApp" */;
+                        buildPhases = (
+                                2F57A0832B5D3C1F00000000 /* Sources */,
+                                2F57A09A2B5D3C1F00000005 /* Frameworks */,
+                                2F57A0852B5D3C1F00000000 /* Resources */,
+                        );
+                        buildRules = (
+                        );
+                        dependencies = (
+                                2F57A0942B5D3C1F00000004 /* PBXTargetDependency */,
+                        );
+                        name = iosApp;
+                        packageProductDependencies = (
+                        );
+                        productName = iosApp;
+                        productReference = 2F57A0862B5D3C1F00000000 /* iosApp.app */;
+                        productType = "com.apple.product-type.application";
+                };
+                2F57A0B02B5D3C1F00000006 /* ComposeApp */ = {
+                        isa = PBXNativeTarget;
+                        buildConfigurationList = 2F57A0B12B5D3C1F00000006 /* Build configuration list for PBXNativeTarget "ComposeApp" */;
+                        buildPhases = (
+                                2F57A0B22B5D3C1F00000006 /* ShellScript */,
+                        );
+                        buildRules = (
+                        );
+                        dependencies = (
+                        );
+                        name = ComposeApp;
+                        productName = ComposeApp;
+                        productType = "com.apple.product-type.framework";
+                };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+                2F57A07F2B5D3C1F00000000 /* Project object */ = {
+                        isa = PBXProject;
+                        attributes = {
+                                BuildIndependentTargetsInParallel = 1;
+                                LastSwiftUpdateCheck = 1540;
+                                LastUpgradeCheck = 1540;
+                                TargetAttributes = {
+                                        2F57A0842B5D3C1F00000000 = {
+                                                CreatedOnToolsVersion = 15.4;
+                                        };
+                                        2F57A0B02B5D3C1F00000006 = {
+                                                CreatedOnToolsVersion = 15.4;
+                                        };
+                                };
+                        };
+                        buildConfigurationList = 2F57A0C02B5D3C1F00000000 /* Build configuration list for PBXProject "iosApp" */;
+                        developmentRegion = en;
+                        hasScannedForEncodings = 0;
+                        knownRegions = (
+                                en,
+                                Base,
+                        );
+                        mainGroup = 2F57A0802B5D3C1F00000000;
+                        minimizedProjectReferenceProxies = 1;
+                        preferredProjectObjectVersion = 56;
+                        productRefGroup = 2F57A0822B5D3C1F00000000 /* Products */;
+                        projectDirPath = "";
+                        projectRoot = "";
+                        targets = (
+                                2F57A0842B5D3C1F00000000 /* iosApp */,
+                                2F57A0B02B5D3C1F00000006 /* ComposeApp */,
+                        );
+                };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+                2F57A0852B5D3C1F00000000 /* Resources */ = {
+                        isa = PBXResourcesBuildPhase;
+                        buildActionMask = 2147483647;
+                        files = (
+                                2F57A0922B5D3C1F00000003 /* Assets.xcassets in Resources */,
+                        );
+                        runOnlyForDeploymentPostprocessing = 0;
+                };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+                2F57A0B22B5D3C1F00000006 /* ShellScript */ = {
+                        isa = PBXShellScriptBuildPhase;
+                        alwaysOutOfDate = 1;
+                        buildActionMask = 2147483647;
+                        files = (
+                        );
+                        inputPaths = (
+                        );
+                        name = ShellScript;
+                        outputPaths = (
+                        );
+                        runOnlyForDeploymentPostprocessing = 0;
+                        shellPath = /bin/sh;
+                        shellScript = "cd \"$SRCROOT/../composeApp\"\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n    export CONFIGURATION_TMP=\"Debug\"\nelse\n    export CONFIGURATION_TMP=\"Release\"\nfi\n./gradlew :composeApp:embedAndSignAppleFrameworkForXcode -Pconfiguration=$CONFIGURATION_TMP -PsdkName=$PLATFORM_NAME -PxcodeVariant=\"$XCODE_VARIANT\" -Ppath=\"$BUILT_PRODUCTS_DIR/$FRAMEWORKS_FOLDER_PATH\" -Parch=\"$ARCHS\"\n";
+                };
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+                2F57A0832B5D3C1F00000000 /* Sources */ = {
+                        isa = PBXSourcesBuildPhase;
+                        buildActionMask = 2147483647;
+                        files = (
+                                2F57A08A2B5D3C1F00000001 /* ContentView.swift in Sources */,
+                                2F57A08D2B5D3C1F00000002 /* iOSApp.swift in Sources */,
+                        );
+                        runOnlyForDeploymentPostprocessing = 0;
+                };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+                2F57A0942B5D3C1F00000004 /* PBXTargetDependency */ = {
+                        isa = PBXTargetDependency;
+                        target = 2F57A0B02B5D3C1F00000006 /* ComposeApp */;
+                        targetProxy = 2F57A0932B5D3C1F00000004 /* PBXContainerItemProxy */;
+                };
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+                2F57A0932B5D3C1F00000004 /* PBXContainerItemProxy */ = {
+                        isa = PBXContainerItemProxy;
+                        containerPortal = 2F57A07F2B5D3C1F00000000 /* Project object */;
+                        proxyType = 1;
+                        remoteGlobalIDString = 2F57A0B02B5D3C1F00000006;
+                        remoteInfo = ComposeApp;
+                };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXProductTarget section */
+                2F57A0952B5D3C1F00000004 /* ComposeApp */ = {
+                        isa = PBXProductTarget;
+                        productName = ComposeApp;
+                };
+/* End PBXProductTarget section */
+
+/* Begin XCBuildConfiguration section */
+                2F57A0A12B5D3C1F00000000 /* Debug */ = {
+                        isa = XCBuildConfiguration;
+                        baseConfigurationReference = 2F57A0C12B5D3C1F00000000 /* Debug.xcconfig */;
+                        buildSettings = {
+                                ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+                                ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+                                CODE_SIGN_STYLE = Automatic;
+                                CURRENT_PROJECT_VERSION = 1;
+                                DEVELOPMENT_TEAM = "";
+                                ENABLE_PREVIEWS = YES;
+                                GENERATE_INFOPLIST_FILE = NO;
+                                INFOPLIST_FILE = iosApp/Info.plist;
+                                IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+                                MARKETING_VERSION = 1.0;
+                                PRODUCT_BUNDLE_IDENTIFIER = com.music.app.iosApp;
+                                PRODUCT_NAME = "$(TARGET_NAME)";
+                                SWIFT_EMIT_LOC_STRINGS = NO;
+                                SWIFT_VERSION = 5.0;
+                                TARGETED_DEVICE_FAMILY = "1,2";
+                                VALIDATE_WORKSPACE = YES;
+                        };
+                        name = Debug;
+                };
+                2F57A0A22B5D3C1F00000000 /* Release */ = {
+                        isa = XCBuildConfiguration;
+                        baseConfigurationReference = 2F57A0C22B5D3C1F00000000 /* Release.xcconfig */;
+                        buildSettings = {
+                                ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+                                ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+                                CODE_SIGN_STYLE = Automatic;
+                                CURRENT_PROJECT_VERSION = 1;
+                                DEVELOPMENT_TEAM = "";
+                                ENABLE_PREVIEWS = YES;
+                                GENERATE_INFOPLIST_FILE = NO;
+                                INFOPLIST_FILE = iosApp/Info.plist;
+                                IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+                                MARKETING_VERSION = 1.0;
+                                PRODUCT_BUNDLE_IDENTIFIER = com.music.app.iosApp;
+                                PRODUCT_NAME = "$(TARGET_NAME)";
+                                SWIFT_EMIT_LOC_STRINGS = NO;
+                                SWIFT_VERSION = 5.0;
+                                TARGETED_DEVICE_FAMILY = "1,2";
+                                VALIDATE_WORKSPACE = YES;
+                        };
+                        name = Release;
+                };
+                2F57A0A52B5D3C1F00000006 /* Debug */ = {
+                        isa = XCBuildConfiguration;
+                        buildSettings = {
+                                DEAD_CODE_STRIPPING = YES;
+                                DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+                                ENABLE_NS_ASSERTIONS = NO;
+                                ENABLE_USER_SCRIPT_SANDBOXING = YES;
+                                GCC_OPTIMIZATION_LEVEL = 0;
+                                MACH_O_TYPE = staticlib;
+                                PRODUCT_NAME = ComposeApp;
+                                SKIP_INSTALL = YES;
+                                VALIDATE_WORKSPACE = NO;
+                        };
+                        name = Debug;
+                };
+                2F57A0A62B5D3C1F00000006 /* Release */ = {
+                        isa = XCBuildConfiguration;
+                        buildSettings = {
+                                DEAD_CODE_STRIPPING = YES;
+                                DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+                                ENABLE_NS_ASSERTIONS = NO;
+                                ENABLE_USER_SCRIPT_SANDBOXING = YES;
+                                GCC_OPTIMIZATION_LEVEL = 2;
+                                MACH_O_TYPE = staticlib;
+                                PRODUCT_NAME = ComposeApp;
+                                SKIP_INSTALL = YES;
+                                VALIDATE_WORKSPACE = NO;
+                        };
+                        name = Release;
+                };
+                2F57A0AD2B5D3C1F00000000 /* Debug */ = {
+                        isa = XCBuildConfiguration;
+                        buildSettings = {
+                                ALWAYS_SEARCH_USER_PATHS = NO;
+                                CLANG_ANALYZER_NONNULL = YES;
+                                CLANG_ENABLE_MODULES = YES;
+                                COPY_PHASE_STRIP = NO;
+                                DEBUG_INFORMATION_FORMAT = dwarf;
+                                ENABLE_STRICT_OBJC_MSGSEND = YES;
+                                ENABLE_TESTABILITY = YES;
+                                GCC_C_LANGUAGE_STANDARD = gnu17;
+                                GCC_DYNAMIC_NO_PIC = NO;
+                                GCC_OPTIMIZATION_LEVEL = 0;
+                                GCC_PREPROCESSOR_DEFINITIONS = (
+                                        "DEBUG=1",
+                                );
+                                IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+                                MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+                                ONLY_ACTIVE_ARCH = YES;
+                                SDKROOT = iphoneos;
+                                SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+                                SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+                        };
+                        name = Debug;
+                };
+                2F57A0AE2B5D3C1F00000000 /* Release */ = {
+                        isa = XCBuildConfiguration;
+                        buildSettings = {
+                                ALWAYS_SEARCH_USER_PATHS = NO;
+                                CLANG_ANALYZER_NONNULL = YES;
+                                CLANG_ENABLE_MODULES = YES;
+                                COPY_PHASE_STRIP = NO;
+                                DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+                                ENABLE_NS_ASSERTIONS = NO;
+                                ENABLE_STRICT_OBJC_MSGSEND = YES;
+                                GCC_C_LANGUAGE_STANDARD = gnu17;
+                                IPHONEOS_DEPLOYMENT_TARGET = 15.6;
+                                MTL_ENABLE_DEBUG_INFO = NO;
+                                SDKROOT = iphoneos;
+                                SWIFT_COMPILATION_MODE = wholemodule;
+                                SWIFT_OPTIMIZATION_LEVEL = "-O";
+                                VALIDATE_PRODUCT = YES;
+                        };
+                        name = Release;
+                };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+                2F57A0A02B5D3C1F00000000 /* Build configuration list for PBXNativeTarget "iosApp" */ = {
+                        isa = XCConfigurationList;
+                        buildConfigurations = (
+                                2F57A0A12B5D3C1F00000000 /* Debug */,
+                                2F57A0A22B5D3C1F00000000 /* Release */,
+                        );
+                        defaultConfigurationIsVisible = 0;
+                        defaultConfigurationName = Release;
+                };
+                2F57A0B12B5D3C1F00000006 /* Build configuration list for PBXNativeTarget "ComposeApp" */ = {
+                        isa = XCConfigurationList;
+                        buildConfigurations = (
+                                2F57A0A52B5D3C1F00000006 /* Debug */,
+                                2F57A0A62B5D3C1F00000006 /* Release */,
+                        );
+                        defaultConfigurationIsVisible = 0;
+                        defaultConfigurationName = Release;
+                };
+                2F57A0C02B5D3C1F00000000 /* Build configuration list for PBXProject "iosApp" */ = {
+                        isa = XCConfigurationList;
+                        buildConfigurations = (
+                                2F57A0AD2B5D3C1F00000000 /* Debug */,
+                                2F57A0AE2B5D3C1F00000000 /* Release */,
+                        );
+                        defaultConfigurationIsVisible = 0;
+                        defaultConfigurationName = Release;
+                };
+/* End XCConfigurationList section */
+        };
+        rootObject = 2F57A07F2B5D3C1F00000000 /* Project object */;
+}

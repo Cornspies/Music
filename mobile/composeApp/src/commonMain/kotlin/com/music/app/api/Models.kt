@@ -1,0 +1,245 @@
+package com.music.app.api
+
+import com.music.app.unplayableMimeTypes
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Data classes mirroring the Go server's JSON responses exactly
+ * (see /home/z/my-project/worklog.md — "API Contract").
+ * All field names are camelCase and match the server tags one-to-one.
+ */
+
+@Serializable
+data class User(
+    val id: String,
+    val username: String,
+    val createdAt: String = "",
+    val hasAvatar: Boolean = false,
+)
+
+/** Small public profile shown next to a track in the shared library. */
+@Serializable
+data class Uploader(
+    val id: String = "",
+    val username: String = "",
+    val hasAvatar: Boolean = false,
+)
+
+@Serializable
+data class AuthResponse(
+    val token: String,
+    val user: User,
+)
+
+@Serializable
+data class Track(
+    val id: String,
+    val title: String,
+    val artist: String = "",
+    val album: String = "",
+    val genre: String = "",
+    val year: Int = 0,
+    val trackNo: Int = 0,
+    val duration: Double = 0.0,
+    val mimeType: String = "",
+    val fileSize: Long = 0L,
+    val hasCover: Boolean = false,
+    val plays: Int = 0,
+    val isFavorite: Boolean = false,
+    val createdAt: String = "",
+    /**
+     * Who contributed this file — the library is shared between all users.
+     * Defaulted so tracks cached offline before this field existed still decode.
+     */
+    val uploadedBy: Uploader = Uploader(),
+    /**
+     * True when the server also holds a widely-playable copy, made at upload
+     * time for formats this platform may not decode (Ogg on iOS). Stream it
+     * with ?version=compatible.
+     */
+    val hasCompatible: Boolean = false,
+    val compatibleMimeType: String = "",
+    val compatibleFileSize: Long = 0,
+)
+
+@Serializable
+data class Playlist(
+    val id: String,
+    val name: String,
+    val trackCount: Int = 0,
+    val totalDuration: Double = 0.0,
+    val createdAt: String = "",
+    /** Public playlists can be opened and played by any signed-in user. */
+    val isPublic: Boolean = false,
+    /** Who created it — shown on playlists shared by someone else. */
+    val owner: Uploader = Uploader(),
+    /** True when the signed-in user owns it; only owners can edit. */
+    val isMine: Boolean = true,
+    /** Someone else's playlist the viewer keeps in their sidebar/list. */
+    val isPinned: Boolean = false,
+)
+
+/** GET /api/playlists/{id} — playlist summary plus its ordered tracks. */
+@Serializable
+data class PlaylistDetail(
+    val id: String,
+    val name: String,
+    val trackCount: Int = 0,
+    val totalDuration: Double = 0.0,
+    val createdAt: String = "",
+    val isPublic: Boolean = false,
+    val owner: Uploader = Uploader(),
+    val isMine: Boolean = true,
+    val isPinned: Boolean = false,
+    val tracks: List<Track> = emptyList(),
+)
+
+/**
+ * The list-shaped view of a playlist detail.
+ *
+ * [PlaylistDetail] is a separate payload rather than a subtype of [Playlist]
+ * (the detail endpoint returns the tracks as well), so anything that stores or
+ * lists playlists needs this conversion.
+ */
+fun PlaylistDetail.toPlaylist(): Playlist = Playlist(
+    id = id,
+    name = name,
+    trackCount = trackCount,
+    totalDuration = totalDuration,
+    createdAt = createdAt,
+    isPublic = isPublic,
+    owner = owner,
+    isMine = isMine,
+    isPinned = isPinned,
+)
+
+@Serializable
+data class Album(
+    val name: String,
+    val artist: String = "",
+    val trackCount: Int = 0,
+    val totalDuration: Double = 0.0,
+    val hasCover: Boolean = false,
+    val coverTrackId: String = "",
+)
+
+@Serializable
+data class Artist(
+    val name: String,
+    val trackCount: Int = 0,
+    val totalDuration: Double = 0.0,
+)
+
+@Serializable
+data class SearchResults(
+    val tracks: List<Track> = emptyList(),
+    val albums: List<Album> = emptyList(),
+    val artists: List<Artist> = emptyList(),
+    val playlists: List<Playlist> = emptyList(),
+)
+
+@Serializable
+data class Stats(
+    val trackCount: Int = 0,
+    val totalDuration: Double = 0.0,
+    val artistCount: Int = 0,
+    val albumCount: Int = 0,
+    val favoriteCount: Int = 0,
+    val playlistCount: Int = 0,
+    val mostPlayed: List<Track> = emptyList(),
+)
+
+/**
+ * One online metadata match for a track (MusicBrainz / Deezer / iTunes / YouTube),
+ * offered to the user to confirm after an upload.
+ * GET /api/tracks/{id}/metadata/candidates
+ */
+@Serializable
+data class MetadataCandidate(
+    val id: String,
+    /** "MusicBrainz" | "Deezer" | "iTunes" | "YouTube". */
+    val source: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val genre: String = "",
+    val year: Int = 0,
+    val duration: Double = 0.0,
+    val hasArtwork: Boolean = false,
+    /** 0-1 match score; the list arrives sorted by this, best first. */
+    val confidence: Double = 0.0,
+    /** True for the candidate the server auto-applied during upload, if any. */
+    val applied: Boolean = false,
+)
+
+@Serializable
+data class MetadataCandidatesResponse(
+    val autoApplied: Boolean = false,
+    val candidates: List<MetadataCandidate> = emptyList(),
+    /** True when online lookup is switched off server-side. */
+    val lookupDisabled: Boolean = false,
+)
+
+// ---- request bodies ----
+
+@Serializable
+data class AuthRequest(
+    val username: String,
+    val password: String,
+    /** Only sent when the server reports that an invite code is required. */
+    val inviteCode: String? = null,
+)
+
+/**
+ * Sign-up policy, fetched before the auth form renders so it shows the right
+ * fields. GET /api/auth/config (unauthenticated).
+ */
+@Serializable
+data class AuthConfig(
+    val registrationOpen: Boolean = true,
+    val inviteRequired: Boolean = false,
+    val minPasswordLength: Int = 10,
+)
+
+@Serializable
+data class PlaylistRequest(
+    val name: String,
+)
+
+/** PATCH /api/playlists/{id} — both fields optional. */
+@Serializable
+data class UpdatePlaylistRequest(
+    val name: String? = null,
+    val isPublic: Boolean? = null,
+)
+
+@Serializable
+data class AddTrackRequest(
+    val trackId: String,
+)
+
+/** POST /api/tracks/{id}/metadata/apply */
+@Serializable
+data class ApplyMetadataRequest(
+    val candidateId: String,
+)
+
+/** The server's error shape: `{"error": "message"}`. */
+@Serializable
+data class ApiError(
+    val error: String = "",
+)
+
+
+/**
+ * Whether this platform should use the server's compatible copy for a track
+ * rather than the original upload.
+ *
+ * True only when a copy exists *and* the original is in a format this platform
+ * cannot decode — the original is always preferred otherwise, since the copy is
+ * a lossy re-encode that exists only so iOS isn't left silent.
+ */
+fun prefersCompatible(track: Track): Boolean =
+    track.hasCompatible &&
+        track.mimeType.substringBefore(';').trim().lowercase() in unplayableMimeTypes
