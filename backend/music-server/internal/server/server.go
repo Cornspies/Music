@@ -128,7 +128,6 @@ func (s *Server) Routes() http.Handler {
         // Playback position ("continue listening")
         mux.HandleFunc("GET /api/playback", s.requireAuth(s.handleGetPlayback))
         mux.HandleFunc("PUT /api/playback", s.requireAuth(s.handlePutPlayback))
-        mux.HandleFunc("DELETE /api/playback", s.requireAuth(s.handleDeletePlayback))
 
         // Favorites
         mux.HandleFunc("GET /api/favorites", s.requireAuth(s.handleListFavorites))

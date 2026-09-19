@@ -162,17 +162,6 @@ func (s *Server) handlePutPlayback(w http.ResponseWriter, r *http.Request) {
         writeNoContent(w)
 }
 
-// handleDeletePlayback forgets the caller's position — the client stopped
-// playback on purpose, so there is nothing to resume.
-func (s *Server) handleDeletePlayback(w http.ResponseWriter, r *http.Request) {
-        u := userFrom(r)
-        if _, err := s.db.Exec(`DELETE FROM playback_state WHERE user_id = ?`, u.ID); err != nil {
-                s.internalErr(w, "clear playback", err)
-                return
-        }
-        writeNoContent(w)
-}
-
 // trimQueue keeps at most maxSavedQueue IDs, as a window around the current
 // track biased towards what comes next — that's the part that gets played.
 func trimQueue(ids []string, current string) []string {
