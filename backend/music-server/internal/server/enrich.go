@@ -850,7 +850,29 @@ func searchMusicBrainz(ctx context.Context, query string) ([]metadataCandidate, 
 const (
 	youtubeSearchURL = "https://www.googleapis.com/youtube/v3/search"
 	youtubeVideosURL = "https://www.googleapis.com/youtube/v3/videos"
+
+	// How many videos one search asks for. The API allows 1-50 per call and
+	// charges the same 100 quota units regardless, so this trades only
+	// dialog noise for coverage, never quota. The videos call that fetches
+	// durations also takes up to 50 IDs, so one search never needs a second
+	// page of either.
+	youtubeDefaultMaxResults = 15
+	youtubeMaxResultsCap     = 50
 )
+
+// youtubeMaxResults resolves MUSIC_YOUTUBE_MAX_RESULTS, clamped to what the
+// API accepts, falling back to the default when unset or unparseable.
+func youtubeMaxResults() int {
+	raw := config.Value("MUSIC_YOUTUBE_MAX_RESULTS")
+	if raw == "" {
+		return youtubeDefaultMaxResults
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return youtubeDefaultMaxResults
+	}
+	return max(1, min(n, youtubeMaxResultsCap))
+}
 
 type youtubeSearchResponse struct {
 	Items []struct {
@@ -891,7 +913,7 @@ func searchYouTube(ctx context.Context, query string) ([]metadataCandidate, erro
 		"part":            {"snippet"},
 		"type":            {"video"},
 		"videoCategoryId": {"10"}, // "Music"
-		"maxResults":      {"5"},
+		"maxResults":      {strconv.Itoa(youtubeMaxResults())},
 		"q":               {query},
 		"key":             {apiKey},
 	}
