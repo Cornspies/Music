@@ -8,7 +8,7 @@ running natively on both platforms:
 
 | Platform | Player engine | Uploads |
 |---|---|---|
-| Android (minSdk 26) | Media3 ExoPlayer | System file picker (SAF) |
+| Android (minSdk 27) | Media3 ExoPlayer | System file picker (SAF) |
 | iOS (15.6+) | AVFoundation AVPlayer | via web app (document picker TODO) |
 
 ## Features
@@ -24,8 +24,10 @@ running natively on both platforms:
 ## Prerequisites
 
 - **JDK 17** (Temurin/Corretto)
-- **Android Studio Ladybug+** (or plain Gradle 8.9+ with the Android SDK; compileSdk 35)
-- **Xcode 15+** with an active command-line tools selection (iOS builds only)
+- **Android Studio Otter 3+** (or plain Gradle 9.7+ with the Android SDK; compileSdk 37)
+- **Xcode 15+** with an active command-line tools selection (iOS builds only).
+  Simulator builds are Apple-silicon only (`iosSimulatorArm64`): Compose
+  Multiplatform no longer ships `iosX64` artifacts.
 - The **Music Go backend running** (see `../mini-services/music-server`)
 
 ## Configure the server URL
@@ -51,7 +53,7 @@ Notes:
 
 ```bash
 # generate the gradle wrapper jar if missing (one-time)
-gradle wrapper --gradle-version 8.9
+gradle wrapper --gradle-version 9.7.1
 
 # build the debug APK
 ./gradlew :composeApp:assembleDebug

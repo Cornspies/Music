@@ -1,16 +1,32 @@
 [versions]
-# Compose Multiplatform 1.7.3 pairs with Kotlin 2.1.0 (org.jetbrains.kotlin.plugin.compose).
-kotlin = "2.2.10"
-agp = "9.4.0"
-compose-multiplatform = "1.7.3"
-ktor = "3.0.3"
-kotlinx-serialization = "1.7.3"
-kotlinx-coroutines = "1.9.0"
-coil = "3.0.4"
-media3 = "1.5.1"
-androidx-activity = "1.9.3"
+# Compose Multiplatform 1.12.0 is built against Kotlin 2.2.20; newer Kotlin 2.x
+# releases remain compatible since the Compose compiler ships with Kotlin.
+kotlin = "2.4.20"
+agp = "9.4.1"
+compose-multiplatform = "1.12.0"
+# Material3 for Compose Multiplatform is versioned separately from the rest of
+# Compose; 1.9.0 is the latest stable and what `compose.material3` resolved to.
+compose-material3 = "1.9.0"
+# The material-icons artifacts are frozen at 1.7.3 (JetBrains recommends either
+# pinning this version explicitly or migrating to Material Symbols vector
+# resources). Pinned for now; every icon in the app comes from this set.
+compose-material-icons = "1.7.3"
+ktor = "3.6.0"
+kotlinx-serialization = "1.11.0"
+kotlinx-coroutines = "1.11.0"
+coil = "3.6.3"
+media3 = "1.11.1"
+androidx-activity = "1.13.0"
 
 [libraries]
+# Compose Multiplatform. The `compose.*` accessors from the Gradle plugin are
+# deprecated in 1.12, so the artifacts are declared directly.
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
+compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "compose-material-icons" }
+
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 

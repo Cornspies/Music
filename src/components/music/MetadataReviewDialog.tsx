@@ -214,7 +214,7 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
           )}
 
           {!loading && !error && candidates.length > 0 && (
-            <ul className="mt-3 flex max-h-[19rem] min-w-0 flex-col gap-2 overflow-y-auto pr-1">
+            <ul className="mt-3 flex max-h-76 min-w-0 flex-col gap-2 overflow-y-auto pr-1">
               {candidates.map((c) => {
                 const conf = confidenceLabel(c.confidence)
                 const isApplied = appliedId === c.id

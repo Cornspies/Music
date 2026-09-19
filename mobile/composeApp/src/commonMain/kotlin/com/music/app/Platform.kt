@@ -2,6 +2,7 @@ package com.music.app
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.decodeToImageBitmap
 
 /** Whether this platform can upload audio files from the device (Android: yes, iOS: no). */
 internal expect val canUploadFromDevice: Boolean
@@ -40,11 +41,11 @@ internal expect val unplayableMimeTypes: Set<String>
  * Decodes encoded image bytes (JPEG/PNG/…) into something Compose can draw,
  * or null when the bytes aren't a readable image.
  *
- * Compose Multiplatform grew a common `ByteArray.decodeToImageBitmap()` in
- * 1.8.0; this project is on 1.7.3, so each platform does it with its own
- * decoder instead.
+ * `decodeToImageBitmap` throws on unreadable input; callers only care about
+ * "drawable or not", hence the null.
  */
-internal expect fun decodeImageBitmap(bytes: ByteArray): ImageBitmap?
+internal fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? =
+    runCatching { bytes.decodeToImageBitmap() }.getOrNull()
 
 /** A locally picked image. [handle] holds the platform file reference. */
 class PickedImage(

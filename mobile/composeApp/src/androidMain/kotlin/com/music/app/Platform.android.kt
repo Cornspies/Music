@@ -1,6 +1,5 @@
 package com.music.app
 
-import android.graphics.BitmapFactory
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -8,8 +7,6 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 
 // ---------------------------------------------------------------------------
@@ -87,11 +84,6 @@ internal actual val canPickImageFromDevice: Boolean = true
 // ExoPlayer handles Ogg/Vorbis, Opus, FLAC, WebM and the rest, so the original
 // upload is always the one to stream.
 internal actual val unplayableMimeTypes: Set<String> = emptySet()
-
-internal actual fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? =
-    // Returns null for anything BitmapFactory can't read, which is exactly the
-    // contract the caller wants.
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 
 @Composable
 internal actual fun rememberImagePickerLauncher(

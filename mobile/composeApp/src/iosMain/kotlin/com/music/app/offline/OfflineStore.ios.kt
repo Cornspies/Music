@@ -1,5 +1,6 @@
 package com.music.app.offline
 
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -85,7 +86,7 @@ actual class OfflineStore actual constructor() {
     actual fun loadMeta(key: String): String? = defaults.stringForKey(key)
 
     private fun allNames(): List<String> =
-        (fileManager.contentsOfDirectoryAtPath(dir, null) as? List<*>)
+        fileManager.contentsOfDirectoryAtPath(dir, null)
             ?.filterIsInstance<String>()
             ?: emptyList()
 
@@ -99,7 +100,7 @@ actual class OfflineStore actual constructor() {
 }
 
 /** ByteArray → NSData without copying through an intermediate list. */
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 private fun ByteArray.toNSData(): NSData {
     if (isEmpty()) return NSData()
     return usePinned { pinned ->

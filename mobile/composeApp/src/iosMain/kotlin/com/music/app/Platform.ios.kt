@@ -1,8 +1,5 @@
 package com.music.app
 
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.toComposeImageBitmap
-import org.jetbrains.skia.Image
 import androidx.compose.runtime.Composable
 
 // ---------------------------------------------------------------------------
@@ -37,10 +34,6 @@ internal actual val canPickImageFromDevice: Boolean = false
  * audio needs no conversion — only these get swapped for the compatible copy
  * the server made at upload time.
  */
-internal actual fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? =
-    // Skia is what Compose draws with on iOS, so decode straight to it.
-    runCatching { Image.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull()
-
 internal actual val unplayableMimeTypes: Set<String> = setOf(
     "audio/ogg",
     "application/ogg",

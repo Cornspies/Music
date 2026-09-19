@@ -42,14 +42,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.app.DeepLinks
 import com.music.app.LocalAppModel
 import com.music.app.Screen
+import com.music.app.plainTextClipEntry
 import com.music.app.api.PlaylistDetail
 import com.music.app.api.friendlyError
 import com.music.app.api.toPlaylist
@@ -435,13 +435,18 @@ private fun PlaylistDownloadButton(detail: PlaylistDetail) {
 @Composable
 private fun SharePlaylistButton(detail: PlaylistDetail) {
     val model = LocalAppModel.current
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     var copied by remember(detail.id) { mutableStateOf(false) }
 
     IconButton(
         onClick = {
-            clipboard.setText(AnnotatedString(DeepLinks.shareUrl(model.api.baseUrl, detail.id)))
-            copied = true
+            scope.launch {
+                clipboard.setClipEntry(
+                    plainTextClipEntry(DeepLinks.shareUrl(model.api.baseUrl, detail.id)),
+                )
+                copied = true
+            }
         },
     ) {
         Icon(
