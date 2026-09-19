@@ -39,7 +39,11 @@ export default function Home() {
   )
 
   // Validate the persisted token on mount; reset app state when logged out.
+  // Not before mount: for the hydration render the store hooks hand back the
+  // initial (signed-out) state to match the server HTML, so acting on that
+  // pass would reset a session that is about to be restored.
   useEffect(() => {
+    if (!mounted) return
     if (!token) {
       usePlayerStore.getState().stop()
       useLibraryStore.getState().reset()
@@ -52,7 +56,7 @@ export default function Home() {
       .catch(() => {
         // 401 already logs out via api(); other errors keep the session
       })
-  }, [token])
+  }, [mounted, token])
 
   if (!mounted) return <Splash />
   return token ? <AppShell /> : <AuthView />

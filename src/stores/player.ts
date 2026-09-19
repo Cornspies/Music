@@ -7,7 +7,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { toast } from "sonner"
 import type { PlaybackState, Track } from "@/lib/types"
-import { api, clearPlayback, coverUrl, fetchPlayback, savePlayback, streamUrl } from "@/lib/api"
+import { api, coverUrl, fetchPlayback, savePlayback, streamUrl } from "@/lib/api"
 import { useAuthStore } from "@/stores/auth"
 
 export type RepeatMode = "off" | "all" | "one"
@@ -499,10 +499,11 @@ export const usePlayerStore = create<PlayerState>()(
           position: 0,
           duration: 0,
         })
-        // Stopping is deliberate: there is nothing to come back to.
+        // Local bookkeeping only. The server's copy is left alone: stop() also
+        // runs on logout and when the playing track was deleted, and neither
+        // should forget the position for the user's other devices.
         positionDirty = false
         lastSavedQueueKey = ""
-        clearPlayback().catch(() => {})
         if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
           try {
             navigator.mediaSession.metadata = null

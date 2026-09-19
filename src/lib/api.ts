@@ -192,11 +192,6 @@ export function savePlayback(
   })
 }
 
-/** Forgets the saved position — used when playback is stopped on purpose. */
-export function clearPlayback(): Promise<void> {
-  return api<void>("/api/playback", { method: "DELETE" })
-}
-
 export function applyMetadataCandidate(trackId: string, candidateId: string): Promise<Track> {
   return api<Track>(`/api/tracks/${trackId}/metadata/apply`, {
     method: "POST",
