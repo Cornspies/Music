@@ -88,6 +88,7 @@ func (s *Server) Routes() http.Handler {
 
         // Auth (public)
         mux.HandleFunc("GET /api/auth/config", s.handleAuthConfig)
+        mux.HandleFunc("GET /api/auth/invite/{code}", s.handleCheckInvite)
         mux.HandleFunc("POST /api/auth/register", s.handleRegister)
         mux.HandleFunc("POST /api/auth/login", s.handleLogin)
         mux.HandleFunc("GET /api/auth/me", s.requireAuth(s.handleMe))
@@ -125,6 +126,10 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("PATCH /api/admin/users/{id}", s.requireAdmin(s.handleAdminUpdateUser))
         mux.HandleFunc("GET /api/admin/settings", s.requireAdmin(s.handleAdminGetSettings))
         mux.HandleFunc("PATCH /api/admin/settings", s.requireAdmin(s.handleAdminUpdateSettings))
+        mux.HandleFunc("GET /api/admin/invites", s.requireAdmin(s.handleAdminListInvites))
+        mux.HandleFunc("POST /api/admin/invites", s.requireAdmin(s.handleAdminCreateInvite))
+        mux.HandleFunc("POST /api/admin/invites/{code}/revoke", s.requireAdmin(s.handleAdminRevokeInvite))
+        mux.HandleFunc("DELETE /api/admin/invites/{code}", s.requireAdmin(s.handleAdminDeleteInvite))
 
         // Aggregates
         mux.HandleFunc("GET /api/albums", s.requireAuth(s.handleListAlbums))

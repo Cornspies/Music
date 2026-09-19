@@ -91,6 +91,11 @@ export function pathToRoute(pathname: string): Route {
       return { view: "history", arg: null }
     case "admin":
       return { view: "admin", arg: null }
+    case "login":
+    case "register":
+      // The auth screen's own addresses. Signed in, they just mean home;
+      // signed out, AuthView reads the path (and ?invite=) itself.
+      return { view: "home", arg: null }
     default:
       // Unknown path — show home rather than a dead end.
       return { view: "home", arg: null }

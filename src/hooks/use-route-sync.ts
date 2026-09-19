@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { pathToRoute, routeToPath } from "@/lib/routes"
 import { useUIStore } from "@/stores/ui"
+import { useAuthStore } from "@/stores/auth"
 
 /**
  * Keeps the address bar and the view state in step.
@@ -28,7 +29,11 @@ export function useRouteSync() {
     const { view, arg } = pathToRoute(window.location.pathname)
     applyRoute(view, arg)
     const canonical = routeToPath(view, arg)
-    if (canonical !== window.location.pathname) {
+    // /login and /register (with its ?invite=) belong to the auth screen,
+    // which reads them itself and tidies the URL once signed in.
+    const authPath =
+      /^\/(login|register)\/?$/.test(window.location.pathname) && !useAuthStore.getState().token
+    if (canonical !== window.location.pathname && !authPath) {
       window.history.replaceState({ view, viewArg: arg }, "", canonical)
     }
 

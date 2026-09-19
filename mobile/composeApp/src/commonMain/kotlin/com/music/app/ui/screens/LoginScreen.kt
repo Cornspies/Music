@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Checkbox
+import com.music.app.DeepLinks
 import com.music.app.LocalAppModel
 import com.music.app.api.defaultBaseUrl
 import com.music.app.api.friendlyError
@@ -51,11 +52,14 @@ fun LoginScreen() {
     val model = LocalAppModel.current
     val scope = rememberCoroutineScope()
 
-    var registerMode by remember { mutableStateOf(false) }
+    // An invite link (`/register?invite=CODE`) that opened the app lands here
+    // with the code filled in and the form already on "create account".
+    val linkedInvite = remember { DeepLinks.consumeInvite() }
+    var registerMode by remember { mutableStateOf(linkedInvite != null) }
     var serverUrl by remember { mutableStateOf(model.api.baseUrl) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var inviteCode by remember { mutableStateOf("") }
+    var inviteCode by remember { mutableStateOf(linkedInvite ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     // Plain http off the LAN sends the password and session in the clear;
@@ -147,12 +151,15 @@ fun LoginScreen() {
             ),
             modifier = Modifier.fillMaxWidth(),
         )
-        if (registerMode && authConfig.inviteRequired) {
+        // Always offered when signing up: a single-use invite link's code gets
+        // its holder in even while sign-ups are closed, so the field can't be
+        // hidden behind the server's general policy.
+        if (registerMode) {
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = inviteCode,
                 onValueChange = { inviteCode = it },
-                label = { Text("Invite code") },
+                label = { Text(if (authConfig.inviteRequired || !authConfig.registrationOpen) "Invite code" else "Invite code (optional)") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 modifier = Modifier.fillMaxWidth(),

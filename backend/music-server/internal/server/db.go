@@ -168,6 +168,19 @@ func migrate(db *sql.DB) error {
                         value TEXT NOT NULL
                 )`,
                 `CREATE INDEX IF NOT EXISTS idx_tracks_updated ON tracks(updated_at)`,
+                // Single-use invite links minted by admins (see invites.go).
+                // used_by keeps the record of who joined through which link;
+                // deleting that user nulls it rather than losing the row.
+                `CREATE TABLE IF NOT EXISTS invites (
+                        code       TEXT PRIMARY KEY,
+                        note       TEXT NOT NULL DEFAULT '',
+                        created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        used_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+                        used_at    TEXT,
+                        revoked_at TEXT
+                )`,
         }
         for _, s := range later {
                 if _, err := db.Exec(s); err != nil {

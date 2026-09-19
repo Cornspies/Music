@@ -215,3 +215,24 @@ export interface AuthConfig {
   inviteRequired: boolean
   minPasswordLength: number
 }
+
+/** A single-use invite link (admin console). */
+export interface Invite {
+  code: string
+  note: string
+  createdBy: string
+  createdAt: string
+  expiresAt: string
+  usedBy: string | null
+  usedAt: string | null
+  revokedAt: string | null
+  status: "pending" | "used" | "expired" | "revoked"
+}
+
+/** GET /api/auth/invite/{code} — whether a link still works. */
+export interface InviteCheck {
+  valid: boolean
+  status: "pending" | "used" | "expired" | "revoked" | "invalid"
+  expiresAt?: string
+  invitedBy?: string
+}

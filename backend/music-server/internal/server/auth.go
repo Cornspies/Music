@@ -421,14 +421,6 @@ func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	// Registration is open only if you allow it. On a server shared with
-	// friends you typically create the accounts once and then close it, or
-	// hand out MUSIC_INVITE_CODE instead of leaving signup open to anyone
-	// who finds the URL.
-	if !s.registrationOpen() {
-		writeErr(w, http.StatusForbidden, "registration is closed on this server")
-		return
-	}
 	if blocked, retry := rateLimitAuth(r); blocked {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
 		writeErr(w, http.StatusTooManyRequests, "too many attempts, try again later")
@@ -438,6 +430,27 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req authRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	// A single-use invite link (see invites.go) is its holder's ticket in,
+	// whatever the general policy says: it works while sign-ups are closed
+	// and stands in for MUSIC_INVITE_CODE. It's only consumed once the
+	// account has actually been created, so a typo in the password doesn't
+	// burn the link.
+	inviteLink := strings.TrimSpace(req.InviteCode)
+	usingLink := s.invitePending(inviteLink)
+
+	// Otherwise registration is open only if you allow it. On a server
+	// shared with friends you typically create the accounts once and then
+	// close it, or hand out MUSIC_INVITE_CODE instead of leaving signup open
+	// to anyone who finds the URL.
+	if !usingLink && !s.registrationOpen() {
+		if inviteLink != "" {
+			noteAuthFailure(r)
+			writeErr(w, http.StatusForbidden, "this invite link has expired or was already used")
+			return
+		}
+		writeErr(w, http.StatusForbidden, "registration is closed on this server")
 		return
 	}
 	username := strings.TrimSpace(req.Username)
@@ -450,8 +463,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("password must be %d-128 characters", minPasswordLength))
 		return
 	}
-	if code := config.Value("MUSIC_INVITE_CODE"); code != "" {
-		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(req.InviteCode)), []byte(code)) != 1 {
+	if code := config.Value("MUSIC_INVITE_CODE"); code != "" && !usingLink {
+		if subtle.ConstantTimeCompare([]byte(inviteLink), []byte(code)) != 1 {
 			noteAuthFailure(r)
 			writeErr(w, http.StatusForbidden, "a valid invite code is required")
 			return
@@ -486,6 +499,16 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		id, username, string(hash), createdAt, role); err != nil {
 		s.internalErr(w, "insert user", err)
 		return
+	}
+	if usingLink {
+		// Two people racing on the same link: the second UPDATE matches no
+		// row, and that account is rolled back.
+		if err := s.consumeInvite(inviteLink, id); err != nil {
+			_, _ = s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
+			noteAuthFailure(r)
+			writeErr(w, http.StatusForbidden, "this invite link has expired or was already used")
+			return
+		}
 	}
 	noteRegistration(r)
 

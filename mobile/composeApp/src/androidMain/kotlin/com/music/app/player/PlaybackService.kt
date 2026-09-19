@@ -1,5 +1,6 @@
 package com.music.app.player
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
@@ -10,6 +11,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.music.app.MainActivity
 import com.music.app.widget.NowPlayingWidgetState
 
 /**
@@ -48,7 +50,17 @@ class PlaybackService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = publishWidgetState(player)
             override fun onMediaMetadataChanged(mediaMetadata: androidx.media3.common.MediaMetadata) = publishWidgetState(player)
         })
-        session = MediaSession.Builder(this, player).build()
+        // Tapping the notification (or the lock-screen controls' title) opens
+        // the app on top of whatever it was showing, rather than doing nothing.
+        val openApp = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        session = MediaSession.Builder(this, player)
+            .setSessionActivity(openApp)
+            .build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session

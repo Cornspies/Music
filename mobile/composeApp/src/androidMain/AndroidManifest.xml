@@ -61,9 +61,11 @@
                 <data android:scheme="https" />
                 <data android:host="${musicHost}" />
                 <data android:pathPrefix="/playlists/" />
+                <data android:path="/register" />
                 <data android:scheme="http" />
                 <data android:host="${musicHost}" />
                 <data android:pathPrefix="/playlists/" />
+                <data android:path="/register" />
             </intent-filter>
 
             <!-- Works regardless of host, for links shared from the app itself. -->

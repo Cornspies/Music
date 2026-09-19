@@ -26,14 +26,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         appContext = applicationContext
         enableEdgeToEdge()
-        DeepLinks.playlistIdFrom(intent?.dataString)?.let { DeepLinks.open(it) }
+        DeepLinks.handle(intent?.dataString)
         setContent { App() }
         askForNotifications()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
-        DeepLinks.playlistIdFrom(intent.dataString)?.let { DeepLinks.open(it) }
+        DeepLinks.handle(intent.dataString)
     }
 
     private fun askForNotifications() {

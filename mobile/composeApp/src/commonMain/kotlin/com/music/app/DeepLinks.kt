@@ -27,6 +27,37 @@ object DeepLinks {
         pendingPlaylistId = playlistId
     }
 
+    /**
+     * Invite code from a `/register?invite=CODE` link, waiting for the sign-in
+     * screen to pick it up. Cleared once used.
+     */
+    var pendingInviteCode by mutableStateOf<String?>(null)
+        private set
+
+    fun consumeInvite(): String? {
+        val code = pendingInviteCode
+        pendingInviteCode = null
+        return code
+    }
+
+    /** Routes any incoming URL to the right pending slot. */
+    fun handle(url: String?) {
+        inviteCodeFrom(url)?.let { pendingInviteCode = it }
+        playlistIdFrom(url)?.let { pendingPlaylistId = it }
+    }
+
+    /** The invite code in a `/register?invite=CODE` link, or null. */
+    fun inviteCodeFrom(url: String?): String? {
+        val raw = url?.trim().orEmpty()
+        if (!raw.contains("/register")) return null
+        val query = raw.substringAfter('?', "").substringBefore('#')
+        return query.split('&')
+            .map { it.substringBefore('=') to it.substringAfter('=', "") }
+            .firstOrNull { it.first == "invite" }
+            ?.second
+            ?.takeIf { it.isNotBlank() }
+    }
+
     /** Takes the pending playlist id, clearing it so it's opened only once. */
     fun consume(): String? {
         val id = pendingPlaylistId

@@ -11,6 +11,7 @@ import type {
   AdminSettings,
   AdminUser,
   HistoryResponse,
+  Invite,
   MetadataCandidatesResponse,
   PlaybackState,
   Track,
@@ -276,4 +277,21 @@ export const admin = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }),
+  invites: () => api<Invite[]>("/api/admin/invites"),
+  createInvite: (body: { note?: string; expiresHours?: number }) =>
+    api<Invite>("/api/admin/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  revokeInvite: (code: string) =>
+    api<Invite>(`/api/admin/invites/${encodeURIComponent(code)}/revoke`, { method: "POST" }),
+  deleteInvite: (code: string) =>
+    api<void>(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" }),
+}
+
+/** The shareable URL for an invite code, on this origin. */
+export function inviteLink(code: string): string {
+  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  return `${origin}/register?invite=${encodeURIComponent(code)}`
 }

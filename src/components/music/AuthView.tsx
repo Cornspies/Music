@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
-import { AudioLines, Loader2, LogIn, UserPlus } from "lucide-react"
+import { AudioLines, Loader2, LogIn, Ticket, UserPlus } from "lucide-react"
 import { gw } from "@/lib/gateway"
-import type { AuthConfig } from "@/lib/types"
+import type { AuthConfig, InviteCheck } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/stores/auth"
 import { Button } from "@/components/ui/button"
@@ -12,19 +12,74 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
+type Mode = "login" | "register"
+
+/**
+ * The screen's own addresses: /login, /register and /register?invite=CODE
+ * (an invite link from the admin console). Read once, on mount — this only
+ * ever renders on the client, after hydration.
+ */
+function fromUrl(): { mode: Mode; invite: string } {
+  if (typeof window === "undefined") return { mode: "login", invite: "" }
+  const path = window.location.pathname.replace(/\/+$/, "")
+  const invite = new URLSearchParams(window.location.search).get("invite")?.trim() ?? ""
+  return { mode: path === "/register" || invite ? "register" : "login", invite }
+}
+
+function pathFor(mode: Mode, invite: string): string {
+  if (mode === "register") return invite ? `/register?invite=${encodeURIComponent(invite)}` : "/register"
+  return "/login"
+}
+
+function timeLeft(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now()
+  if (!Number.isFinite(ms) || ms <= 0) return "expired"
+  const h = Math.floor(ms / 3_600_000)
+  const m = Math.floor((ms % 3_600_000) / 60_000)
+  if (h >= 48) return `${Math.floor(h / 24)} days left`
+  if (h > 0) return `${h}h ${m}m left`
+  return `${m} min left`
+}
+
 export function AuthView() {
   const login = useAuthStore((s) => s.login)
   const register = useAuthStore((s) => s.register)
 
-  const [mode, setMode] = useState<"login" | "register">("login")
+  const [initial] = useState(fromUrl)
+  const [mode, setModeState] = useState<Mode>(initial.mode)
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
-  const [inviteCode, setInviteCode] = useState("")
+  const [inviteCode, setInviteCode] = useState(initial.invite)
   const [busy, setBusy] = useState(false)
   // Sign-up policy comes from the server so the form matches whatever the
   // admin configured (closed signup, invite code, password length).
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
+  // When arriving through an invite link: whether it still works.
+  const [inviteCheck, setInviteCheck] = useState<InviteCheck | null>(null)
+  const viaLink = Boolean(initial.invite)
+
+  // Keep the address in step so "sign in" / "create account" are linkable.
+  const setMode = (next: Mode) => {
+    setModeState(next)
+    window.history.replaceState(null, "", pathFor(next, next === "register" ? initial.invite : ""))
+  }
+
+  useEffect(() => {
+    if (!initial.invite) return
+    let cancelled = false
+    fetch(gw(`/api/auth/invite/${encodeURIComponent(initial.invite)}`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((check: InviteCheck | null) => {
+        if (!cancelled && check) setInviteCheck(check)
+      })
+      .catch(() => {
+        // Unreachable: the form still works, the server decides on submit.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [initial.invite])
 
   useEffect(() => {
     let cancelled = false
@@ -42,8 +97,10 @@ export function AuthView() {
   }, [])
 
   const minPassword = authConfig?.minPasswordLength ?? 8
-  const registrationOpen = authConfig?.registrationOpen ?? true
-  const inviteRequired = authConfig?.inviteRequired ?? false
+  // A live invite link opens sign-up regardless of the server's policy.
+  const linkValid = viaLink && inviteCheck?.valid !== false
+  const registrationOpen = (authConfig?.registrationOpen ?? true) || linkValid
+  const inviteRequired = (authConfig?.inviteRequired ?? false) && !linkValid
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,9 +127,12 @@ export function AuthView() {
         await login(uname, password)
         toast.success(`Welcome back, ${uname}`)
       } else {
-        await register(uname, password, inviteRequired ? inviteCode.trim() : undefined)
+        await register(uname, password, inviteCode.trim() || undefined)
         toast.success(`Welcome to Music, ${uname}`)
       }
+      // The auth screen's address (and any invite code in it) has done its
+      // job; the app takes over at the root.
+      window.history.replaceState(null, "", "/")
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
@@ -107,6 +167,46 @@ export function AuthView() {
         </CardHeader>
 
         <CardContent>
+          {viaLink && mode === "register" ? (
+            <div
+              role="status"
+              className={cn(
+                "mb-4 flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-xs",
+                inviteCheck?.valid === false
+                  ? "border-red-900/60 bg-red-950/40 text-red-200"
+                  : "border-emerald-900/60 bg-emerald-950/40 text-emerald-100"
+              )}
+            >
+              <Ticket className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <div>
+                {inviteCheck?.valid === false ? (
+                  <>
+                    <p className="font-medium">This invite link can&apos;t be used</p>
+                    <p className="mt-0.5 opacity-80">
+                      {inviteCheck.status === "used"
+                        ? "It has already been used to create an account."
+                        : inviteCheck.status === "expired"
+                          ? "It has expired."
+                          : inviteCheck.status === "revoked"
+                            ? "It was revoked."
+                            : "It isn't a valid link."}{" "}
+                      Ask whoever sent it for a new one.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">
+                      {inviteCheck?.invitedBy ? `${inviteCheck.invitedBy} invited you to Music` : "You've been invited to Music"}
+                    </p>
+                    <p className="mt-0.5 opacity-80">
+                      Pick a username and password to join.
+                      {inviteCheck?.expiresAt ? ` This link works once · ${timeLeft(inviteCheck.expiresAt)}.` : ""}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : null}
           <form className="flex flex-col gap-4" onSubmit={submit}>
             <div className="flex flex-col gap-2">
               <Label htmlFor="auth-username">Username</Label>
@@ -142,7 +242,7 @@ export function AuthView() {
                 />
               </div>
             )}
-            {mode === "register" && inviteRequired && (
+            {mode === "register" && !viaLink && (inviteRequired || !(authConfig?.registrationOpen ?? true)) && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="auth-invite">Invite code</Label>
                 <Input
@@ -174,7 +274,16 @@ export function AuthView() {
 
           <p className="mt-4 text-center text-sm text-zinc-400">
             {!registrationOpen && mode === "login" ? (
-              "Sign-ups are closed on this server."
+              <>
+                Sign-ups are closed on this server.{" "}
+                <button
+                  type="button"
+                  onClick={() => setMode("register")}
+                  className="font-medium text-emerald-400 hover:text-emerald-300 hover:underline"
+                >
+                  Have an invite code?
+                </button>
+              </>
             ) : (
               <>
             {mode === "login" ? "New to Music?" : "Already have an account?"}{" "}
@@ -183,7 +292,7 @@ export function AuthView() {
               onClick={() => {
                 setMode(mode === "login" ? "register" : "login")
                 setConfirm("")
-                setInviteCode("")
+                if (!viaLink) setInviteCode("")
               }}
               className={cn(
                 "font-medium text-emerald-400 hover:text-emerald-300 hover:underline",
