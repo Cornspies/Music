@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Check, ChevronLeft, ChevronRight, ImageIcon, Loader2, Sparkles } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, ImageIcon, ImageOff, Loader2, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { applyMetadataCandidate, candidateArtworkUrl, fetchMetadataCandidates } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
@@ -28,26 +28,39 @@ const SOURCE_STYLES: Record<string, string> = {
 
 /**
  * Thumbnail of a suggestion's cover art, so the right release can be told
- * apart at a glance. The image is fetched lazily through the server; when the
- * candidate has none, or the fetch fails, a neutral placeholder keeps the row
- * layout stable.
+ * apart at a glance. The image is fetched lazily through the server. Two
+ * distinct fallbacks, because they mean different things to the person
+ * choosing: a candidate that simply has no artwork shows a neutral image
+ * icon, while one that *should* have artwork but couldn't be fetched (the
+ * server answers 404 for an expired list or an unreachable provider) shows a
+ * broken-image icon — the art may still arrive when the candidate is applied.
  */
 function CandidateThumb({ trackId, candidate }: { trackId: string; candidate: MetadataCandidate }) {
   const [failed, setFailed] = useState(false)
-  const showImage = candidate.hasArtwork && !failed
-  return (
-    <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-zinc-800/80 ring-1 ring-white/5">
-      {showImage ? (
-        <img
-          src={candidateArtworkUrl(trackId, candidate.id)}
-          alt=""
-          loading="lazy"
-          onError={() => setFailed(true)}
-          className="size-full object-cover"
-        />
-      ) : (
+  const frame = "flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-zinc-800/80 ring-1 ring-white/5"
+  if (!candidate.hasArtwork) {
+    return (
+      <div className={frame} title="No artwork available">
         <ImageIcon className="size-5 text-zinc-600" aria-hidden="true" />
-      )}
+      </div>
+    )
+  }
+  if (failed) {
+    return (
+      <div className={cn(frame, "border border-dashed border-zinc-600 ring-0")} title="Artwork couldn't be loaded">
+        <ImageOff className="size-5 text-zinc-500" aria-hidden="true" />
+      </div>
+    )
+  }
+  return (
+    <div className={frame}>
+      <img
+        src={candidateArtworkUrl(trackId, candidate.id)}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="size-full object-cover"
+      />
     </div>
   )
 }

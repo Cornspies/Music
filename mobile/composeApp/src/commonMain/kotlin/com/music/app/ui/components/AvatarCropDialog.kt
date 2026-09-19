@@ -65,20 +65,41 @@ fun AvatarCropDialog(
     var zoom by remember(bytes) { mutableStateOf(1f) }
     var offset by remember(bytes) { mutableStateOf(Offset.Zero) }
 
-    // Scale at which the image exactly covers the circle; zoom multiplies it.
-    val baseScale = if (bitmap != null && frame > 0f) {
+    // The geometry below is a set of functions rather than values on purpose.
+    // The gesture handler runs inside pointerInput's coroutine, which is
+    // launched once and never sees later recompositions, so a plain `val`
+    // captured there keeps the value from the first composition — when the
+    // frame was still 0 px and the "drawn" size was the raw bitmap size.
+    // Clamping against that pinned the image to the top-left corner. Reading
+    // the state variables through a function call is always current.
+
+    /** Scale at which the image exactly covers the circle; zoom multiplies it. */
+    fun baseScale(): Float = if (bitmap != null && frame > 0f) {
         frame / min(bitmap.width, bitmap.height).toFloat()
     } else {
         1f
     }
-    val drawnW = (bitmap?.width ?: 0) * baseScale * zoom
-    val drawnH = (bitmap?.height ?: 0) * baseScale * zoom
+
+    fun drawnW(z: Float = zoom): Float = (bitmap?.width ?: 0) * baseScale() * z
+    fun drawnH(z: Float = zoom): Float = (bitmap?.height ?: 0) * baseScale() * z
 
     /** Keeps the circle covered, so no blank edge can be framed. */
-    fun clamp(next: Offset) = Offset(
-        x = min(0f, max(frame - drawnW, next.x)),
-        y = min(0f, max(frame - drawnH, next.y)),
+    fun clamp(next: Offset, z: Float = zoom) = Offset(
+        x = min(0f, max(frame - drawnW(z), next.x)),
+        y = min(0f, max(frame - drawnH(z), next.y)),
     )
+
+    /**
+     * Changes the zoom while the image point under [pivot] (in circle
+     * coordinates) stays where it is, so zooming digs into what the user is
+     * looking at rather than sliding the picture off towards its top-left.
+     */
+    fun zoomAround(pivot: Offset, target: Float) {
+        val z = target.coerceIn(1f, 5f)
+        val ratio = z / zoom
+        offset = clamp(pivot - (pivot - offset) * ratio, z)
+        zoom = z
+    }
 
     AlertDialog(
         onDismissRequest = { if (!busy) onCancel() },
@@ -114,8 +135,8 @@ fun AvatarCropDialog(
                                 }
                             }
                             .pointerInput(bytes) {
-                                detectTransformGestures { _, pan, gestureZoom, _ ->
-                                    zoom = (zoom * gestureZoom).coerceIn(1f, 5f)
+                                detectTransformGestures { centroid, pan, gestureZoom, _ ->
+                                    zoomAround(centroid, zoom * gestureZoom)
                                     offset = clamp(offset + pan)
                                 }
                             },
@@ -132,8 +153,8 @@ fun AvatarCropDialog(
                                     // the same model the crop maths assumes.
                                     transformOrigin =
                                         androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                                    scaleX = if (frame > 0f) drawnW / frame else 1f
-                                    scaleY = if (frame > 0f) drawnH / frame else 1f
+                                    scaleX = if (frame > 0f) drawnW() / frame else 1f
+                                    scaleY = if (frame > 0f) drawnH() / frame else 1f
                                     translationX = offset.x
                                     translationY = offset.y
                                 },
@@ -141,10 +162,7 @@ fun AvatarCropDialog(
                     }
                     Slider(
                         value = zoom,
-                        onValueChange = {
-                            zoom = it
-                            offset = clamp(offset)
-                        },
+                        onValueChange = { zoomAround(Offset(frame / 2f, frame / 2f), it) },
                         valueRange = 1f..5f,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -158,7 +176,7 @@ fun AvatarCropDialog(
                 enabled = !busy && bitmap != null && frame > 0f,
                 onClick = {
                     val b = bitmap ?: return@TextButton
-                    val scale = baseScale * zoom
+                    val scale = baseScale() * zoom
                     val shorter = min(b.width, b.height).toFloat()
                     onConfirm(
                         AvatarCrop(

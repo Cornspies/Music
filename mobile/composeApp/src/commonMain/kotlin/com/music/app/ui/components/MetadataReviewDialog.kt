@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
@@ -343,45 +344,51 @@ private fun CandidateRow(
 
 /**
  * Thumbnail of a suggestion's cover art, so the right release can be told
- * apart at a glance. Fetched lazily through the server; a candidate without
- * artwork, or a failed fetch, shows a neutral placeholder of the same size so
- * rows line up regardless.
+ * apart at a glance. Fetched lazily through the server. Two distinct
+ * fallbacks, because they mean different things to the person choosing: a
+ * candidate that simply has no artwork shows a neutral image icon, while one
+ * that *should* have artwork but couldn't be fetched (the server answers 404
+ * for an expired list or an unreachable provider) shows a broken-image icon
+ * — the art may still arrive when the candidate is applied.
  */
 @Composable
 private fun CandidateThumb(trackId: String, candidate: MetadataCandidate) {
     val model = LocalAppModel.current
-    val placeholder: @Composable () -> Unit = {
-        Icon(
-            Icons.Filled.Image,
-            contentDescription = null,
-            tint = Zinc500,
-            modifier = Modifier.size(20.dp),
-        )
-    }
+    var failed by remember(candidate.id) { mutableStateOf(false) }
     Box(
         Modifier
             .size(48.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(Zinc800),
+            .background(Zinc800)
+            .then(
+                if (candidate.hasArtwork && failed) {
+                    Modifier.border(1.dp, Zinc700, RoundedCornerShape(6.dp))
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        if (candidate.hasArtwork) {
-            // The 404 for missing/expired artwork lands in onError, so the
-            // placeholder covers both "no image" and "couldn't load".
-            var failed by remember(candidate.id) { mutableStateOf(false) }
-            if (failed) {
-                placeholder()
-            } else {
-                AsyncImage(
-                    model = model.api.candidateArtworkUrl(trackId, candidate.id),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    onError = { failed = true },
-                    modifier = Modifier.size(48.dp),
-                )
-            }
-        } else {
-            placeholder()
+        when {
+            !candidate.hasArtwork -> Icon(
+                Icons.Filled.Image,
+                contentDescription = "No artwork available",
+                tint = Zinc700,
+                modifier = Modifier.size(20.dp),
+            )
+            failed -> Icon(
+                Icons.Filled.BrokenImage,
+                contentDescription = "Artwork couldn't be loaded",
+                tint = Zinc500,
+                modifier = Modifier.size(20.dp),
+            )
+            else -> AsyncImage(
+                model = model.api.candidateArtworkUrl(trackId, candidate.id),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onError = { failed = true },
+                modifier = Modifier.size(48.dp),
+            )
         }
     }
 }
