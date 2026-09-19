@@ -116,6 +116,14 @@ class ApiClient(private val store: TokenStore) {
         url("/api/tracks/$trackId/cover") + "?token=" + (token ?: "").encodeURLParameter()
 
     /**
+     * Thumbnail URL for a metadata suggestion, proxied through the server (Coil
+     * AsyncImage). 404s when the candidate has no artwork or its list expired.
+     */
+    fun candidateArtworkUrl(trackId: String, candidateId: String): String =
+        url("/api/tracks/$trackId/metadata/candidates/$candidateId/artwork") +
+            "?token=" + (token ?: "").encodeURLParameter()
+
+    /**
      * Avatar URL with token query (Coil AsyncImage). 404s when the user has no
      * picture, which Coil surfaces as an error state — see UserAvatar.
      */

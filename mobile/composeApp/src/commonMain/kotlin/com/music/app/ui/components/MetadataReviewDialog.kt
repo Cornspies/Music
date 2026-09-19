@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,10 +34,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.music.app.LocalAppModel
 import com.music.app.api.MetadataCandidate
 import com.music.app.api.Track
@@ -45,6 +49,7 @@ import com.music.app.ui.formatDuration
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc500
 import com.music.app.ui.theme.Zinc700
+import com.music.app.ui.theme.Zinc800
 import com.music.app.ui.theme.Zinc950
 import kotlinx.coroutines.launch
 
@@ -218,6 +223,7 @@ fun MetadataReviewDialog(
                     ) {
                         items(candidates, key = { it.id }) { candidate ->
                             CandidateRow(
+                                trackId = track.id,
                                 candidate = candidate,
                                 isApplied = resolved[track.id] == candidate.id,
                                 showAutoBadge = candidate.applied && resolved[track.id] == null,
@@ -265,6 +271,7 @@ fun MetadataReviewDialog(
 
 @Composable
 private fun CandidateRow(
+    trackId: String,
     candidate: MetadataCandidate,
     isApplied: Boolean,
     showAutoBadge: Boolean,
@@ -284,21 +291,14 @@ private fun CandidateRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        CandidateThumb(trackId, candidate)
+        Spacer(Modifier.padding(start = 12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Badge(candidate.source, sourceColor(candidate.source))
                 if (showAutoBadge) {
                     Spacer(Modifier.padding(start = 6.dp))
                     Badge("Applied automatically", Emerald)
-                }
-                if (candidate.hasArtwork) {
-                    Spacer(Modifier.padding(start = 6.dp))
-                    Icon(
-                        Icons.Filled.Image,
-                        contentDescription = "Includes cover art",
-                        tint = Zinc500,
-                        modifier = Modifier.height(14.dp),
-                    )
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -337,6 +337,51 @@ private fun CandidateRow(
             else -> OutlinedButton(onClick = onApply, enabled = enabled) {
                 Text("Use this", style = MaterialTheme.typography.labelMedium)
             }
+        }
+    }
+}
+
+/**
+ * Thumbnail of a suggestion's cover art, so the right release can be told
+ * apart at a glance. Fetched lazily through the server; a candidate without
+ * artwork, or a failed fetch, shows a neutral placeholder of the same size so
+ * rows line up regardless.
+ */
+@Composable
+private fun CandidateThumb(trackId: String, candidate: MetadataCandidate) {
+    val model = LocalAppModel.current
+    val placeholder: @Composable () -> Unit = {
+        Icon(
+            Icons.Filled.Image,
+            contentDescription = null,
+            tint = Zinc500,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+    Box(
+        Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Zinc800),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (candidate.hasArtwork) {
+            // The 404 for missing/expired artwork lands in onError, so the
+            // placeholder covers both "no image" and "couldn't load".
+            var failed by remember(candidate.id) { mutableStateOf(false) }
+            if (failed) {
+                placeholder()
+            } else {
+                AsyncImage(
+                    model = model.api.candidateArtworkUrl(trackId, candidate.id),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    onError = { failed = true },
+                    modifier = Modifier.size(48.dp),
+                )
+            }
+        } else {
+            placeholder()
         }
     }
 }

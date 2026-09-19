@@ -97,6 +97,15 @@ export function coverUrl(track: { id: string }): string {
   return gw(`/api/tracks/${track.id}/cover`) + tokenQuery()
 }
 
+/**
+ * Thumbnail URL for a metadata suggestion, proxied through the server. 404s
+ * when the candidate has no artwork or its list has expired — handle with
+ * onError, same as coverUrl.
+ */
+export function candidateArtworkUrl(trackId: string, candidateId: string): string {
+  return gw(`/api/tracks/${trackId}/metadata/candidates/${candidateId}/artwork`) + tokenQuery()
+}
+
 /** Download URL (attachment) for <a href download>. */
 export function downloadUrl(
   track: Pick<Track, "id">,

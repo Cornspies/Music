@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Check, ChevronLeft, ChevronRight, ImageIcon, Loader2, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { applyMetadataCandidate, fetchMetadataCandidates } from "@/lib/api"
+import { applyMetadataCandidate, candidateArtworkUrl, fetchMetadataCandidates } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
 import type { MetadataCandidate, Track } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
@@ -24,6 +24,32 @@ const SOURCE_STYLES: Record<string, string> = {
   Deezer: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
   iTunes: "bg-pink-500/15 text-pink-300 ring-pink-500/30",
   YouTube: "bg-red-500/15 text-red-300 ring-red-500/30",
+}
+
+/**
+ * Thumbnail of a suggestion's cover art, so the right release can be told
+ * apart at a glance. The image is fetched lazily through the server; when the
+ * candidate has none, or the fetch fails, a neutral placeholder keeps the row
+ * layout stable.
+ */
+function CandidateThumb({ trackId, candidate }: { trackId: string; candidate: MetadataCandidate }) {
+  const [failed, setFailed] = useState(false)
+  const showImage = candidate.hasArtwork && !failed
+  return (
+    <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-zinc-800/80 ring-1 ring-white/5">
+      {showImage ? (
+        <img
+          src={candidateArtworkUrl(trackId, candidate.id)}
+          alt=""
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className="size-full object-cover"
+        />
+      ) : (
+        <ImageIcon className="size-5 text-zinc-600" aria-hidden="true" />
+      )}
+    </div>
+  )
 }
 
 function confidenceLabel(c: number): { text: string; className: string } {
@@ -191,6 +217,7 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
                     )}
                   >
                     <div className="flex items-start gap-3">
+                      <CandidateThumb trackId={track.id} candidate={c} />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span
@@ -204,15 +231,6 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
                           {wasAuto && (
                             <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/30">
                               Applied automatically
-                            </span>
-                          )}
-                          {c.hasArtwork && (
-                            <span
-                              className="inline-flex items-center gap-0.5 text-[10px] text-zinc-500"
-                              title="Includes cover art"
-                            >
-                              <ImageIcon className="size-3" aria-hidden="true" />
-                              cover
                             </span>
                           )}
                         </div>

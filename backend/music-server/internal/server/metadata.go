@@ -6,7 +6,9 @@ import (
         "net/http"
         "os"
         "path/filepath"
+        "strconv"
         "strings"
+        "time"
 )
 
 // MetadataCandidate is the JSON shape of a single lookup result offered to
@@ -111,6 +113,85 @@ func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Re
                 AutoApplied:    false,
                 LookupDisabled: false,
         })
+}
+
+// candidateArtworkTimeout bounds a single thumbnail fetch. It is shorter than
+// a full lookup because a dialog opens a request per candidate at once, and a
+// slow provider should cost one placeholder, not a hung dialog.
+const candidateArtworkTimeout = 10 * time.Second
+
+// handleCandidateArtwork serves a candidate's cover art so the review dialog
+// can show a thumbnail next to each suggestion. The image is fetched from the
+// provider on demand through the SSRF-guarded lookup client and never stored:
+// choosing the candidate downloads it again for real via applyCandidate.
+//
+// Anything that stops a thumbnail being shown answers 404 — an expired
+// candidate list, a provider that has no image after all, a fetch failure —
+// so both clients fall back to their placeholder through the same path.
+func (s *Server) handleCandidateArtwork(w http.ResponseWriter, r *http.Request) {
+        u := userFrom(r)
+        id := r.PathValue("id")
+        candidateID := r.PathValue("candidateId")
+
+        if _, _, _, ok := s.getTrack(w, r, u.ID, id); !ok {
+                return
+        }
+
+        entry, hit := cachedCandidates(id)
+        if !hit {
+                writeErr(w, http.StatusNotFound, "suggestions have expired — reload them to see artwork")
+                return
+        }
+        var artURL string
+        for i := range entry.candidates {
+                if entry.candidates[i].id == candidateID {
+                        artURL = entry.candidates[i].artURL()
+                        break
+                }
+        }
+        if artURL == "" {
+                writeErr(w, http.StatusNotFound, "no artwork for this result")
+                return
+        }
+
+        ctx, cancel := context.WithTimeout(r.Context(), candidateArtworkTimeout)
+        defer cancel()
+        b, err := fetchArtwork(ctx, artURL)
+        if err != nil {
+                // The client hung up (dialog closed) — nothing to report.
+                if r.Context().Err() == nil {
+                        logErr("candidate artwork", fmt.Errorf("candidate %s: %w", candidateID, err))
+                }
+                writeErr(w, http.StatusNotFound, "artwork unavailable")
+                return
+        }
+
+        // Same rule as the track cover endpoint: these bytes come from a third
+        // party and are served same-origin with the app, so only recognised raster
+        // image types go out, and nosniff stops the browser second-guessing that.
+        ct := http.DetectContentType(b)
+        if !allowedImageTypes[ct] {
+                logErr("candidate artwork", fmt.Errorf("candidate %s: refusing to serve artwork of type %q", candidateID, ct))
+                writeErr(w, http.StatusNotFound, "artwork unavailable")
+                return
+        }
+
+        // Candidate IDs are content hashes, so the same ID always maps to the same
+        // artwork URL: safe to cache well past the candidate list's own lifetime.
+        etag := `"cand-` + candidateID + `"`
+        w.Header().Set("Content-Type", ct)
+        w.Header().Set("X-Content-Type-Options", "nosniff")
+        w.Header().Set("Cache-Control", "private, max-age=86400")
+        w.Header().Set("ETag", etag)
+        if r.Header.Get("If-None-Match") == etag {
+                w.WriteHeader(http.StatusNotModified)
+                return
+        }
+        w.Header().Set("Content-Length", strconv.Itoa(len(b)))
+        w.WriteHeader(http.StatusOK)
+        if r.Method != http.MethodHead {
+                _, _ = w.Write(b)
+        }
 }
 
 func dropPlaceholder(v, placeholder string) string {

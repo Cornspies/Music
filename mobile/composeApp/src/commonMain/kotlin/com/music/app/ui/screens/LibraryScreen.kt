@@ -177,6 +177,10 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
 
     SwipeToDismissBox(
         state = state,
+        // Delete is a right-to-left swipe only. A left-to-right drag is the
+        // gesture people make to scroll or go back, so offering the same
+        // destructive action there invited accidental confirmations.
+        enableDismissFromStartToEnd = false,
         backgroundContent = {
             // Only drawn while a swipe is actually in progress. The box sits
             // behind the row at all times, so painting it unconditionally left
@@ -187,11 +191,8 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.errorContainer)
                         .padding(horizontal = 20.dp),
-                    contentAlignment = if (state.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
-                        Alignment.CenterStart
-                    } else {
-                        Alignment.CenterEnd
-                    },
+                    // The row slides left, so the bin is revealed on the right.
+                    contentAlignment = Alignment.CenterEnd,
                 ) {
                     Icon(
                         Icons.Filled.Delete,
