@@ -153,7 +153,8 @@ private fun TrackList(tracks: List<Track>) {
 private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     val model = LocalAppModel.current
     val scope = rememberCoroutineScope()
-    val mine = model.user?.id != null && track.uploadedBy.id == model.user?.id
+    // The uploader may edit or delete; so may an admin (the server enforces both).
+    val mine = model.user?.let { it.id == track.uploadedBy.id || it.isAdmin } == true
 
     if (!mine) {
         row()

@@ -14,6 +14,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"music-server/internal/config"
 
 	"github.com/google/uuid"
 )
@@ -63,6 +66,14 @@ type Track struct {
         HasCompatible  bool   `json:"hasCompatible"`
         CompatibleMime string `json:"compatibleMimeType"`
         CompatibleSize int64  `json:"compatibleFileSize"`
+        // UpdatedAt changes whenever tags, cover or the compatible copy do,
+        // so clients can sync deltas with GET /api/tracks/changes.
+        UpdatedAt string `json:"updatedAt"`
+        // Loudness is the integrated loudness in LUFS (EBU R128), for volume
+        // normalisation. Null until the background analysis has run.
+        Loudness *float64 `json:"loudness"`
+        // HasWaveform is true once GET /api/tracks/{id}/waveform has data.
+        HasWaveform bool `json:"hasWaveform"`
 }
 
 // Uploader is the small public profile shown next to a track.
@@ -123,7 +134,8 @@ SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration
        EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = ? AND f.track_id = t.id),
        t.created_at, t.file_path, t.file_name,
        t.user_id, COALESCE(u.username, ''), COALESCE(u.has_avatar, 0),
-       COALESCE(t.alt_path, ''), COALESCE(t.alt_mime, ''), COALESCE(t.alt_size, 0)
+       COALESCE(t.alt_path, ''), COALESCE(t.alt_mime, ''), COALESCE(t.alt_size, 0),
+       COALESCE(t.updated_at, ''), t.loudness, (COALESCE(t.waveform_json, '') <> '')
 FROM tracks t
 LEFT JOIN users u ON u.id = t.user_id
 LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?`
@@ -142,6 +154,8 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
                 lastPlayedAt  sql.NullString
                 uploaderAvatar int
                 altPath        string
+                loudness       sql.NullFloat64
+                hasWaveform    int
         )
         err := scan(
                 &t.ID, &t.Title, &t.Artist, &t.Album, &t.Genre, &t.Year, &t.TrackNo, &t.Duration,
@@ -149,10 +163,16 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
                 &t.CreatedAt, &filePath, &fileName,
                 &t.UploadedBy.ID, &t.UploadedBy.Username, &uploaderAvatar,
                 &altPath, &t.CompatibleMime, &t.CompatibleSize,
+                &t.UpdatedAt, &loudness, &hasWaveform,
         )
         if err != nil {
                 return nil, "", "", err
         }
+        if loudness.Valid {
+                v := loudness.Float64
+                t.Loudness = &v
+        }
+        t.HasWaveform = hasWaveform == 1
         t.HasCover = hasCover == 1
         t.IsFavorite = isFavorite == 1
         t.UploadedBy.HasAvatar = uploaderAvatar == 1
@@ -208,6 +228,27 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
         }
         query += " ORDER BY " + order
 
+        // Optional paging. Without ?limit the whole library comes back, as it
+        // always has; with it, X-Total-Count says how many match in all so a
+        // client can page without a second request.
+        if limit, offset, ok := pageParams(r); ok {
+                var total int
+                countQuery := `SELECT COUNT(1) FROM tracks t WHERE 1 = 1`
+                countArgs := []any{}
+                if q != "" {
+                        like := "%" + likeEscape(q) + "%"
+                        countQuery += ` AND (t.title LIKE ? ESCAPE '\' OR t.artist LIKE ? ESCAPE '\' OR t.album LIKE ? ESCAPE '\')`
+                        countArgs = append(countArgs, like, like, like)
+                }
+                if err := s.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+                        s.internalErr(w, "count tracks", err)
+                        return
+                }
+                w.Header().Set("X-Total-Count", strconv.Itoa(total))
+                query += " LIMIT ? OFFSET ?"
+                args = append(args, limit, offset)
+        }
+
         rows, err := s.db.Query(query, args...)
         if err != nil {
                 s.internalErr(w, "list tracks", err)
@@ -231,6 +272,27 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
         writeJSON(w, http.StatusOK, tracks)
 }
 
+// pageParams reads ?limit and ?offset. ok is false when no limit was given,
+// meaning "everything". The limit is capped so a client can't ask for a
+// million rows in one go by accident.
+func pageParams(r *http.Request) (limit, offset int, ok bool) {
+        raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+        if raw == "" {
+                return 0, 0, false
+        }
+        limit, err := strconv.Atoi(raw)
+        if err != nil || limit <= 0 {
+                return 0, 0, false
+        }
+        if limit > 1000 {
+                limit = 1000
+        }
+        if o, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("offset"))); err == nil && o > 0 {
+                offset = o
+        }
+        return limit, offset, true
+}
+
 func likeEscape(s string) string {
         s = strings.ReplaceAll(s, `\`, `\\`)
         s = strings.ReplaceAll(s, `%`, `\%`)
@@ -243,6 +305,22 @@ func likeEscape(s string) string {
 func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+
+        // Per-user storage cap, checked up front against what's already stored
+        // so a full account is refused before 250 MB have been written to disk;
+        // the exact check happens once the file size is known.
+        if quota := userQuotaBytes(); quota > 0 {
+                used, err := s.bytesUsedBy(u.ID)
+                if err != nil {
+                        s.internalErr(w, "check quota", err)
+                        return
+                }
+                if used >= quota {
+                        writeErr(w, http.StatusInsufficientStorage,
+                                fmt.Sprintf("storage limit reached (%s of %s used)", humanBytes(used), humanBytes(quota)))
+                        return
+                }
+        }
 
         mr, err := r.MultipartReader()
         if err != nil {
@@ -325,6 +403,15 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
         }
 
         absPath := filepath.Join(s.dataDir, savedPath)
+        if quota := userQuotaBytes(); quota > 0 {
+                used, _ := s.bytesUsedBy(u.ID)
+                if fi, err := os.Stat(absPath); err == nil && used+fi.Size() > quota {
+                        os.Remove(absPath)
+                        writeErr(w, http.StatusInsufficientStorage,
+                                fmt.Sprintf("this file would exceed your storage limit (%s of %s used)", humanBytes(used), humanBytes(quota)))
+                        return
+                }
+        }
         meta := readMetadata(absPath)
         candidates, appliedID, lookup := s.enrichMissingMetadata(&meta, fileName)
 
@@ -364,11 +451,11 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
         res, err := s.db.Exec(`INSERT INTO tracks
                 (id, user_id, title, artist, album, genre, year, track_no, duration,
                  file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
-                 alt_path, alt_mime, alt_size)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)`,
+                 alt_path, alt_mime, alt_size, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)`,
                 id, u.ID, title, artist, album, meta.genre, meta.year, meta.trackNo, duration,
                 fileName, savedPath, mimeType, size, hasCover, createdAt,
-                "", "", 0)
+                "", "", 0, createdAt)
         if err != nil {
                 os.Remove(absPath)
                 os.Remove(filepath.Join(s.covDir, id+".img"))
@@ -391,8 +478,50 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
         // file takes minutes, and holding the upload open that long trips the
         // client's idle timeout — the upload appears to fail even though the
         // track was stored fine. The compatible copy shows up on the next
-        // refresh instead.
+        // refresh instead. Loudness/waveform analysis queues behind it.
         s.startCompatibleCopy(id, savedPath)
+        s.queueAnalysis(id)
+}
+
+// userQuotaBytes resolves MUSIC_MAX_BYTES_PER_USER (accepts plain bytes or a
+// suffix: 500M, 20G). 0 means unlimited, which is the default.
+func userQuotaBytes() int64 {
+        raw := strings.ToUpper(strings.TrimSpace(config.Value("MUSIC_MAX_BYTES_PER_USER")))
+        if raw == "" {
+                return 0
+        }
+        mult := int64(1)
+        switch {
+        case strings.HasSuffix(raw, "G"):
+                mult, raw = 1<<30, strings.TrimSuffix(raw, "G")
+        case strings.HasSuffix(raw, "M"):
+                mult, raw = 1<<20, strings.TrimSuffix(raw, "M")
+        case strings.HasSuffix(raw, "K"):
+                mult, raw = 1<<10, strings.TrimSuffix(raw, "K")
+        }
+        n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+        if err != nil || n <= 0 {
+                return 0
+        }
+        return n * mult
+}
+
+// bytesUsedBy sums the originals and compatible copies a user has uploaded.
+func (s *Server) bytesUsedBy(userID string) (int64, error) {
+        var used int64
+        err := s.db.QueryRow(`SELECT COALESCE(SUM(file_size + COALESCE(alt_size, 0)), 0) FROM tracks WHERE user_id = ?`, userID).Scan(&used)
+        return used, err
+}
+
+func humanBytes(n int64) string {
+        switch {
+        case n >= 1<<30:
+                return fmt.Sprintf("%.1f GB", float64(n)/float64(1<<30))
+        case n >= 1<<20:
+                return fmt.Sprintf("%.0f MB", float64(n)/float64(1<<20))
+        default:
+                return fmt.Sprintf("%d KB", n/1024)
+        }
 }
 
 // transcodeSlots caps how many conversions run at once. ffmpeg is CPU-hungry
@@ -414,8 +543,8 @@ func (s *Server) startCompatibleCopy(trackID, originalRel string) {
                         return
                 }
                 res, err := s.db.Exec(
-                        `UPDATE tracks SET alt_path = ?, alt_mime = ?, alt_size = ? WHERE id = ?`,
-                        alt.relPath, alt.mime, alt.size, trackID)
+                        `UPDATE tracks SET alt_path = ?, alt_mime = ?, alt_size = ?, updated_at = ? WHERE id = ?`,
+                        alt.relPath, alt.mime, alt.size, nowRFC3339(), trackID)
                 if err != nil {
                         logErr("record compatible copy", err)
                         return
@@ -495,8 +624,9 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
                 return
         }
 
-        // Everyone can see every track, but only the uploader may edit it —
-        // so "missing" and "not yours" are genuinely different answers now.
+        // Everyone can see every track, but only the uploader (or an admin)
+        // may edit it — so "missing" and "not yours" are genuinely different
+        // answers now.
         var ownerID string
         switch err := s.db.QueryRow(`SELECT user_id FROM tracks WHERE id = ?`, id).Scan(&ownerID); {
         case errors.Is(err, sql.ErrNoRows):
@@ -505,13 +635,15 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
         case err != nil:
                 s.internalErr(w, "check track", err)
                 return
-        case ownerID != u.ID:
+        case ownerID != u.ID && !u.IsAdmin():
                 writeErr(w, http.StatusForbidden, "only the person who uploaded this track can edit it")
                 return
         }
 
-        query := `UPDATE tracks SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND user_id = ?`
-        args = append(args, id, u.ID)
+        sets = append(sets, "updated_at = ?")
+        args = append(args, nowRFC3339())
+        query := `UPDATE tracks SET ` + strings.Join(sets, ", ") + ` WHERE id = ?`
+        args = append(args, id)
         if _, err := s.db.Exec(query, args...); err != nil {
                 s.internalErr(w, "update track", err)
                 return
@@ -527,31 +659,112 @@ func (s *Server) handleDeleteTrack(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         id := r.PathValue("id")
 
-        t, filePath, _, ok := s.getTrack(w, r, u.ID, id)
+        t, _, _, ok := s.getTrack(w, r, u.ID, id)
         if !ok {
                 return
         }
-        if t.UploadedBy.ID != u.ID {
+        if t.UploadedBy.ID != u.ID && !u.IsAdmin() {
                 writeErr(w, http.StatusForbidden, "only the person who uploaded this track can delete it")
                 return
         }
-
-        // Read the alternate path before the row goes: afterwards there is
-        // nothing left to look it up from and the file would be orphaned.
-        altPath := s.altPathFor(id)
-
-        if _, err := s.db.Exec(`DELETE FROM tracks WHERE id = ? AND user_id = ?`, id, u.ID); err != nil {
+        if err := s.removeTrack(id); err != nil {
                 s.internalErr(w, "delete track", err)
                 return
+        }
+        writeNoContent(w)
+}
+
+// removeTrack deletes a track row and every file behind it, leaving a
+// tombstone so syncing clients learn it's gone. Authorisation is the
+// caller's job.
+func (s *Server) removeTrack(id string) error {
+        // Read the paths before the row goes: afterwards there is nothing
+        // left to look them up from and the files would be orphaned.
+        var filePath, altPath string
+        var hasCover int
+        err := s.db.QueryRow(`SELECT file_path, COALESCE(alt_path, ''), has_cover FROM tracks WHERE id = ?`, id).
+                Scan(&filePath, &altPath, &hasCover)
+        if errors.Is(err, sql.ErrNoRows) {
+                return nil
+        } else if err != nil {
+                return err
+        }
+        if _, err := s.db.Exec(`DELETE FROM tracks WHERE id = ?`, id); err != nil {
+                return err
+        }
+        if _, err := s.db.Exec(`INSERT OR REPLACE INTO deleted_tracks (id, deleted_at) VALUES (?, ?)`, id, nowRFC3339()); err != nil {
+                logErr("tombstone", err)
         }
         os.Remove(filepath.Join(s.dataDir, filePath))
         if altPath != "" {
                 os.Remove(filepath.Join(s.dataDir, altPath))
         }
-        if t.HasCover {
+        if hasCover == 1 {
                 os.Remove(filepath.Join(s.covDir, id+".img"))
         }
-        writeNoContent(w)
+        return nil
+}
+
+// ---- delta sync ----
+
+// TrackChanges is what GET /api/tracks/changes?since=<RFC3339> returns: every
+// track created or modified after the cut-off, the ids of tracks deleted
+// since, and the server time to pass back as the next "since".
+type TrackChanges struct {
+        Tracks  []*Track `json:"tracks"`
+        Deleted []string `json:"deleted"`
+        Now     string   `json:"now"`
+}
+
+func (s *Server) handleTrackChanges(w http.ResponseWriter, r *http.Request) {
+        u := userFrom(r)
+        since := strings.TrimSpace(r.URL.Query().Get("since"))
+        if since != "" {
+                if _, err := time.Parse(time.RFC3339, since); err != nil {
+                        writeErr(w, http.StatusBadRequest, "since must be an RFC 3339 timestamp")
+                        return
+                }
+        }
+        // Taken before the queries so anything written during them is
+        // reported again next time rather than lost in the gap.
+        now := nowRFC3339()
+
+        rows, err := s.db.Query(trackSelect+` WHERE t.updated_at > ? ORDER BY t.updated_at ASC`,
+                append(trackSelectArgs(u.ID), since)...)
+        if err != nil {
+                s.internalErr(w, "list changes", err)
+                return
+        }
+        defer rows.Close()
+        changes := TrackChanges{Tracks: []*Track{}, Deleted: []string{}, Now: now}
+        for rows.Next() {
+                t, _, _, err := scanTrack(rows.Scan)
+                if err != nil {
+                        s.internalErr(w, "scan change", err)
+                        return
+                }
+                changes.Tracks = append(changes.Tracks, t)
+        }
+        if err := rows.Err(); err != nil {
+                s.internalErr(w, "iterate changes", err)
+                return
+        }
+
+        if since != "" {
+                del, err := s.db.Query(`SELECT id FROM deleted_tracks WHERE deleted_at > ?`, since)
+                if err != nil {
+                        s.internalErr(w, "list deleted", err)
+                        return
+                }
+                defer del.Close()
+                for del.Next() {
+                        var id string
+                        if err := del.Scan(&id); err == nil {
+                                changes.Deleted = append(changes.Deleted, id)
+                        }
+                }
+        }
+        writeJSON(w, http.StatusOK, changes)
 }
 
 // ---- streaming ----
@@ -693,6 +906,7 @@ func (s *Server) handleTrackPlay(w http.ResponseWriter, r *http.Request) {
                 s.internalErr(w, "count play", err)
                 return
         }
+        s.recordPlay(u.ID, id)
         writeNoContent(w)
 }
 

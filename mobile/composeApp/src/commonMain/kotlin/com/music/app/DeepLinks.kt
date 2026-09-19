@@ -22,6 +22,11 @@ object DeepLinks {
     var pendingPlaylistId by mutableStateOf<String?>(null)
         private set
 
+    /** Records an incoming link; [App] opens it once there's a session. */
+    fun open(playlistId: String) {
+        pendingPlaylistId = playlistId
+    }
+
     /** Takes the pending playlist id, clearing it so it's opened only once. */
     fun consume(): String? {
         val id = pendingPlaylistId

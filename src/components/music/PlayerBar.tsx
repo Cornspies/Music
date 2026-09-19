@@ -12,6 +12,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  SlidersHorizontal,
   Volume1,
   Volume2,
   VolumeX,
@@ -24,6 +25,7 @@ import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { AddToPlaylistButton } from "@/components/music/AddToPlaylistButton"
 import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
+import { WaveformSeek } from "@/components/music/WaveformSeek"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 
@@ -68,6 +70,8 @@ export function PlayerBar() {
   const shuffle = usePlayerStore((s) => s.shuffle)
   const repeat = usePlayerStore((s) => s.repeat)
   const queueLength = usePlayerStore((s) => s.queue.length)
+  const crossfade = usePlayerStore((s) => s.crossfadeSeconds)
+  const normalize = usePlayerStore((s) => s.normalizeVolume)
 
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
 
@@ -222,19 +226,40 @@ export function PlayerBar() {
             <span className="w-10 text-right text-[11px] tabular-nums text-zinc-500">
               {formatDuration(displayPosition)}
             </span>
-            <Slider
-              aria-label="Seek"
-              disabled={!hasTrack}
-              value={[Math.min(displayPosition, effectiveDuration || 1)]}
-              max={effectiveDuration || 1}
-              step={1}
-              onValueChange={([v]) => setSeekPreview(v)}
-              onValueCommit={([v]) => {
-                usePlayerStore.getState().seek(v)
-                setSeekPreview(null)
-              }}
-              className={cn(SEEK_SLIDER_CLASS, "flex-1")}
-            />
+            {currentTrack ? (
+              <WaveformSeek
+                track={currentTrack}
+                position={displayPosition}
+                duration={effectiveDuration}
+                onPreview={setSeekPreview}
+                onSeek={(v) => usePlayerStore.getState().seek(v)}
+                height={26}
+                className="flex-1"
+                fallback={
+                  <Slider
+                    aria-label="Seek"
+                    value={[Math.min(displayPosition, effectiveDuration || 1)]}
+                    max={effectiveDuration || 1}
+                    step={1}
+                    onValueChange={([v]) => setSeekPreview(v)}
+                    onValueCommit={([v]) => {
+                      usePlayerStore.getState().seek(v)
+                      setSeekPreview(null)
+                    }}
+                    className={cn(SEEK_SLIDER_CLASS, "flex-1")}
+                  />
+                }
+              />
+            ) : (
+              <Slider
+                aria-label="Seek"
+                disabled
+                value={[0]}
+                max={1}
+                step={1}
+                className={cn(SEEK_SLIDER_CLASS, "flex-1")}
+              />
+            )}
             <span className="w-10 text-[11px] tabular-nums text-zinc-500">
               {formatDuration(effectiveDuration)}
             </span>
@@ -291,6 +316,13 @@ export function PlayerBar() {
         {/* right — add to playlist + sleep timer + queue + volume (desktop) */}
         <div className="hidden items-center justify-end gap-0.5 md:flex md:w-72 lg:w-80">
           {currentTrack ? <AddToPlaylistButton track={currentTrack} /> : null}
+          <ControlButton
+            label={`Playback settings${crossfade > 0 ? ` · crossfade ${crossfade}s` : ""}${normalize ? " · normalized" : ""}`}
+            active={crossfade > 0 || normalize}
+            onClick={() => useUIStore.getState().setPlaybackSettingsOpen(true)}
+          >
+            <SlidersHorizontal className="size-4" />
+          </ControlButton>
           <SleepTimerMenu />
           <ControlButton
             label="Open queue"

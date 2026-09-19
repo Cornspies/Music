@@ -53,6 +53,12 @@ export function routeToPath(view: View, arg: string | null): string {
       const segments = encodeAlbumArg(arg)
       return segments.length === 2 ? `/albums/${segments[0]}/${segments[1]}` : "/albums"
     }
+    case "offline":
+      return "/offline"
+    case "history":
+      return "/history"
+    case "admin":
+      return "/admin"
     default:
       return "/"
   }
@@ -79,6 +85,12 @@ export function pathToRoute(pathname: string): Route {
         return { view: "album", arg: JSON.stringify({ name: parts[2], artist: parts[1] }) }
       }
       return { view: "albums", arg: null }
+    case "offline":
+      return { view: "offline", arg: null }
+    case "history":
+      return { view: "history", arg: null }
+    case "admin":
+      return { view: "admin", arg: null }
     default:
       // Unknown path — show home rather than a dead end.
       return { view: "home", arg: null }

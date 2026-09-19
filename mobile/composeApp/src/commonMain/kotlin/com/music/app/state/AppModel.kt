@@ -21,6 +21,7 @@ import com.music.app.api.User
 import com.music.app.api.friendlyError
 import com.music.app.offline.DownloadManager
 import com.music.app.offline.OfflineStore
+import com.music.app.player.NowPlayingInfo
 import com.music.app.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,12 +30,49 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Repeat modes for the player (off / repeat queue / repeat current track). */
 enum class RepeatMode { OFF, ALL, ONE }
 
 /** How often the playback position is written to the server while playing. */
 private const val PLAYBACK_SAVE_INTERVAL_MS = 10_000L
+
+/** How often to check whether the media token wants renewing. */
+private const val MEDIA_TOKEN_CHECK_INTERVAL_MS = 5L * 60_000L
+
+/** Thrown by login/register when the server URL is plain http off the LAN. */
+class InsecureServerException(message: String) : Exception(message)
+
+/**
+ * Whether a plain-http server address is somewhere the session token may
+ * safely travel unencrypted: this machine, an emulator's host, or a private
+ * (RFC 1918 / link-local / ULA) address on the same network.
+ */
+fun isPrivateHost(host: String): Boolean {
+    val h = host.trim().trimStart('[').trimEnd(']').lowercase()
+    if (h == "localhost" || h.endsWith(".local") || h == "::1") return true
+    if (h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80:")) return true
+    val parts = h.split('.')
+    if (parts.size != 4 || parts.any { it.toIntOrNull() == null }) return false
+    val a = parts[0].toInt()
+    val b = parts[1].toInt()
+    return a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && b in 16..31) || (a == 169 && b == 254)
+}
+
+/**
+ * The warning to show before signing in to [baseUrl], or null when the
+ * address is fine: https anywhere, or http to a private address.
+ */
+fun insecureServerWarning(baseUrl: String): String? {
+    val url = baseUrl.trim()
+    if (!url.startsWith("http://", ignoreCase = true)) return null
+    val host = url.removePrefix("http://").removePrefix("HTTP://").substringBefore('/').substringBefore(':')
+    if (host.isBlank() || isPrivateHost(host)) return null
+    return "This server address uses plain http:// outside your local network, so your password and " +
+        "session would travel unencrypted. Use https:// (put the server behind Caddy or another TLS proxy), " +
+        "or confirm below that you understand the risk."
+}
 
 /**
  * The single observable app state holder (ViewModel-lite).
@@ -141,6 +179,21 @@ class AppModel(
         backStack.add(Screen.Home)
         // Player end-of-track → advance the queue on the main thread.
         player.onEnded = { scope.launch { onTrackEnded() } }
+        // Lock screen / headset / notification skips: the queue is ours.
+        player.onNext = { scope.launch { next() } }
+        player.onPrevious = { scope.launch { previous() } }
+
+        // Media URLs carry a short-lived token; keep one in hand while signed
+        // in so a track that starts near the end of a token's life can still
+        // seek hours later.
+        scope.launch {
+            while (true) {
+                if (user != null && !offlineMode && api.mediaTokenNeedsRefresh) {
+                    runCatching { api.refreshMediaToken() }
+                }
+                delay(MEDIA_TOKEN_CHECK_INTERVAL_MS.milliseconds)
+            }
+        }
 
         // Continue listening: save the position every few seconds while
         // something plays, and the moment playback pauses (which also covers
@@ -148,7 +201,7 @@ class AppModel(
         // phone call or the like).
         scope.launch {
             while (true) {
-                delay(PLAYBACK_SAVE_INTERVAL_MS)
+                delay(PLAYBACK_SAVE_INTERVAL_MS.milliseconds)
                 if (player.isPlaying.value) savePlayback()
             }
         }
@@ -189,8 +242,13 @@ class AppModel(
 
     // ------------------------------------------------------------ auth actions
 
-    /** @throws Exception on network / credential problems (screens handle the message). */
-    suspend fun login(baseUrl: String, username: String, password: String) {
+    /**
+     * @throws InsecureServerException when [baseUrl] is plain http off the
+     *   LAN and [acceptInsecure] is false; the screen shows the warning.
+     * @throws Exception on network / credential problems (screens handle the message).
+     */
+    suspend fun login(baseUrl: String, username: String, password: String, acceptInsecure: Boolean = false) {
+        guardInsecure(baseUrl, acceptInsecure)
         api.baseUrl = baseUrl
         val response = api.login(username.trim(), password)
         store.saveToken(response.token)
@@ -198,6 +256,11 @@ class AppModel(
         offlineMode = false
         downloads.cacheUser(response.user)
         onAuthenticated()
+    }
+
+    private fun guardInsecure(baseUrl: String, accepted: Boolean) {
+        val warning = insecureServerWarning(baseUrl) ?: return
+        if (!accepted) throw InsecureServerException(warning)
     }
 
     /**
@@ -215,7 +278,14 @@ class AppModel(
         }
     }
 
-    suspend fun register(baseUrl: String, username: String, password: String, inviteCode: String? = null) {
+    suspend fun register(
+        baseUrl: String,
+        username: String,
+        password: String,
+        inviteCode: String? = null,
+        acceptInsecure: Boolean = false,
+    ) {
+        guardInsecure(baseUrl, acceptInsecure)
         api.baseUrl = baseUrl
         val response = api.register(username.trim(), password, inviteCode?.takeIf { it.isNotBlank() })
         store.saveToken(response.token)
@@ -251,7 +321,19 @@ class AppModel(
         loadLibrary()
     }
 
-    fun logout() {        store.saveToken(null)
+    /**
+     * Signs out on every device by revoking all of this account's sessions on
+     * the server, then locally. @throws Exception when the server can't be
+     * reached — nothing is forgotten locally in that case.
+     */
+    suspend fun logoutEverywhere() {
+        api.logoutEverywhere()
+        logout()
+    }
+
+    fun logout() {
+        store.saveToken(null)
+        api.clearMediaToken()
         // Downloads belong to the signed-in account, so they go with the session —
         // otherwise the next user on this device inherits the previous one's music.
         downloads.clearForLogout()
@@ -276,8 +358,17 @@ class AppModel(
     private fun onAuthenticated() {
         backStack.clear()
         backStack.add(Screen.Home)
-        refreshAll()
-        scope.launch { restorePlayback() }
+        scope.launch {
+            // The media token goes into every cover and stream URL, so fetch
+            // it before the library renders any. Offline, the fallback is the
+            // session token — and downloaded tracks don't need one at all.
+            if (!offlineMode) runCatching { api.refreshMediaToken() }
+            refreshAll()
+            restorePlayback()
+            // Kept-offline playlists follow the server; do it after the
+            // library is up so the first screen isn't waiting on downloads.
+            if (!offlineMode) downloads.syncAll()
+        }
     }
 
     fun refreshAll() {
@@ -659,9 +750,35 @@ class AppModel(
         // The Track overload asks for the compatible copy when this platform
         // cannot decode the original (Ogg on iOS).
         val source = downloads.localPathFor(track.id) ?: api.trackStreamUrl(track)
-        player.load(source, autoplay = autoplay)
+        player.load(
+            source,
+            autoplay = autoplay,
+            info = NowPlayingInfo(
+                title = track.title,
+                artist = track.artist.ifBlank { "Unknown artist" },
+                album = track.album,
+                durationSec = track.duration,
+                artworkUrl = if (track.hasCover && !offlineMode) api.coverUrl(track.id) else null,
+            ),
+        )
         return track
     }
+
+    // ------------------------------------------------------------ waveform
+
+    /** Peaks for the current track's seek bar, or null while loading / unavailable. */
+    var currentWaveform by mutableStateOf<Pair<String, List<Int>>?>(null)
+        private set
+
+    /** Fetches the waveform for [track] if the server has one; cached per id. */
+    fun loadWaveform(track: Track) {
+        if (!track.hasWaveform || currentWaveform?.first == track.id || offlineMode) return
+        scope.launch {
+            val peaks = runCatching { api.waveform(track.id) }.getOrNull() ?: return@launch
+            if (currentTrack?.id == track.id) currentWaveform = track.id to peaks
+        }
+    }
+
 
     fun togglePlayPause() {
         if (player.isPlaying.value) player.pause() else player.play()

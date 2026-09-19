@@ -41,9 +41,9 @@ var needsCompatibleCopy = map[string]bool{
 const (
 	compatibleExt  = ".m4a"
 	compatibleMime = "audio/mp4"
-	// Transcoding is CPU-bound and runs inside the upload request, so it is
-	// bounded: a very long file is better left unconverted than holding the
-	// connection open indefinitely.
+	// Transcoding is CPU-bound and runs in the background after the upload
+	// has been answered (see startCompatibleCopy). It is still bounded so a
+	// pathological file can't pin a transcode slot forever.
 	transcodeTimeout = 10 * time.Minute
 )
 

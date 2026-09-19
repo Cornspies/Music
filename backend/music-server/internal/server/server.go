@@ -92,22 +92,39 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("POST /api/auth/login", s.handleLogin)
         mux.HandleFunc("GET /api/auth/me", s.requireAuth(s.handleMe))
         mux.HandleFunc("POST /api/auth/password", s.requireAuth(s.handleChangePassword))
+        mux.HandleFunc("GET /api/auth/media-token", s.requireAuth(s.handleMediaToken))
+        mux.HandleFunc("POST /api/auth/logout-all", s.requireAuth(s.handleLogoutAll))
 
         // Tracks
         mux.HandleFunc("GET /api/tracks", s.requireAuth(s.handleListTracks))
         mux.HandleFunc("POST /api/tracks", s.requireAuth(s.handleUploadTrack))
         mux.HandleFunc("PATCH /api/tracks/{id}", s.requireAuth(s.handleUpdateTrack))
         mux.HandleFunc("DELETE /api/tracks/{id}", s.requireAuth(s.handleDeleteTrack))
-        mux.HandleFunc("GET /api/tracks/{id}/stream", s.requireAuth(s.handleStreamTrack))
-        mux.HandleFunc("GET /api/tracks/{id}/download", s.requireAuth(s.handleDownloadTrack))
-        mux.HandleFunc("GET /api/tracks/{id}/cover", s.requireAuth(s.handleTrackCover))
+        // Media routes: fetched by <audio>/<img> and native players that can't
+        // send headers, so these also accept the short-lived media token and
+        // the ?token= query parameter. Nothing else does.
+        mux.HandleFunc("GET /api/tracks/{id}/stream", s.requireMediaAuth(s.handleStreamTrack))
+        mux.HandleFunc("GET /api/tracks/{id}/download", s.requireMediaAuth(s.handleDownloadTrack))
+        mux.HandleFunc("GET /api/tracks/{id}/cover", s.requireMediaAuth(s.handleTrackCover))
+        mux.HandleFunc("GET /api/tracks/{id}/waveform", s.requireAuth(s.handleTrackWaveform))
+        mux.HandleFunc("GET /api/tracks/changes", s.requireAuth(s.handleTrackChanges))
         mux.HandleFunc("POST /api/tracks/{id}/play", s.requireAuth(s.handleTrackPlay))
         mux.HandleFunc("POST /api/auth/avatar", s.requireAuth(s.handleUploadAvatar))
         mux.HandleFunc("DELETE /api/auth/avatar", s.requireAuth(s.handleDeleteAvatar))
-        mux.HandleFunc("GET /api/users/{id}/avatar", s.requireAuth(s.handleUserAvatar))
+        mux.HandleFunc("GET /api/users/{id}/avatar", s.requireMediaAuth(s.handleUserAvatar))
         mux.HandleFunc("GET /api/tracks/{id}/metadata/candidates", s.requireAuth(s.handleTrackMetadataCandidates))
-        mux.HandleFunc("GET /api/tracks/{id}/metadata/candidates/{candidateId}/artwork", s.requireAuth(s.handleCandidateArtwork))
+        mux.HandleFunc("GET /api/tracks/{id}/metadata/candidates/{candidateId}/artwork", s.requireMediaAuth(s.handleCandidateArtwork))
         mux.HandleFunc("POST /api/tracks/{id}/metadata/apply", s.requireAuth(s.handleApplyTrackMetadata))
+
+        // Listening history
+        mux.HandleFunc("GET /api/history", s.requireAuth(s.handleHistory))
+
+        // Admin
+        mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminListUsers))
+        mux.HandleFunc("DELETE /api/admin/users/{id}", s.requireAdmin(s.handleAdminDeleteUser))
+        mux.HandleFunc("PATCH /api/admin/users/{id}", s.requireAdmin(s.handleAdminUpdateUser))
+        mux.HandleFunc("GET /api/admin/settings", s.requireAdmin(s.handleAdminGetSettings))
+        mux.HandleFunc("PATCH /api/admin/settings", s.requireAdmin(s.handleAdminUpdateSettings))
 
         // Aggregates
         mux.HandleFunc("GET /api/albums", s.requireAuth(s.handleListAlbums))
@@ -170,7 +187,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
                         w.Header().Set("Vary", "Origin")
                         w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
                         w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Range, If-None-Match")
-                        w.Header().Set("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length, Content-Type, ETag, "+refreshedTokenHeader)
+                        w.Header().Set("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length, Content-Type, ETag, X-Total-Count, "+refreshedTokenHeader)
                 }
                 if r.Method == http.MethodOptions {
                         w.WriteHeader(http.StatusNoContent)
@@ -229,11 +246,23 @@ func writeNoContent(w http.ResponseWriter) {
 type User struct {
         ID       string
         Username string
+        // Role is "user" or "admin", read from the database (not the token)
+        // so a promotion takes effect on the next request.
+        Role string
         // ExpiresAt is the "exp" claim of the token this request was
         // authenticated with. requireAuth uses it to decide when to hand the
         // client a freshly minted token (see sliding sessions in auth.go).
         ExpiresAt time.Time
+        // OrigIssuedAt is when the session was originally signed in, carried
+        // across refreshes so the absolute session ceiling holds.
+        OrigIssuedAt time.Time
+        // IsMediaToken is true when the request authenticated with a
+        // short-lived media token rather than a session.
+        IsMediaToken bool
 }
+
+// IsAdmin reports whether the user may manage the server.
+func (u *User) IsAdmin() bool { return u != nil && u.Role == roleAdmin }
 
 func logErr(ctx string, err error) {
         log.Printf("ERROR %s: %v", ctx, err)

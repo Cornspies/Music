@@ -1,9 +1,12 @@
 "use client"
 
+import { toast } from "sonner"
 import {
   AudioLines,
+  CloudDownload,
   Disc3,
   Heart,
+  History,
   Home,
   Keyboard,
   KeyRound,
@@ -14,16 +17,26 @@ import {
   Pin,
   Plus,
   Search,
+  ShieldCheck,
   SquareLibrary,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { logoutEverywhere } from "@/lib/api"
 import type { View } from "@/stores/ui"
 import { useUIStore } from "@/stores/ui"
 import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
+import { useOfflineStore } from "@/stores/offline"
 import { AvatarPicker } from "@/components/music/AvatarPicker"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface NavItem {
   view: View
@@ -39,6 +52,8 @@ const NAV_ITEMS: NavItem[] = [
   { view: "artists", label: "Artists", icon: Mic2 },
   { view: "playlists", label: "Playlists", icon: ListMusic },
   { view: "favorites", label: "Favorites", icon: Heart },
+  { view: "history", label: "History", icon: History },
+  { view: "offline", label: "Downloads", icon: CloudDownload },
 ]
 
 /** Sidebar content — shared by the desktop sidebar and the mobile sheet. */
@@ -50,6 +65,18 @@ export function SidebarContent() {
   const playlists = useLibraryStore((s) => s.playlists)
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
+  const downloadCount = useOfflineStore((s) => s.tracks.length)
+
+  const signOutEverywhere = async () => {
+    try {
+      await logoutEverywhere()
+      toast.success("Signed out on every device")
+    } catch (e) {
+      toast.error((e as Error).message)
+      return
+    }
+    logout()
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -82,9 +109,30 @@ export function SidebarContent() {
             >
               <item.icon className="size-4.5 shrink-0" aria-hidden="true" />
               {item.label}
+              {item.view === "offline" && downloadCount > 0 ? (
+                <span className="ml-auto rounded-full bg-zinc-800 px-1.5 text-[10px] tabular-nums text-zinc-400">
+                  {downloadCount}
+                </span>
+              ) : null}
             </button>
           )
         })}
+        {user?.role === "admin" ? (
+          <button
+            type="button"
+            onClick={() => navigate("admin")}
+            aria-current={view === "admin" ? "page" : undefined}
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              view === "admin"
+                ? "bg-zinc-800/80 text-emerald-400"
+                : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
+            )}
+          >
+            <ShieldCheck className="size-4.5 shrink-0" aria-hidden="true" />
+            Admin
+          </button>
+        ) : null}
       </nav>
 
       {/* playlists */}
@@ -182,16 +230,28 @@ export function SidebarContent() {
               {user?.username ?? "listener"}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Log out"
-            title="Log out"
-            onClick={() => logout()}
-            className="size-8 text-zinc-500 hover:text-red-400"
-          >
-            <LogOut className="size-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Sign out"
+                title="Sign out"
+                className="size-8 text-zinc-500 hover:text-red-400"
+              >
+                <LogOut className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="border-zinc-800 bg-zinc-950 text-zinc-200">
+              <DropdownMenuItem onClick={() => logout()}>
+                <LogOut className="size-4" /> Sign out here
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={signOutEverywhere} className="text-red-400 focus:text-red-300">
+                <ShieldCheck className="size-4" /> Sign out everywhere
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <div className="mt-2 flex gap-2">
           <button

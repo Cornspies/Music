@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["REPLACE_WITH_TEAMID.com.music.app"],
+        "components": [
+          { "/": "/playlists/*", "comment": "Shared playlist links open in the app" }
+        ]
+      }
+    ]
+  }
+}

@@ -21,12 +21,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,7 @@ import com.music.app.offline.DownloadQuality
 import com.music.app.ui.formatBytes
 import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.Emerald
+import kotlinx.coroutines.launch
 
 /**
  * Tracks saved to this device. Everything here plays with no connection, so
@@ -107,9 +110,10 @@ fun DownloadsScreen() {
             )
         }
 
-        // Above the branch on purpose: this setting governs downloads you are
-        // about to make, so it has to be reachable before there are any.
+        // Above the branch on purpose: these settings govern downloads you are
+        // about to make, so they have to be reachable before there are any.
         DownloadQualitySetting()
+        SyncSettings()
 
         if (tracks.isEmpty()) {
             EmptyState(
@@ -161,6 +165,52 @@ fun DownloadsScreen() {
     }
 }
 
+
+/**
+ * Wi-Fi-only downloads and the "keep offline" sync status. Playlists marked
+ * "keep offline" on their own screen are re-synced on every launch; this is
+ * where that can be triggered by hand and where the last run is reported.
+ */
+@Composable
+private fun SyncSettings() {
+    val model = LocalAppModel.current
+    val downloads = model.downloads
+    val scope = rememberCoroutineScope()
+
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Download on Wi-Fi only",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    if (downloads.waitingForWifi) "On mobile data now — downloads are paused." else "Playlists kept offline still sync their track list on any connection.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = downloads.wifiOnly, onCheckedChange = { downloads.updateWifiOnly(it) })
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                when {
+                    downloads.syncing -> "Syncing kept playlists…"
+                    downloads.lastSyncedAt != null -> "Last synced ${downloads.lastSyncedAt}"
+                    else -> "Mark a playlist “Keep offline” to sync it here automatically."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                enabled = !downloads.syncing && !model.offlineMode,
+                onClick = { scope.launch { downloads.syncAll() } },
+            ) { Text("Sync now") }
+        }
+    }
+}
 
 /**
  * Which version to keep for the handful of tracks stored twice.

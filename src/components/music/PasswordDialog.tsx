@@ -4,6 +4,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { KeyRound, Loader2 } from "lucide-react"
 import { currentToken, gw } from "@/lib/api"
+import { useAuthStore } from "@/stores/auth"
 import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
 import {
@@ -70,8 +71,16 @@ export function PasswordDialog() {
         setError(message)
         return
       }
+      // Every other session was just revoked; the server hands this one a
+      // replacement token so it stays signed in.
+      try {
+        const data = (await res.json()) as { token?: string }
+        if (data.token) useAuthStore.setState({ token: data.token })
+      } catch {
+        // an older server answers 204; the existing token is still valid then
+      }
       toast.success("Password changed", {
-        description: "Your session stays signed in with the new password.",
+        description: "Other devices have been signed out; this one stays signed in.",
       })
       setOpen(false)
       reset()

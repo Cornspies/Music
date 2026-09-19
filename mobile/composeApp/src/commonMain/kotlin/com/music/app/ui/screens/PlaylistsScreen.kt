@@ -90,7 +90,7 @@ fun PlaylistsScreen() {
             model.playlistsLoading && playlists == null -> LoadingBox()
             model.playlistsError != null && playlists == null ->
                 ErrorState(model.playlistsError ?: "Could not load playlists") { model.loadPlaylists() }
-            playlists == null || playlists.isEmpty() -> EmptyState(
+            playlists.isNullOrEmpty() -> EmptyState(
                 Icons.AutoMirrored.Filled.QueueMusic,
                 "No playlists",
                 subtitle = "Create one to group tracks for any mood or road trip.",

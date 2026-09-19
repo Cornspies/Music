@@ -27,6 +27,12 @@ export interface Track {
   hasCompatible: boolean
   compatibleMimeType: string
   compatibleFileSize: number
+  /** Bumped on every tag/cover/copy change; drives GET /api/tracks/changes. */
+  updatedAt: string
+  /** Integrated loudness in LUFS (EBU R128), null until analysed. */
+  loudness: number | null
+  /** True once GET /api/tracks/{id}/waveform has peaks. */
+  hasWaveform: boolean
 }
 
 /** Small public profile shown next to a track. */
@@ -36,11 +42,21 @@ export interface Uploader {
   hasAvatar: boolean
 }
 
+export type Role = "user" | "admin"
+
 export interface User {
   id: string
   username: string
   createdAt: string
   hasAvatar: boolean
+  /** "admin" can manage users and settings; the first account is one. */
+  role: Role
+}
+
+/** Short-lived, read-only token for media URLs (GET /api/auth/media-token). */
+export interface MediaToken {
+  token: string
+  expiresAt: string
 }
 
 export interface AuthResponse {
@@ -91,6 +107,54 @@ export interface Stats {
   favoriteCount: number
   playlistCount: number
   mostPlayed: Track[]
+  /** Distinct tracks, most recent listen first (from the listening history). */
+  recentlyPlayed: Track[]
+  /** Total seconds of everything this user has played, across devices. */
+  listenedSeconds: number
+  playCount: number
+}
+
+/** One listen, from GET /api/history. */
+export interface PlayEvent {
+  track: Track
+  playedAt: string
+}
+
+export interface HistoryResponse {
+  events: PlayEvent[]
+  listenedSeconds: number
+  playCount: number
+  trackCount: number
+}
+
+/** GET /api/tracks/changes?since= — delta sync. */
+export interface TrackChanges {
+  tracks: Track[]
+  deleted: string[]
+  now: string
+}
+
+/** GET /api/tracks/{id}/waveform */
+export interface Waveform {
+  /** 200 peaks, each 0-100, left to right. */
+  peaks: number[]
+}
+
+/** A user as the admin screen sees them (GET /api/admin/users). */
+export interface AdminUser extends User {
+  trackCount: number
+  bytesUsed: number
+  lastPlayedAt: string | null
+}
+
+/** Runtime settings an admin can change (GET/PATCH /api/admin/settings). */
+export interface AdminSettings {
+  registrationOpen: boolean
+  /** True when MUSIC_ALLOW_REGISTRATION pins it and the toggle is read-only. */
+  registrationPinned: boolean
+  inviteRequired: boolean
+  transcodingAvailable: boolean
+  userQuotaBytes: number
 }
 
 export interface SearchResults {

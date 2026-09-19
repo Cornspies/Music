@@ -259,6 +259,19 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
                 return
         }
 
+        // Listening time comes from the history, so it reflects every device.
+        var listenedSeconds float64
+        var listenCount int
+        if err := s.db.QueryRow(`
+                SELECT COUNT(1), COALESCE(SUM(t.duration), 0)
+                FROM play_events pe JOIN tracks t ON t.id = pe.track_id
+                WHERE pe.user_id = ?`, u.ID).Scan(&listenCount, &listenedSeconds); err != nil {
+                s.internalErr(w, "stats listening", err)
+                return
+        }
+        stats["listenedSeconds"] = listenedSeconds
+        stats["playCount"] = listenCount
+
         stats["trackCount"] = trackCount
         stats["totalDuration"] = totalDuration
         stats["artistCount"] = artistCount
@@ -284,6 +297,27 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
                 mostPlayed = append(mostPlayed, t)
         }
         stats["mostPlayed"] = mostPlayed
+
+        recent, err := s.db.Query(strings.Replace(trackSelect, "\nFROM tracks t", ",\n       pe.played_at\nFROM tracks t", 1)+`
+                JOIN (SELECT track_id, MAX(played_at) AS played_at FROM play_events
+                      WHERE user_id = ? GROUP BY track_id) pe ON pe.track_id = t.id
+                ORDER BY pe.played_at DESC LIMIT 10`, append(trackSelectArgs(u.ID), u.ID)...)
+        if err != nil {
+                s.internalErr(w, "stats recently played", err)
+                return
+        }
+        defer recent.Close()
+        recentlyPlayed := []*Track{}
+        for recent.Next() {
+                var playedAt string
+                t, _, _, err := scanTrackWith(recent.Scan, &playedAt)
+                if err != nil {
+                        s.internalErr(w, "scan recently played", err)
+                        return
+                }
+                recentlyPlayed = append(recentlyPlayed, t)
+        }
+        stats["recentlyPlayed"] = recentlyPlayed
 
         writeJSON(w, http.StatusOK, stats)
 }

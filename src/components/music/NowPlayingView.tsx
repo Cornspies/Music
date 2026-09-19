@@ -24,6 +24,7 @@ import { CoverArt } from "@/components/music/CoverArt"
 import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
+import { WaveformSeek } from "@/components/music/WaveformSeek"
 
 const SEEK_CLASS =
   "[&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15 [&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-range]]:shadow-[0_0_14px_rgba(16,185,129,0.5)] [&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:shadow-lg [&_[data-slot=slider-thumb]]:opacity-0 group/seek:[&_[data-slot=slider-thumb]]:opacity-100 [&_[data-slot=slider-thumb]]:transition-opacity"
@@ -200,17 +201,28 @@ export function NowPlayingView() {
 
             {/* seek */}
             <div className="group/seek w-full max-w-xl">
-              <Slider
-                aria-label="Seek"
-                value={[Math.min(displayPosition, effectiveDuration || 1)]}
-                max={effectiveDuration || 1}
-                step={1}
-                onValueChange={([v]) => setSeekPreview(v)}
-                onValueCommit={([v]) => {
-                  usePlayerStore.getState().seek(v)
-                  setSeekPreview(null)
-                }}
-                className={cn(SEEK_CLASS, "w-full")}
+              <WaveformSeek
+                track={currentTrack}
+                position={displayPosition}
+                duration={effectiveDuration}
+                onPreview={setSeekPreview}
+                onSeek={(v) => usePlayerStore.getState().seek(v)}
+                height={48}
+                className="w-full"
+                fallback={
+                  <Slider
+                    aria-label="Seek"
+                    value={[Math.min(displayPosition, effectiveDuration || 1)]}
+                    max={effectiveDuration || 1}
+                    step={1}
+                    onValueChange={([v]) => setSeekPreview(v)}
+                    onValueCommit={([v]) => {
+                      usePlayerStore.getState().seek(v)
+                      setSeekPreview(null)
+                    }}
+                    className={cn(SEEK_CLASS, "w-full")}
+                  />
+                }
               />
               <div className="mt-1.5 flex justify-between text-[11px] tabular-nums text-zinc-500">
                 <span>{formatDuration(displayPosition)}</span>

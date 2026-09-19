@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
 import com.music.app.api.Track
 import com.music.app.state.RepeatMode
+import com.music.app.ui.components.WaveformBar
 import com.music.app.ui.components.CoverImage
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.formatDuration
@@ -159,6 +161,17 @@ private fun NowPlayingContent(track: Track) {
         Spacer(Modifier.height(8.dp))
 
         // ---- seek ----
+        // The server's waveform when it has one (drawn behind the slider,
+        // which stays the thing you drag), a plain slider otherwise.
+        LaunchedEffect(track.id, track.hasWaveform) { model.loadWaveform(track) }
+        val waveform = model.currentWaveform?.takeIf { it.first == track.id }?.second
+        if (waveform != null) {
+            WaveformBar(
+                peaks = waveform,
+                fraction = if (duration > 0.0) (shownPosition / duration).toFloat().coerceIn(0f, 1f) else 0f,
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+            )
+        }
         Slider(
             value = sliderValue,
             onValueChange = {

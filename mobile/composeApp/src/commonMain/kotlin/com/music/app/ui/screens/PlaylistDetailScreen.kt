@@ -393,7 +393,11 @@ private fun PlaylistDownloadButton(detail: PlaylistDetail) {
             busy -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Emerald)
             downloaded -> Icon(
                 Icons.Filled.DownloadDone,
-                contentDescription = "Downloaded — tap to remove",
+                contentDescription = if (model.downloads.isKeptOffline(detail.id)) {
+                    "Kept offline — tap for options"
+                } else {
+                    "Downloaded — tap for options"
+                },
                 tint = Emerald,
             )
             else -> Icon(
@@ -410,14 +414,34 @@ private fun PlaylistDownloadButton(detail: PlaylistDetail) {
     }
 
     if (confirmRemove) {
+        val kept = model.downloads.isKeptOffline(detail.id)
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
-            title = { Text("Remove downloaded playlist?") },
+            title = { Text("Downloaded playlist") },
+            text = {
+                Column {
+                    Text(
+                        if (kept) {
+                            "This playlist is kept offline: tracks added on any device are downloaded automatically, and removed ones are dropped."
+                        } else {
+                            "Keep it offline to have it follow the server — new tracks download by themselves on the next launch."
+                        },
+                    )
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    model.downloads.removePlaylist(detail.id)
-                    confirmRemove = false
-                }) { Text("Remove") }
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = {
+                        scope.launch {
+                            model.downloads.setKeptOffline(detail.toPlaylist(), detail.tracks, keep = !kept)
+                        }
+                        confirmRemove = false
+                    }) { Text(if (kept) "Stop keeping offline" else "Keep offline") }
+                    TextButton(onClick = {
+                        model.downloads.removePlaylist(detail.id)
+                        confirmRemove = false
+                    }) { Text("Remove download", color = MaterialTheme.colorScheme.error) }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { confirmRemove = false }) { Text("Cancel") }

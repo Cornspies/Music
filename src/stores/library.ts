@@ -7,6 +7,13 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { Playlist, Stats, Track, TrackPatch } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
+import { useMediaTokenStore } from "@/stores/media-token"
+import { useOfflineStore } from "@/stores/offline"
+
+/** True for the error api() throws when the server can't be reached at all. */
+function isNetworkError(e: unknown): boolean {
+  return e instanceof Error && e.message.startsWith("Network error")
+}
 
 export type TrackSort = "created" | "title" | "artist" | "plays" | "recent"
 
@@ -54,13 +61,26 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
 
   fetchAll: async () => {
     set({ loading: true })
-    await Promise.allSettled([
+    // The media token goes into every cover/stream URL, so it has to be in
+    // hand before anything that renders one. Downloads are read in parallel:
+    // they're what the library falls back to when the server is unreachable.
+    await Promise.allSettled([useMediaTokenStore.getState().refresh(), useOfflineStore.getState().init()])
+    const results = await Promise.allSettled([
       get().fetchTracks(),
       get().fetchPlaylists(),
       get().fetchPublicPlaylists(),
       get().fetchFavorites(),
       get().fetchStats(),
     ])
+    const tracksFailed = results[0].status === "rejected" ? results[0].reason : null
+    if (tracksFailed && isNetworkError(tracksFailed)) {
+      // Offline: show what's on this device rather than an empty library.
+      const offline = useOfflineStore.getState()
+      offline.setOffline(true)
+      if (get().tracks.length === 0) set({ tracks: offline.tracks })
+    } else if (!tracksFailed) {
+      useOfflineStore.getState().setOffline(false)
+    }
     set({ loading: false, initialized: true })
   },
 
@@ -253,6 +273,7 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
       favorites: favorites.filter((t) => t.id !== id),
     })
     usePlayerStore.getState().handleTrackDeleted(id)
+    useOfflineStore.getState().remove(id).catch(() => {})
     if (removed) {
       // refresh aggregates (stats, playlists) in the background
       await Promise.allSettled([get().fetchStats(), get().fetchPlaylists()])
@@ -271,6 +292,7 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
         favorites: get().favorites.map((t) => (t.id === id ? updated : t)),
       })
       usePlayerStore.getState().replaceTrack(updated)
+      useOfflineStore.getState().replaceTrack(updated)
       return true
     } catch (e) {
       toast.error((e as Error).message)

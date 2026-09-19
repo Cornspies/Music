@@ -118,6 +118,21 @@ func migrate(db *sql.DB) error {
                 {"tracks.alt_path", `ALTER TABLE tracks ADD COLUMN alt_path TEXT NOT NULL DEFAULT ''`},
                 {"tracks.alt_mime", `ALTER TABLE tracks ADD COLUMN alt_mime TEXT NOT NULL DEFAULT ''`},
                 {"tracks.alt_size", `ALTER TABLE tracks ADD COLUMN alt_size INTEGER NOT NULL DEFAULT 0`},
+                // Session revocation: every token carries the version it was
+                // issued under, and bumping this number (password change,
+                // "sign out everywhere") invalidates all of them at once.
+                {"users.token_version", `ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0`},
+                // 'user' or 'admin'. The first account becomes admin (see below).
+                {"users.role", `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'`},
+                // Bumped on every metadata/cover/transcode change so clients can
+                // ask for "what changed since I last looked".
+                {"tracks.updated_at", `ALTER TABLE tracks ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`},
+                // Loudness analysis (integrated LUFS, EBU R128) for volume
+                // normalisation, and a coarse peaks array for waveform seek
+                // bars. NULL loudness means "not analysed yet".
+                {"tracks.loudness", `ALTER TABLE tracks ADD COLUMN loudness REAL`},
+                {"tracks.waveform_json", `ALTER TABLE tracks ADD COLUMN waveform_json TEXT NOT NULL DEFAULT ''`},
+                {"tracks.analyzed_at", `ALTER TABLE tracks ADD COLUMN analyzed_at TEXT NOT NULL DEFAULT ''`},
         }
         for _, c := range addColumns {
                 if _, err := db.Exec(c.stmt); err != nil {
@@ -125,6 +140,52 @@ func migrate(db *sql.DB) error {
                                 return fmt.Errorf("add %s: %w", c.ctx, err)
                         }
                 }
+        }
+
+        // Tables added after the first release. CREATE IF NOT EXISTS keeps
+        // them idempotent like the ones above; they live here because some
+        // reference columns that only exist after the ALTERs.
+        later := []string{
+                // One row per listen, so "recently played" and listening
+                // stats work across devices instead of being a bare counter.
+                `CREATE TABLE IF NOT EXISTS play_events (
+                        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        track_id  TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                        played_at TEXT NOT NULL
+                )`,
+                `CREATE INDEX IF NOT EXISTS idx_play_events_user ON play_events(user_id, played_at DESC)`,
+                // Tombstones for delta sync: a client asking "what changed since
+                // X" needs to learn about deletions too.
+                `CREATE TABLE IF NOT EXISTS deleted_tracks (
+                        id         TEXT PRIMARY KEY,
+                        deleted_at TEXT NOT NULL
+                )`,
+                `CREATE INDEX IF NOT EXISTS idx_deleted_tracks_at ON deleted_tracks(deleted_at)`,
+                // Runtime settings an admin can change without a restart.
+                `CREATE TABLE IF NOT EXISTS settings (
+                        key   TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                )`,
+                `CREATE INDEX IF NOT EXISTS idx_tracks_updated ON tracks(updated_at)`,
+        }
+        for _, s := range later {
+                if _, err := db.Exec(s); err != nil {
+                        return fmt.Errorf("%q: %w", s[:40], err)
+                }
+        }
+        // Existing rows predate updated_at; seed it from created_at so a
+        // "since" query never misses them.
+        if _, err := db.Exec(`UPDATE tracks SET updated_at = created_at WHERE updated_at = ''`); err != nil {
+                return fmt.Errorf("seed updated_at: %w", err)
+        }
+        // The oldest account is the admin when nobody is yet. On a fresh
+        // install that is whoever registers first (see handleRegister).
+        if _, err := db.Exec(`
+                UPDATE users SET role = 'admin'
+                WHERE NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')
+                  AND id = (SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1)`); err != nil {
+                return fmt.Errorf("seed admin: %w", err)
         }
 
         // The library is shared between users now, so the hot path is

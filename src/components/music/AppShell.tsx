@@ -26,6 +26,11 @@ import { ArtistView } from "@/components/music/views/ArtistView"
 import { PlaylistsView } from "@/components/music/views/PlaylistsView"
 import { PlaylistView } from "@/components/music/views/PlaylistView"
 import { FavoritesView } from "@/components/music/views/FavoritesView"
+import { OfflineView } from "@/components/music/views/OfflineView"
+import { HistoryView } from "@/components/music/views/HistoryView"
+import { AdminView } from "@/components/music/views/AdminView"
+import { OfflineBanner } from "@/components/music/OfflineBanner"
+import { PlaybackSettingsDialog } from "@/components/music/PlaybackSettingsDialog"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -124,6 +129,12 @@ function renderView(view: View) {
       return <AlbumView />
     case "artist":
       return <ArtistView />
+    case "offline":
+      return <OfflineView />
+    case "history":
+      return <HistoryView />
+    case "admin":
+      return <AdminView />
   }
 }
 
@@ -157,15 +168,18 @@ export function AppShell() {
 
   useKeyboardShortcuts()
 
+  // Load the library, then put the last-played track back in the player bar
+  // (paused, at the saved position) so an accidentally closed tab, or another
+  // device, can resume. Restoring waits for fetchAll because that is where
+  // the media token arrives, and the restored stream URL needs it.
   useEffect(() => {
-    if (!initialized) fetchAll().catch(() => {})
+    if (initialized) return
+    fetchAll()
+      .catch(() => {})
+      .finally(() => {
+        restorePlayback()
+      })
   }, [initialized, fetchAll])
-
-  // Put the last-played track back in the player bar (paused, at the saved
-  // position) so an accidentally closed tab, or another device, can resume.
-  useEffect(() => {
-    restorePlayback()
-  }, [])
 
   // scroll main area to top on view change
   useEffect(() => {
@@ -175,6 +189,7 @@ export function AppShell() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       <MobileHeader />
+      <OfflineBanner />
 
       <div className="flex min-h-0 flex-1">
         {/* desktop sidebar */}
@@ -225,6 +240,7 @@ export function AppShell() {
       <NowPlayingView />
       <ShortcutsDialog />
       <PasswordDialog />
+      <PlaybackSettingsDialog />
       <UploadDialog />
       <EditTrackDialog />
       <PlaylistDialog />

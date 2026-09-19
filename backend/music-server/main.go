@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"music-server/internal/config"
 	"music-server/internal/server"
@@ -59,5 +60,16 @@ func main() {
 	// metadata lookups need.
 	addr := *bind + ":" + *port
 	log.Printf("music-server listening on %s (data: %s, pid: %d)", addr, abs, os.Getpid())
-	log.Fatal(http.ListenAndServe(addr, srv.Routes()))
+	srv.StartBackgroundWork()
+	httpServer := &http.Server{
+		Addr:    addr,
+		Handler: srv.Routes(),
+		// A client that opens a connection and never finishes sending its
+		// headers would otherwise hold a goroutine forever (Slowloris). The
+		// write side is left unbounded on purpose: streaming a whole album
+		// over a slow link is a legitimate multi-minute response.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+	log.Fatal(httpServer.ListenAndServe())
 }

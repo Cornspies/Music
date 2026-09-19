@@ -124,21 +124,25 @@ export function HomeView() {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 8)
 
-  // recently played — from lastPlayedAt (nulls last), top 6
-  const recentlyPlayed = [...tracks]
-    .filter((t) => t.lastPlayedAt)
-    .sort(
-      (a, b) =>
-        new Date(b.lastPlayedAt!).getTime() - new Date(a.lastPlayedAt!).getTime()
-    )
-    .slice(0, 6)
+  // Recently played comes from the server's listening history, so it covers
+  // every device; the local lastPlayedAt sort is the fallback for an older
+  // server that doesn't send it.
+  const recentlyPlayed =
+    stats?.recentlyPlayed && stats.recentlyPlayed.length > 0
+      ? stats.recentlyPlayed.slice(0, 8)
+      : [...tracks]
+          .filter((t) => t.lastPlayedAt)
+          .sort(
+            (a, b) =>
+              new Date(b.lastPlayedAt!).getTime() - new Date(a.lastPlayedAt!).getTime()
+          )
+          .slice(0, 6)
 
-  // keep lastPlayedAt fresh: play events happen while Home is mounted
+  // keep the history fresh: play events happen while Home is mounted
   useEffect(() => {
     const unsub = usePlayerStore.subscribe((state, prev) => {
       if (state.currentTrack?.id && state.currentTrack.id !== prev.currentTrack?.id) {
         useLibraryStore.getState().fetchStats().catch(() => {})
-        useLibraryStore.getState().fetchTracks().catch(() => {})
       }
     })
     return unsub
@@ -177,6 +181,11 @@ export function HomeView() {
           <StatChip icon={Heart}>
             {stats.favoriteCount} favorite{stats.favoriteCount === 1 ? "" : "s"}
           </StatChip>
+          {stats.listenedSeconds > 0 ? (
+            <button type="button" onClick={() => navigate("history")} className="contents">
+              <StatChip icon={History}>{formatTotal(stats.listenedSeconds)} listened</StatChip>
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -205,7 +214,19 @@ export function HomeView() {
 
       {recentlyPlayed.length > 0 && (
         <>
-          <SectionHeader title="Recently played" />
+          <SectionHeader
+            title="Recently played"
+            action={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("history")}
+                className="text-xs text-zinc-400 hover:text-zinc-100"
+              >
+                Full history
+              </Button>
+            }
+          />
           <div className="-mx-2 flex gap-2 overflow-x-auto px-1 pb-2">
             {recentlyPlayed.map((t) => (
               <RecentCard key={`rp-${t.id}`} track={t} queue={recentlyPlayed} />

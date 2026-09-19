@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalTime::class)
+
 package com.music.app.api
 
 import com.music.app.ui.components.AvatarCrop
@@ -23,6 +25,9 @@ import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /** Thrown when the server responds with a non-2xx status; message comes from `{"error": "..."}`. */
 class ApiException(message: String) : Exception(message)
@@ -42,6 +47,13 @@ fun friendlyError(e: Throwable): String = when (e) {
  */
 /** Header the server uses to hand back a renewed session token. */
 private const val refreshedTokenHeader = "X-Refreshed-Token"
+
+/**
+ * Refresh the media token this long before the server's expiry. The server
+ * hands out six-hour tokens; refreshing early means a track that starts
+ * near the end of one token's life can still seek for hours.
+ */
+private const val MEDIA_TOKEN_MARGIN_MS = 30L * 60_000L
 
 class ApiClient(private val store: TokenStore) {
 
@@ -97,11 +109,44 @@ class ApiClient(private val store: TokenStore) {
 
     private val token: String? get() = store.loadToken()
 
+    // ---------------------------------------------------------------- media token
+    //
+    // Media URLs carry a short-lived, read-only token rather than the session,
+    // so a URL that ends up in a log or a share sheet is worth a few hours of
+    // listening rather than the whole account. Held in memory only.
+
+    private var mediaToken: String? = null
+    private var mediaTokenExpiresAtMs: Long = 0L
+
+    /** The token to put in a media URL right now; the session as a fallback
+     *  until the first media token has been fetched. */
+    private val mediaOrSessionToken: String
+        get() {
+            val m = mediaToken
+            return if (m != null && nowMs() < mediaTokenExpiresAtMs) m else (token ?: "")
+        }
+
+    /** True when there is no usable media token, or it is about to expire. */
+    val mediaTokenNeedsRefresh: Boolean
+        get() = mediaToken == null || nowMs() > mediaTokenExpiresAtMs - MEDIA_TOKEN_MARGIN_MS
+
+    /** Fetches a fresh media token. Callers decide when (see AppModel). */
+    suspend fun refreshMediaToken() {
+        val fresh: MediaToken = getJson("/api/auth/media-token")
+        mediaToken = fresh.token
+        mediaTokenExpiresAtMs = parseIsoMs(fresh.expiresAt) ?: (nowMs() + 60L * 60_000L)
+    }
+
+    fun clearMediaToken() {
+        mediaToken = null
+        mediaTokenExpiresAtMs = 0L
+    }
+
     // ---------------------------------------------------------------- media URLs
 
     /** Direct audio stream URL with token query (ExoPlayer / AVPlayer send no headers). */
     fun trackStreamUrl(trackId: String): String =
-        url("/api/tracks/$trackId/stream") + "?token=" + (token ?: "").encodeURLParameter()
+        url("/api/tracks/$trackId/stream") + "?token=" + mediaOrSessionToken.encodeURLParameter()
 
     /**
      * Stream URL for a track, asking for the compatible copy when this
@@ -115,7 +160,7 @@ class ApiClient(private val store: TokenStore) {
 
     /** Cover art URL with token query (Coil AsyncImage). */
     fun coverUrl(trackId: String): String =
-        url("/api/tracks/$trackId/cover") + "?token=" + (token ?: "").encodeURLParameter()
+        url("/api/tracks/$trackId/cover") + "?token=" + mediaOrSessionToken.encodeURLParameter()
 
     /**
      * Thumbnail URL for a metadata suggestion, proxied through the server (Coil
@@ -123,14 +168,14 @@ class ApiClient(private val store: TokenStore) {
      */
     fun candidateArtworkUrl(trackId: String, candidateId: String): String =
         url("/api/tracks/$trackId/metadata/candidates/$candidateId/artwork") +
-            "?token=" + (token ?: "").encodeURLParameter()
+            "?token=" + mediaOrSessionToken.encodeURLParameter()
 
     /**
      * Avatar URL with token query (Coil AsyncImage). 404s when the user has no
      * picture, which Coil surfaces as an error state — see UserAvatar.
      */
     fun avatarUrl(userId: String): String =
-        url("/api/users/$userId/avatar") + "?token=" + (token ?: "").encodeURLParameter()
+        url("/api/users/$userId/avatar") + "?token=" + mediaOrSessionToken.encodeURLParameter()
 
     // ---------------------------------------------------------------- auth
 
@@ -147,6 +192,36 @@ class ApiClient(private val store: TokenStore) {
     suspend fun authConfig(): AuthConfig = getJson("/api/auth/config")
 
     suspend fun me(): User = getJson("/api/auth/me")
+
+    /** Invalidates every session this account has, on every device. */
+    suspend fun logoutEverywhere() {
+        expectNoContent(client.post(url("/api/auth/logout-all")) { auth() })
+    }
+
+    // ---------------------------------------------------------------- history & sync
+
+    /** Recent listens, newest first; [distinct] collapses repeats per track. */
+    suspend fun history(limit: Int = 50, distinct: Boolean = false, since: String? = null): HistoryResponse =
+        getJson("/api/history") {
+            parameter("limit", limit)
+            if (distinct) parameter("distinct", "1")
+            if (!since.isNullOrBlank()) parameter("since", since)
+        }
+
+    /** Everything changed or deleted since [since] (null for a full listing). */
+    suspend fun trackChanges(since: String?): TrackChanges =
+        getJson("/api/tracks/changes") {
+            if (!since.isNullOrBlank()) parameter("since", since)
+        }
+
+    /** Peaks for the seek bar, or null when the track hasn't been analysed. */
+    suspend fun waveform(trackId: String): List<Int>? {
+        val response = client.get(url("/api/tracks/$trackId/waveform")) { auth() }
+        noteRefreshedToken(response)
+        if (response.status == HttpStatusCode.NotFound) return null
+        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        return response.body<Waveform>().peaks
+    }
 
     // ---------------------------------------------------------------- tracks
 
@@ -377,6 +452,11 @@ class ApiClient(private val store: TokenStore) {
     // ---------------------------------------------------------------- helpers
 
     private fun url(path: String): String = baseUrl + path
+
+    private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
+
+    private fun parseIsoMs(iso: String): Long? =
+        runCatching { Instant.parse(iso).toEpochMilliseconds() }.getOrNull()
 
     private fun HttpRequestBuilder.auth() {
         val t = token ?: return

@@ -2,14 +2,37 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Background playback: the player runs in a foreground service that
+         shows the media notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!--
+      Backups are off: the session token is Keystore-encrypted and would be
+      useless on another device anyway, and downloaded audio belongs to the
+      signed-in account rather than the phone. Nothing here is worth
+      shipping to a cloud backup.
+    -->
     <application
         android:label="Music"
         android:theme="@style/Theme.Music"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true">
+
+        <!--
+          Cleartext stays allowed at the platform level because the primary
+          use case is a self-hosted server on the LAN, and Android's network
+          security config can't express "private address ranges only". The
+          app enforces that itself: an http:// server outside loopback and
+          RFC 1918 ranges is refused unless the user explicitly accepts the
+          warning on the sign-in screen (see AppModel.insecureServerWarning).
+        -->
 
         <activity
             android:name=".MainActivity"
@@ -27,10 +50,9 @@
               server is self-hosted: set musicHost in gradle.properties (or
               -PmusicHost=...) to your domain, e.g. music.example.com.
 
-              Without assetlinks.json served at
-              https://<host>/.well-known/assetlinks.json Android will show a
-              chooser rather than opening the app directly. Add that file and
-              set android:autoVerify="true" below to make it seamless.
+              The web app serves /.well-known/assetlinks.json; fill in your
+              signing certificate's fingerprint there and links open the app
+              directly (see public/.well-known/README.md in the repo).
             -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
@@ -52,6 +74,31 @@
                 <data android:scheme="music" android:host="playlist" />
             </intent-filter>
         </activity>
+
+        <!-- Owns the ExoPlayer; media notification, lock screen, headset,
+             Android Auto all come from Media3's session. -->
+        <service
+            android:name=".player.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <!-- Home-screen widget. -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetReceiver"
+            android:exported="true"
+            android:label="Now playing">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

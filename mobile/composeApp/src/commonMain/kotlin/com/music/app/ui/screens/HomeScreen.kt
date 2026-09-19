@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +54,8 @@ import com.music.app.ui.components.TrackRow
 import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc400
+import com.music.app.api.friendlyError
+import kotlinx.coroutines.launch
 
 /** Home: stats header, recently added (horizontal cards), most played list. */
 @Composable
@@ -120,6 +123,12 @@ fun HomeScreen() {
             }
         }
 
+        // ---- recently played (server history, every device) ----
+        if (stats != null && stats.recentlyPlayed.isNotEmpty()) {
+            item { SectionHeader("Recently played") }
+            item { RecentlyAddedRow(stats.recentlyPlayed.take(10)) }
+        }
+
         // ---- recently added ----
         val tracks = model.tracks
         when {
@@ -159,14 +168,37 @@ fun HomeScreen() {
     }
 
     if (confirmLogout) {
+        val scope = rememberCoroutineScope()
+        var everywhereError by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { confirmLogout = false },
             title = { Text("Sign out?") },
+            text = {
+                Column {
+                    Text("Sign out on this phone, or on every device this account is signed in on.")
+                    everywhereError?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmLogout = false
-                    model.logout()
-                }) { Text("Sign out") }
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = {
+                        confirmLogout = false
+                        model.logout()
+                    }) { Text("Sign out here") }
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                model.logoutEverywhere()
+                                confirmLogout = false
+                            } catch (e: Exception) {
+                                everywhereError = friendlyError(e)
+                            }
+                        }
+                    }) { Text("Sign out everywhere", color = MaterialTheme.colorScheme.error) }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { confirmLogout = false }) { Text("Cancel") }

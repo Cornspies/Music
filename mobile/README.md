@@ -8,8 +8,8 @@ running natively on both platforms:
 
 | Platform | Player engine | Uploads |
 |---|---|---|
-| Android (minSdk 27) | Media3 ExoPlayer | System file picker (SAF) |
-| iOS (15.6+) | AVFoundation AVPlayer | via web app (document picker TODO) |
+| Android (minSdk 27) | Media3 ExoPlayer in a MediaSessionService | System file picker (SAF) |
+| iOS (15.6+) | AVFoundation AVPlayer | Files document picker |
 
 ## Features
 
@@ -41,11 +41,47 @@ Set it once on the login screen — it's persisted per device:
 | Physical device | `http://<YOUR-LAN-IP>:3001` (e.g. `http://192.168.1.20:3001`) |
 
 Notes:
-- The Android manifest sets `android:usesCleartextTraffic="true"` because streaming
-  from a self-hosted LAN server over plain HTTP is the primary use case. For public
-  deployments, front the Go server with TLS (e.g. Caddy) and use `https://`.
-- iOS: `localhost` loopback is ATS-exempt. For LAN IPs add
-  `NSAppTransportSecurity → NSAllowsLocalNetworking` to `iosApp/iosApp/Info.plist`.
+- Plain `http://` is accepted for **private addresses only** (localhost, the
+  emulator host, 10/8, 172.16/12, 192.168/16, `.local`). Anything else over
+  http shows a warning on the sign-in screen and needs an explicit "I
+  understand" — your password and session would travel unencrypted. For
+  public deployments, front the Go server with TLS (e.g. Caddy) and use
+  `https://`. On iOS the same rule is enforced by App Transport Security
+  (`NSAllowsLocalNetworking` in `Info.plist`).
+- The session token is stored in the Android Keystore (AES-GCM, hardware
+  backed where available) and the iOS Keychain (`AfterFirstUnlockThisDeviceOnly`).
+  Backups are disabled on Android; the Keychain item never leaves the device.
+
+## Background playback, lock screen, widget
+
+- **Android**: playback runs in `PlaybackService` (a Media3 `MediaSessionService`),
+  so it survives the activity, shows a media notification with artwork and
+  transport controls, and answers headset/Bluetooth/Android Auto. Android 13+
+  asks for the notification permission on first launch. A **home-screen widget**
+  ("Now playing", Glance) shows the track with play/pause/skip.
+- **iOS**: the audio session is set to playback, what's playing is published to
+  the lock screen / Control Centre, and the remote command centre drives
+  play/pause/skip/scrub. A **WidgetKit** widget lives in `iosApp/MusicWidget/`;
+  it needs a one-time Xcode step (add a Widget Extension target and the
+  `group.com.music.app` App Group to both targets — see the comments at the top
+  of `MusicWidget.swift`).
+
+## Offline
+
+- Any track or playlist can be downloaded from its row/screen.
+- A downloaded playlist can be marked **Keep offline**: it is re-synced on every
+  launch (and from *Downloads → Sync now*), so tracks added on another device
+  arrive and removed ones go. Metadata edits made anywhere are picked up via
+  the server's delta endpoint (`GET /api/tracks/changes?since=`).
+- **Download on Wi-Fi only** (Downloads screen) holds audio downloads back on
+  mobile data; the playlist track lists still sync.
+
+## Shared playlist links
+
+The web app serves `/.well-known/assetlinks.json` and
+`apple-app-site-association`. Fill in your signing certificate fingerprint /
+Team ID there (see `public/.well-known/README.md` in the repository root) and
+`https://<musicHost>/playlists/<id>` opens straight in the app.
 
 ## Build & run
 
@@ -87,13 +123,17 @@ composeApp/src/
 │   ├── state/AppModel.kt         # single observable state holder (auth, data, player queue)
 │   ├── player/PlayerController.kt# expect: load/play/pause/seek + isPlaying/position flows
 │   └── ui/                       # theme, components (TrackRow, CoverImage, NowPlayingBar…), screens
-├── androidMain/                  # MainActivity, ExoPlayer, SharedPreferences, SAF picker
-└── iosMain/                      # MainViewController, AVPlayer, NSUserDefaults
-iosApp/                           # Xcode project (SwiftUI app shell)
+├── androidMain/                  # MainActivity, PlaybackService (Media3 session), Keystore token store, SAF picker, Glance widget
+└── iosMain/                      # MainViewController, AVPlayer + now-playing/remote commands, Keychain token store, document/photo pickers
+iosApp/                           # Xcode project (SwiftUI app shell) + MusicWidget/ (WidgetKit source, needs a target)
 ```
 
 ## API
 
 The client talks to the Go backend documented in `../worklog.md` (API contract):
-JWT bearer for JSON calls, `?token=` query for stream/cover URLs (media players
-can't send headers).
+JWT bearer for JSON calls. Stream/cover/avatar URLs carry a short-lived,
+read-only **media token** (`GET /api/auth/media-token`, refreshed by the app)
+in `?token=` because media players can't send headers — a URL that ends up in
+a log or share sheet is worth a few hours of listening, not the account.
+"Sign out everywhere" (`POST /api/auth/logout-all`) and password changes
+revoke every session.

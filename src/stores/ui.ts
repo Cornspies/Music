@@ -19,6 +19,9 @@ export type View =
   | "playlist"
   | "album"
   | "artist"
+  | "offline"
+  | "history"
+  | "admin"
 
 export type PlaylistDialogState =
   | { mode: "create" }
@@ -45,6 +48,9 @@ interface UIState {
   /** change password dialog */
   passwordOpen: boolean
   setPasswordOpen: (open: boolean) => void
+  /** playback settings (crossfade, normalisation) popover */
+  playbackSettingsOpen: boolean
+  setPlaybackSettingsOpen: (open: boolean) => void
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
   editTrackId: string | null
@@ -83,6 +89,8 @@ export const useUIStore = create<UIState>()((set) => ({
   setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
   passwordOpen: false,
   setPasswordOpen: (open) => set({ passwordOpen: open }),
+  playbackSettingsOpen: false,
+  setPlaybackSettingsOpen: (open) => set({ playbackSettingsOpen: open }),
   sidebarOpen: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   editTrackId: null,

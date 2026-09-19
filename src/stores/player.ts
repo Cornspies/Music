@@ -1,16 +1,21 @@
 "use client"
 
-// Player store — THE HEART. A single module-level HTMLAudioElement shared by
-// the whole app, driven by a zustand store. Volume is persisted ("music-volume").
+// Player store — THE HEART. A single module-level AudioEngine (two <audio>
+// elements, see lib/audio-engine.ts) shared by the whole app, driven by a
+// zustand store. Volume and playback settings are persisted ("music-volume").
 
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { toast } from "sonner"
 import type { PlaybackState, Track } from "@/lib/types"
-import { api, coverUrl, fetchPlayback, savePlayback, streamUrl } from "@/lib/api"
+import { api, coverUrl, fetchPlayback, savePlayback } from "@/lib/api"
+import { AudioEngine } from "@/lib/audio-engine"
 import { useAuthStore } from "@/stores/auth"
 
 export type RepeatMode = "off" | "all" | "one"
+
+/** Crossfade lengths offered in the playback settings menu, in seconds. */
+export const CROSSFADE_OPTIONS = [0, 2, 4, 8, 12] as const
 
 interface PlayerState {
   currentTrack: Track | null
@@ -48,6 +53,12 @@ interface PlayerState {
   sleepEndsAt: number | null
   /** true → stop playback at the end of the current track */
   sleepAfterTrack: boolean
+  /** seconds of overlap between tracks; 0 = gapless (next track pre-buffered) */
+  crossfadeSeconds: number
+  setCrossfade: (seconds: number) => void
+  /** level tracks to a common loudness using the server's analysis */
+  normalizeVolume: boolean
+  setNormalizeVolume: (on: boolean) => void
 }
 
 // module-level handle for the pending sleep timeout
@@ -60,19 +71,80 @@ function clearSleepTimeout() {
   }
 }
 
-let audio: HTMLAudioElement | null = null
+let engine: AudioEngine | null = null
 
-function getAudio(): HTMLAudioElement | null {
+function getEngine(): AudioEngine | null {
   if (typeof window === "undefined") return null
-  if (!audio) {
-    audio = new Audio()
-    audio.preload = "metadata"
-    const { volume, muted } = usePlayerStore.getState()
-    audio.volume = volume
-    audio.muted = muted
-    wireEvents(audio)
+  if (!engine) {
+    engine = new AudioEngine({
+      onTime: (position) => {
+        usePlayerStore.setState({ position })
+        if (position % 5 < 0.3) updatePositionState()
+        positionDirty = true
+        persistPlayback()
+      },
+      onDuration: (duration) => {
+        usePlayerStore.setState({ duration })
+        updatePositionState()
+      },
+      onPlay: () => {
+        usePlayerStore.setState({ isPlaying: true })
+        updatePositionState()
+      },
+      onPause: () => {
+        usePlayerStore.setState({ isPlaying: false })
+        persistPlayback({ force: true })
+      },
+      onEnded: () => {
+        const s = usePlayerStore.getState()
+        if (s.sleepAfterTrack) {
+          usePlayerStore.setState({ sleepAfterTrack: false, isPlaying: false })
+          toast("Sleep timer — stopped after track", {
+            description: `${s.currentTrack?.title ?? "Playback"} finished. Good night 🌙`,
+          })
+          return
+        }
+        if (s.repeat === "one" && s.currentTrack) {
+          engine?.seek(0)
+          engine?.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
+        } else {
+          s.next()
+        }
+      },
+      onAdvanced: (track) => {
+        // The engine started the prepared track on its own (gapless or
+        // crossfade); catch the queue up to it.
+        const s = usePlayerStore.getState()
+        const index = pendingNextIndex >= 0 && s.queue[pendingNextIndex]?.id === track.id
+          ? pendingNextIndex
+          : s.queue.findIndex((t) => t.id === track.id)
+        pendingNextIndex = -1
+        usePlayerStore.setState({
+          currentTrack: track,
+          queueIndex: index,
+          position: 0,
+          duration: track.duration || 0,
+          isPlaying: true,
+        })
+        reportPlay(track)
+        updateMediaSession(track)
+        positionDirty = true
+        persistPlayback({ force: true })
+        prepareNext()
+      },
+      onError: () => {
+        if (usePlayerStore.getState().currentTrack) {
+          usePlayerStore.setState({ isPlaying: false })
+        }
+      },
+    })
+    const { volume, muted, crossfadeSeconds, normalizeVolume } = usePlayerStore.getState()
+    engine.setVolume(volume, muted)
+    engine.crossfadeSeconds = crossfadeSeconds
+    engine.normalize = normalizeVolume
+    wireMediaSession(engine)
   }
-  return audio
+  return engine
 }
 
 function reportPlay(track: Track) {
@@ -97,13 +169,14 @@ function updateMediaSession(track: Track) {
 
 function updatePositionState() {
   if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return
-  if (!audio) return
+  if (!engine) return
   try {
-    if (Number.isFinite(audio.duration)) {
+    const duration = engine.duration
+    if (duration > 0) {
       navigator.mediaSession.setPositionState({
-        duration: audio.duration,
-        playbackRate: audio.playbackRate,
-        position: Math.min(audio.currentTime, audio.duration),
+        duration,
+        playbackRate: 1,
+        position: Math.min(engine.currentTime, duration),
       })
     }
   } catch {
@@ -111,80 +184,57 @@ function updatePositionState() {
   }
 }
 
-function wireEvents(a: HTMLAudioElement) {
-  a.addEventListener("timeupdate", () => {
-    usePlayerStore.setState({ position: a.currentTime })
-    if (a.currentTime % 5 < 0.3) updatePositionState()
-    positionDirty = true
-    persistPlayback()
-  })
-  // A seek while paused changes what "continue listening" means, but the
-  // page-hide / pause saves pick it up; no need for a request per scrub.
-  a.addEventListener("seeked", () => {
-    positionDirty = true
-  })
-  a.addEventListener("loadedmetadata", () => {
-    if (Number.isFinite(a.duration)) usePlayerStore.setState({ duration: a.duration })
-    updatePositionState()
-  })
-  a.addEventListener("durationchange", () => {
-    if (Number.isFinite(a.duration)) usePlayerStore.setState({ duration: a.duration })
-  })
-  a.addEventListener("play", () => {
-    usePlayerStore.setState({ isPlaying: true })
-    updatePositionState()
-  })
-  a.addEventListener("playing", () => usePlayerStore.setState({ isPlaying: true }))
-  a.addEventListener("pause", () => {
-    usePlayerStore.setState({ isPlaying: false })
-    persistPlayback({ force: true })
-  })
-  a.addEventListener("ended", () => {
-    const s = usePlayerStore.getState()
-    if (s.sleepAfterTrack) {
-      usePlayerStore.setState({ sleepAfterTrack: false, isPlaying: false })
-      toast("Sleep timer — stopped after track", {
-        description: `${s.currentTrack?.title ?? "Playback"} finished. Good night 🌙`,
-      })
-      return
+function wireMediaSession(e: AudioEngine) {
+  if (!("mediaSession" in navigator)) return
+  const ms = navigator.mediaSession
+  const trySet = (action: MediaSessionAction, handler: ((details: MediaSessionActionDetails) => void) | null) => {
+    try {
+      ms.setActionHandler(action, handler)
+    } catch {
+      // action unsupported on this browser
     }
-    if (s.repeat === "one" && s.currentTrack) {
-      a.currentTime = 0
-      a.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
-    } else {
-      s.next()
-    }
-  })
-  a.addEventListener("error", () => {
-    if (usePlayerStore.getState().currentTrack) {
-      usePlayerStore.setState({ isPlaying: false })
-    }
-  })
-
-  if ("mediaSession" in navigator) {
-    const ms = navigator.mediaSession
-    const trySet = (action: MediaSessionAction, handler: ((details: MediaSessionActionDetails) => void) | null) => {
-      try {
-        ms.setActionHandler(action, handler)
-      } catch {
-        // action unsupported on this browser
-      }
-    }
-    trySet("play", () => {
-      a.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
-    })
-    trySet("pause", () => a.pause())
-    trySet("previoustrack", () => usePlayerStore.getState().prev())
-    trySet("nexttrack", () => usePlayerStore.getState().next())
-    trySet("seekto", (details) => {
-      if (typeof details.seekTime === "number") usePlayerStore.getState().seek(details.seekTime)
-    })
-    trySet("seekbackward", null)
-    trySet("seekforward", null)
   }
+  trySet("play", () => {
+    e.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
+  })
+  trySet("pause", () => e.pause())
+  trySet("previoustrack", () => usePlayerStore.getState().prev())
+  trySet("nexttrack", () => usePlayerStore.getState().next())
+  trySet("seekto", (details) => {
+    if (typeof details.seekTime === "number") usePlayerStore.getState().seek(details.seekTime)
+  })
+  trySet("seekbackward", null)
+  trySet("seekforward", null)
 }
 
-/** Load queue[index] into the audio element and play it. */
+// Index of the track the engine has been told to buffer as "next", or -1.
+// Chosen once per track so shuffle picks the same song for the pre-buffer
+// and for a manual skip.
+let pendingNextIndex = -1
+
+/** Works out what follows the current track and lets the engine buffer it. */
+function prepareNext() {
+  const e = getEngine()
+  if (!e) return
+  const s = usePlayerStore.getState()
+  const { queue, queueIndex, shuffle, repeat } = s
+  let next = -1
+  if (!s.sleepAfterTrack && repeat !== "one" && queue.length > 1) {
+    if (shuffle) {
+      do {
+        next = Math.floor(Math.random() * queue.length)
+      } while (next === queueIndex)
+    } else if (queueIndex + 1 < queue.length) {
+      next = queueIndex + 1
+    } else if (repeat === "all") {
+      next = 0
+    }
+  }
+  pendingNextIndex = next
+  e.prepareNext(next >= 0 ? queue[next] : null)
+}
+
+/** Load queue[index] into the engine and play it. */
 function playIndex(index: number) {
   const s = usePlayerStore.getState()
   const track = s.queue[index]
@@ -196,14 +246,14 @@ function playIndex(index: number) {
     duration: track.duration || 0,
     isPlaying: true,
   })
-  const a = getAudio()
-  if (!a) return
-  a.src = streamUrl(track)
-  a.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
+  const e = getEngine()
+  if (!e) return
+  e.load(track, { autoplay: true })
   reportPlay(track)
   updateMediaSession(track)
   positionDirty = true
   persistPlayback({ force: true })
+  prepareNext()
 }
 
 // ---- continue listening ------------------------------------------------------
@@ -278,16 +328,10 @@ export async function restorePlayback(): Promise<void> {
     duration: state.track.duration || 0,
     isPlaying: false,
   })
-  const a = getAudio()
-  if (a) {
-    a.src = streamUrl(state.track)
-    // The seek has to wait for metadata: before that, some browsers ignore
-    // a currentTime assignment outright.
-    const seek = () => {
-      a.currentTime = state.position
-      a.removeEventListener("loadedmetadata", seek)
-    }
-    a.addEventListener("loadedmetadata", seek)
+  const e = getEngine()
+  if (e) {
+    e.load(state.track, { autoplay: false, startAt: state.position })
+    prepareNext()
   }
   updateMediaSession(state.track)
   // What we just loaded is exactly what the server has — nothing to write
@@ -299,10 +343,10 @@ export async function restorePlayback(): Promise<void> {
 }
 
 function rewindCurrent() {
-  const a = getAudio()
-  if (a) {
-    a.pause()
-    a.currentTime = 0
+  const e = getEngine()
+  if (e) {
+    e.pause()
+    e.seek(0)
   }
   usePlayerStore.setState({ isPlaying: false, position: 0 })
 }
@@ -322,6 +366,24 @@ export const usePlayerStore = create<PlayerState>()(
       repeat: "off",
       sleepEndsAt: null,
       sleepAfterTrack: false,
+      crossfadeSeconds: 0,
+      normalizeVolume: true,
+
+      setCrossfade: (seconds) => {
+        const crossfadeSeconds = Math.max(0, Math.min(12, seconds))
+        const e = getEngine()
+        if (e) e.crossfadeSeconds = crossfadeSeconds
+        set({ crossfadeSeconds })
+      },
+
+      setNormalizeVolume: (on) => {
+        const e = getEngine()
+        if (e) {
+          e.normalize = on
+          e.refreshNormalization()
+        }
+        set({ normalizeVolume: on })
+      },
 
       playNow: (track, contextQueue) => {
         const s = get()
@@ -342,12 +404,12 @@ export const usePlayerStore = create<PlayerState>()(
       togglePlay: () => {
         const s = get()
         if (!s.currentTrack) return
-        const a = getAudio()
-        if (!a) return
-        if (a.paused) {
-          a.play().catch(() => set({ isPlaying: false }))
+        const e = getEngine()
+        if (!e) return
+        if (e.paused) {
+          e.play().catch(() => set({ isPlaying: false }))
         } else {
-          a.pause()
+          e.pause()
         }
       },
 
@@ -356,17 +418,20 @@ export const usePlayerStore = create<PlayerState>()(
         if (queue.length === 0) return
         if (queue.length === 1) {
           // single track: loop if repeating, otherwise just restart
-          const a = getAudio()
-          if (a) {
-            a.currentTime = 0
+          const e = getEngine()
+          if (e) {
+            e.seek(0)
             if (repeat !== "off" || usePlayerStore.getState().isPlaying) {
-              a.play().catch(() => set({ isPlaying: false }))
+              e.play().catch(() => set({ isPlaying: false }))
             }
           }
           return
         }
         let nextIndex: number
-        if (shuffle) {
+        if (pendingNextIndex >= 0 && pendingNextIndex < queue.length) {
+          // Whatever was pre-buffered — the same choice a crossfade would make.
+          nextIndex = pendingNextIndex
+        } else if (shuffle) {
           do {
             nextIndex = Math.floor(Math.random() * queue.length)
           } while (nextIndex === queueIndex && queue.length > 1)
@@ -386,9 +451,9 @@ export const usePlayerStore = create<PlayerState>()(
       prev: () => {
         const s = get()
         if (!s.currentTrack) return
-        const a = getAudio()
-        if (a && a.currentTime > 3) {
-          a.currentTime = 0
+        const e = getEngine()
+        if (e && e.currentTime > 3) {
+          e.seek(0)
           set({ position: 0 })
           return
         }
@@ -396,7 +461,7 @@ export const usePlayerStore = create<PlayerState>()(
         if (prevIndex < 0) {
           if (s.repeat === "all" && s.queue.length > 0) prevIndex = s.queue.length - 1
           else {
-            if (a) a.currentTime = 0
+            if (e) e.seek(0)
             set({ position: 0 })
             return
           }
@@ -407,28 +472,23 @@ export const usePlayerStore = create<PlayerState>()(
       seek: (sec) => {
         const s = get()
         if (!s.currentTrack) return
-        const a = getAudio()
-        const dur = a && Number.isFinite(a.duration) ? a.duration : s.duration
+        const e = getEngine()
+        const dur = e && e.duration > 0 ? e.duration : s.duration
         const clamped = Math.max(0, Math.min(sec, dur > 0 ? dur : sec))
-        if (a) a.currentTime = clamped
+        if (e) e.seek(clamped)
         set({ position: clamped })
       },
 
       setVolume: (v) => {
         const volume = Math.max(0, Math.min(1, v))
         const muted = volume === 0 ? get().muted : false
-        const a = getAudio()
-        if (a) {
-          a.volume = volume
-          a.muted = muted
-        }
+        getEngine()?.setVolume(volume, muted)
         set({ volume, muted })
       },
 
       toggleMute: () => {
         const muted = !get().muted
-        const a = getAudio()
-        if (a) a.muted = muted
+        getEngine()?.setVolume(get().volume, muted)
         set({ muted })
       },
 
@@ -436,9 +496,13 @@ export const usePlayerStore = create<PlayerState>()(
         const order: RepeatMode[] = ["off", "all", "one"]
         const current = get().repeat
         set({ repeat: order[(order.indexOf(current) + 1) % order.length] })
+        prepareNext()
       },
 
-      toggleShuffle: () => set({ shuffle: !get().shuffle }),
+      toggleShuffle: () => {
+        set({ shuffle: !get().shuffle })
+        prepareNext()
+      },
 
       playNext: (track) => {
         const s = get()
@@ -449,6 +513,7 @@ export const usePlayerStore = create<PlayerState>()(
         const queue = [...s.queue]
         queue.splice(s.queueIndex + 1, 0, track)
         set({ queue })
+        prepareNext()
       },
 
       addToQueue: (track) => {
@@ -458,6 +523,7 @@ export const usePlayerStore = create<PlayerState>()(
           return
         }
         set({ queue: [...s.queue, track] })
+        prepareNext()
       },
 
       removeFromQueue: (index) => {
@@ -468,6 +534,7 @@ export const usePlayerStore = create<PlayerState>()(
           queue: newQueue,
           queueIndex: index < queueIndex ? queueIndex - 1 : queueIndex,
         })
+        prepareNext()
       },
 
       jumpTo: (index) => {
@@ -482,15 +549,12 @@ export const usePlayerStore = create<PlayerState>()(
           queue: currentTrack ? [currentTrack] : [],
           queueIndex: currentTrack ? 0 : -1,
         })
+        prepareNext()
       },
 
       stop: () => {
-        const a = getAudio()
-        if (a) {
-          a.pause()
-          a.removeAttribute("src")
-          a.load()
-        }
+        getEngine()?.stop()
+        pendingNextIndex = -1
         set({
           currentTrack: null,
           queue: [],
@@ -523,6 +587,7 @@ export const usePlayerStore = create<PlayerState>()(
         if (minutes === 0) {
           // 0 = "end of current track"
           set({ sleepEndsAt: null, sleepAfterTrack: true })
+          prepareNext()
           toast("Sleep timer set — end of track", {
             description: "Playback stops when the current track finishes.",
           })
@@ -531,9 +596,9 @@ export const usePlayerStore = create<PlayerState>()(
         const endsAt = Date.now() + minutes * 60_000
         set({ sleepEndsAt: endsAt, sleepAfterTrack: false })
         sleepTimeout = setTimeout(() => {
-          const a = getAudio()
-          if (a && !a.paused) {
-            a.pause()
+          const e = getEngine()
+          if (e && !e.paused) {
+            e.pause()
             toast("Sleep timer ended", {
               description: "Playback paused. Good night 🌙",
             })
@@ -567,6 +632,7 @@ export const usePlayerStore = create<PlayerState>()(
             queue: newQueue,
             queueIndex: idx < queueIndex ? queueIndex - 1 : queueIndex,
           })
+          prepareNext()
         }
       },
 
@@ -576,12 +642,19 @@ export const usePlayerStore = create<PlayerState>()(
           queue: queue.map((t) => (t.id === track.id ? track : t)),
           currentTrack: currentTrack?.id === track.id ? track : currentTrack,
         })
+        getEngine()?.replaceTrack(track)
         if (currentTrack?.id === track.id) updateMediaSession(track)
       },
     }),
     {
       name: "music-volume",
-      partialize: (s) => ({ volume: s.volume, shuffle: s.shuffle, repeat: s.repeat }),
+      partialize: (s) => ({
+        volume: s.volume,
+        shuffle: s.shuffle,
+        repeat: s.repeat,
+        crossfadeSeconds: s.crossfadeSeconds,
+        normalizeVolume: s.normalizeVolume,
+      }),
     }
   )
 )

@@ -7,8 +7,19 @@
 // bundle at build time, so changing it needs a rebuild.
 
 import { API_PORT, gw } from "@/lib/gateway"
-import type { MetadataCandidatesResponse, PlaybackState, Track, User } from "@/lib/types"
+import type {
+  AdminSettings,
+  AdminUser,
+  HistoryResponse,
+  MetadataCandidatesResponse,
+  PlaybackState,
+  Track,
+  TrackChanges,
+  User,
+  Waveform,
+} from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
+import { currentMediaToken } from "@/stores/media-token"
 
 // Re-exported so existing call sites can keep importing these from "@/lib/api".
 export { API_PORT, gw }
@@ -64,10 +75,13 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T
 }
 
-/** Token as a URL query param (for <audio>/<img> that can't send headers). */
+/**
+ * Token as a URL query param (for <audio>/<img> that can't send headers).
+ * This is the short-lived media token, never the session — see
+ * stores/media-token.ts for why.
+ */
 function tokenQuery(): string {
-  const token = useAuthStore.getState().token ?? ""
-  return `&token=${encodeURIComponent(token)}`
+  return `&token=${encodeURIComponent(currentMediaToken())}`
 }
 
 /** Streaming URL for the <audio> element (reads token at call time). */
@@ -198,4 +212,68 @@ export function applyMetadataCandidate(trackId: string, candidateId: string): Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ candidateId }),
   })
+}
+
+// ---- sessions ---------------------------------------------------------------
+
+/** Invalidates every session this account has, on every device. */
+export function logoutEverywhere(): Promise<void> {
+  return api<void>("/api/auth/logout-all", { method: "POST" })
+}
+
+// ---- listening history ------------------------------------------------------
+
+export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?: string } = {}): Promise<HistoryResponse> {
+  const params = new URLSearchParams()
+  if (opts.limit) params.set("limit", String(opts.limit))
+  if (opts.distinct) params.set("distinct", "1")
+  if (opts.since) params.set("since", opts.since)
+  const qs = params.toString()
+  return api<HistoryResponse>(`/api/history${qs ? `?${qs}` : ""}`)
+}
+
+// ---- delta sync -------------------------------------------------------------
+
+/** Everything changed or deleted since `since` (omit for a full listing). */
+export function fetchTrackChanges(since?: string): Promise<TrackChanges> {
+  return api<TrackChanges>(`/api/tracks/changes${since ? `?since=${encodeURIComponent(since)}` : ""}`)
+}
+
+// ---- waveform ---------------------------------------------------------------
+
+const waveformCache = new Map<string, Promise<number[] | null>>()
+
+/** Peaks for the seek bar, or null when the track hasn't been analysed. */
+export function fetchWaveform(trackId: string): Promise<number[] | null> {
+  let cached = waveformCache.get(trackId)
+  if (!cached) {
+    cached = api<Waveform>(`/api/tracks/${trackId}/waveform`)
+      .then((w) => w.peaks)
+      .catch(() => {
+        waveformCache.delete(trackId)
+        return null
+      })
+    waveformCache.set(trackId, cached)
+  }
+  return cached
+}
+
+// ---- admin ------------------------------------------------------------------
+
+export const admin = {
+  users: () => api<AdminUser[]>("/api/admin/users"),
+  deleteUser: (id: string) => api<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
+  updateUser: (id: string, patch: { role?: "user" | "admin"; signOut?: boolean }) =>
+    api<void>(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  settings: () => api<AdminSettings>("/api/admin/settings"),
+  updateSettings: (patch: { registrationOpen?: boolean }) =>
+    api<AdminSettings>("/api/admin/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
 }

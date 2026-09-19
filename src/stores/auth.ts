@@ -46,6 +46,7 @@ interface AuthState {
   user: User | null
   login: (username: string, password: string) => Promise<void>
   register: (username: string, password: string, inviteCode?: string) => Promise<void>
+  /** Forgets the session on this device only. */
   logout: () => void
 }
 

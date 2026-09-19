@@ -239,7 +239,7 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
         // Everyone can see every track, but its tags belong to whoever uploaded
         // it. Without this the UPDATE below would quietly match zero rows and
         // still report success.
-        if track.UploadedBy.ID != u.ID {
+        if track.UploadedBy.ID != u.ID && !u.IsAdmin() {
                 writeErr(w, http.StatusForbidden, "only the person who uploaded this track can change its details")
                 return
         }
@@ -304,9 +304,9 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
         }
 
         if _, err := s.db.Exec(
-                `UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, has_cover = ?
-                 WHERE id = ? AND user_id = ?`,
-                title, artist, album, genre, year, boolToInt(hasCover), id, u.ID,
+                `UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, has_cover = ?, updated_at = ?
+                 WHERE id = ?`,
+                title, artist, album, genre, year, boolToInt(hasCover), nowRFC3339(), id,
         ); err != nil {
                 s.internalErr(w, "apply metadata", err)
                 return

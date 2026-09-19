@@ -30,9 +30,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Checkbox
 import com.music.app.LocalAppModel
 import com.music.app.api.defaultBaseUrl
 import com.music.app.api.friendlyError
+import com.music.app.state.InsecureServerException
+import com.music.app.state.insecureServerWarning
 import com.music.app.ui.theme.Emerald
 import kotlinx.coroutines.launch
 
@@ -54,6 +58,10 @@ fun LoginScreen() {
     var inviteCode by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // Plain http off the LAN sends the password and session in the clear;
+    // the user has to say so explicitly before we'll do it.
+    val insecureWarning = insecureServerWarning(serverUrl)
+    var acceptInsecure by remember(serverUrl) { mutableStateOf(false) }
 
     // Ask the server what sign-up needs before showing the form. Re-asked when
     // the server URL changes, since policy belongs to the server, not the app.
@@ -79,10 +87,12 @@ fun LoginScreen() {
                         busy = false
                         return@launch
                     }
-                    model.register(serverUrl, username, password, inviteCode)
+                    model.register(serverUrl, username, password, inviteCode, acceptInsecure)
                 }
-                else model.login(serverUrl, username, password)
+                else model.login(serverUrl, username, password, acceptInsecure)
                 // on success the root switches to MainScreen automatically
+            } catch (e: InsecureServerException) {
+                error = e.message
             } catch (e: Exception) {
                 error = friendlyError(e)
             } finally {
@@ -147,6 +157,19 @@ fun LoginScreen() {
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+
+        if (insecureWarning != null) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                insecureWarning,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = acceptInsecure, onCheckedChange = { acceptInsecure = it })
+                Text("I understand, connect anyway", style = MaterialTheme.typography.bodyMedium)
+            }
         }
 
         error?.let { message ->

@@ -3,11 +3,14 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import {
+  CloudDownload,
+  CloudOff,
   Download,
   Heart,
   ListEnd,
   ListPlus,
   ListStart,
+  Loader2,
   MoreHorizontal,
   Music4,
   Pencil,
@@ -20,6 +23,8 @@ import { formatDuration } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
+import { useOfflineStore } from "@/stores/offline"
+import { useAuthStore } from "@/stores/auth"
 import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { UserAvatar } from "@/components/music/UserAvatar"
@@ -72,6 +77,14 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
 
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const offlineSupported = useOfflineStore((s) => s.supported)
+  const isDownloaded = useOfflineStore((s) => s.ids.has(track.id))
+  const downloadJob = useOfflineStore((s) => s.jobs[track.id])
+  // Uploader or admin: what the server allows for edit/delete.
+  const canManage = useAuthStore(
+    (s) => s.user?.id === track.uploadedBy.id || s.user?.role === "admin"
+  )
 
   const play = () => {
     usePlayerStore.getState().playNow(track, contextQueue ?? [track])
@@ -172,6 +185,22 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         {track.plays > 0 ? track.plays : "—"}
       </div>
 
+      {/* offline state: a quiet tick once stored, a spinner while it downloads */}
+      {downloadJob ? (
+        <span
+          className="hidden shrink-0 items-center gap-1 text-[10px] tabular-nums text-sky-300 sm:flex"
+          title="Downloading for offline"
+        >
+          <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+          {downloadJob.total > 0 ? `${Math.round((downloadJob.loaded / downloadJob.total) * 100)}%` : ""}
+        </span>
+      ) : isDownloaded ? (
+        <CloudDownload
+          className="hidden size-3.5 shrink-0 text-sky-400/70 sm:block"
+          aria-label="Available offline"
+        />
+      ) : null}
+
       {/* duration */}
       <div className="w-11 shrink-0 text-right text-xs tabular-nums text-zinc-500">
         {formatDuration(track.duration)}
@@ -228,6 +257,12 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
           track={track}
           onRemoveFromPlaylist={onRemoveFromPlaylist}
           onDelete={() => setDeleteOpen(true)}
+          canManage={canManage}
+          offline={{
+            supported: offlineSupported,
+            downloaded: isDownloaded,
+            downloading: Boolean(downloadJob),
+          }}
         />
       </DropdownMenu>
 
@@ -269,10 +304,14 @@ function TrackRowMenu({
   track,
   onRemoveFromPlaylist,
   onDelete,
+  canManage,
+  offline,
 }: {
   track: Track
   onRemoveFromPlaylist?: (trackId: string) => void
   onDelete: () => void
+  canManage: boolean
+  offline: { supported: boolean; downloaded: boolean; downloading: boolean }
 }) {
   const playlists = useLibraryStore((s) => s.playlists)
   // The sidebar list also carries playlists pinned from other people; tracks
@@ -336,9 +375,26 @@ function TrackRowMenu({
       </DropdownMenuSub>
 
       <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={() => useUIStore.getState().setEditTrackId(track.id)}>
-        <Pencil className="size-4" /> Edit metadata…
-      </DropdownMenuItem>
+      {offline.supported ? (
+        offline.downloading ? (
+          <DropdownMenuItem onClick={() => useOfflineStore.getState().cancel(track.id)}>
+            <Loader2 className="size-4 animate-spin" /> Cancel download
+          </DropdownMenuItem>
+        ) : offline.downloaded ? (
+          <DropdownMenuItem onClick={() => useOfflineStore.getState().remove(track.id)}>
+            <CloudOff className="size-4" /> Remove download
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => useOfflineStore.getState().download(track)}>
+            <CloudDownload className="size-4" /> Download for offline
+          </DropdownMenuItem>
+        )
+      ) : null}
+      {canManage ? (
+        <DropdownMenuItem onClick={() => useUIStore.getState().setEditTrackId(track.id)}>
+          <Pencil className="size-4" /> Edit metadata…
+        </DropdownMenuItem>
+      ) : null}
       <DropdownMenuItem asChild>
         <a
           href={downloadUrl(track, "original")}
@@ -374,10 +430,14 @@ function TrackRowMenu({
         </>
       ) : null}
 
-      <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={onDelete} className="text-red-400 focus:text-red-300">
-        <Trash2 className="size-4" /> Delete track
-      </DropdownMenuItem>
+      {canManage ? (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onDelete} className="text-red-400 focus:text-red-300">
+            <Trash2 className="size-4" /> Delete track
+          </DropdownMenuItem>
+        </>
+      ) : null}
     </DropdownMenuContent>
   )
 }

@@ -16,6 +16,17 @@ data class User(
     val username: String,
     val createdAt: String = "",
     val hasAvatar: Boolean = false,
+    /** "user" or "admin". Admins can manage users and edit anyone's track. */
+    val role: String = "user",
+) {
+    val isAdmin: Boolean get() = role == "admin"
+}
+
+/** Short-lived, read-only token for media URLs (GET /api/auth/media-token). */
+@Serializable
+data class MediaToken(
+    val token: String,
+    val expiresAt: String = "",
 )
 
 /** Small public profile shown next to a track in the shared library. */
@@ -61,6 +72,12 @@ data class Track(
     val hasCompatible: Boolean = false,
     val compatibleMimeType: String = "",
     val compatibleFileSize: Long = 0,
+    /** Bumped on every tag/cover/copy change; drives /api/tracks/changes. */
+    val updatedAt: String = "",
+    /** Integrated loudness in LUFS (EBU R128); null until analysed. */
+    val loudness: Double? = null,
+    /** True once /api/tracks/{id}/waveform has peaks. */
+    val hasWaveform: Boolean = false,
 )
 
 @Serializable
@@ -148,6 +165,42 @@ data class Stats(
     val favoriteCount: Int = 0,
     val playlistCount: Int = 0,
     val mostPlayed: List<Track> = emptyList(),
+    /** Distinct tracks, most recent listen first, from the server's history. */
+    val recentlyPlayed: List<Track> = emptyList(),
+    /** Seconds of everything this user has played, on every device. */
+    val listenedSeconds: Double = 0.0,
+    val playCount: Int = 0,
+)
+
+/** One listen, from GET /api/history. */
+@Serializable
+data class PlayEvent(
+    val track: Track,
+    val playedAt: String = "",
+)
+
+@Serializable
+data class HistoryResponse(
+    val events: List<PlayEvent> = emptyList(),
+    val listenedSeconds: Double = 0.0,
+    val playCount: Int = 0,
+    val trackCount: Int = 0,
+)
+
+/** GET /api/tracks/changes?since= — what changed, for cheap re-syncs. */
+@Serializable
+data class TrackChanges(
+    val tracks: List<Track> = emptyList(),
+    val deleted: List<String> = emptyList(),
+    /** Server time to hand back as the next `since`. */
+    val now: String = "",
+)
+
+/** GET /api/tracks/{id}/waveform */
+@Serializable
+data class Waveform(
+    /** 200 peaks, 0-100, left to right. */
+    val peaks: List<Int> = emptyList(),
 )
 
 /**

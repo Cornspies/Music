@@ -11,6 +11,7 @@ import com.music.app.api.Track
 import com.music.app.api.User
 import com.music.app.api.friendlyError
 import com.music.app.api.prefersCompatible
+import com.music.app.api.toPlaylist
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -81,6 +82,27 @@ class DownloadManager(
         store.saveMeta(KEY_QUALITY, quality.name)
     }
 
+    /** Hold downloads back on mobile data. Persisted across launches. */
+    var wifiOnly by mutableStateOf(false)
+        private set
+
+    fun updateWifiOnly(on: Boolean) {
+        wifiOnly = on
+        store.saveMeta(KEY_WIFI_ONLY, if (on) "1" else "0")
+    }
+
+    /** True when the Wi-Fi-only setting is stopping downloads right now. */
+    val waitingForWifi: Boolean
+        get() = wifiOnly && NetworkMonitor.isMetered()
+
+    /** True while [syncAll] runs. */
+    var syncing by mutableStateOf(false)
+        private set
+
+    /** When the last successful sync finished, for the Downloads screen. */
+    var lastSyncedAt by mutableStateOf<String?>(null)
+        private set
+
     /**
      * Whether to store the compatible copy for [track].
      *
@@ -106,12 +128,22 @@ class DownloadManager(
     // Everything the init block touches is declared above it on purpose:
     // Kotlin runs property initialisers and init blocks in declaration order,
     // so a property declared below would still be null here.
+    /**
+     * Playlists the user asked to *keep* offline: re-synced on every launch so
+     * tracks added on another device arrive and removed ones go. A plain
+     * one-off playlist download stays exactly as downloaded.
+     */
+    private val keptPlaylists = mutableStateMapOf<String, Boolean>()
+
     init {
         reconcile()
         reconcilePlaylists()
         downloadQuality = store.loadMeta(KEY_QUALITY)
             ?.let { saved -> DownloadQuality.entries.firstOrNull { it.name == saved } }
             ?: DownloadQuality.ORIGINAL
+        wifiOnly = store.loadMeta(KEY_WIFI_ONLY) == "1"
+        lastSyncedAt = store.loadMeta(KEY_SYNC_AT)
+        store.loadMeta(KEY_KEPT)?.split(',')?.filter { it.isNotBlank() }?.forEach { keptPlaylists[it] = true }
     }
 
     /** Downloaded tracks, alphabetical. */
@@ -143,6 +175,11 @@ class DownloadManager(
     suspend fun download(track: Track, useCompatible: Boolean? = null) {
         if (index.containsKey(track.id)) return
         if (transient[track.id] == DownloadState.DOWNLOADING) return
+        if (waitingForWifi) {
+            transient[track.id] = DownloadState.FAILED
+            lastError = "Waiting for Wi-Fi — downloads are set to Wi-Fi only."
+            return
+        }
 
         transient[track.id] = DownloadState.DOWNLOADING
         lastError = null
@@ -193,7 +230,104 @@ class DownloadManager(
         }
     }
 
-    // ---------------------------------------------------------------- offline session
+    // ---------------------------------------------------------------- sync
+
+    fun isKeptOffline(playlistId: String): Boolean = keptPlaylists[playlistId] == true
+
+    /**
+     * Turns "keep offline" on or off for a playlist. Turning it on downloads
+     * the playlist now (with [tracks]) and re-syncs it on every launch; turning
+     * it off leaves whatever is downloaded in place — it just stops following
+     * the server.
+     */
+    suspend fun setKeptOffline(
+        playlist: Playlist,
+        tracks: List<Track>,
+        keep: Boolean,
+        progress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ) {
+        if (keep) {
+            keptPlaylists[playlist.id] = true
+            persistKept()
+            downloadPlaylist(playlist, tracks, progress)
+        } else {
+            keptPlaylists.remove(playlist.id)
+            persistKept()
+        }
+    }
+
+    /**
+     * Brings everything on the device up to date with the server:
+     *
+     *  1. every kept playlist is re-fetched; new tracks are downloaded and
+     *     tracks that left the playlist are dropped (unless something else
+     *     still needs them);
+     *  2. `GET /api/tracks/changes?since=` refreshes the metadata of
+     *     downloaded tracks (retagged on the web app, say) and removes any
+     *     that were deleted on the server.
+     *
+     * Cheap when nothing changed — one small request — so it runs on every
+     * launch. Honours the Wi-Fi-only setting: on mobile data the metadata
+     * still syncs, only audio downloads are skipped.
+     */
+    suspend fun syncAll() {
+        if (syncing) return
+        syncing = true
+        lastError = null
+        try {
+            for (playlistId in keptPlaylists.keys.toList()) {
+                val detail = try {
+                    api.playlist(playlistId)
+                } catch (e: com.music.app.api.ApiException) {
+                    // Gone or no longer shared with us: stop following it.
+                    keptPlaylists.remove(playlistId)
+                    removePlaylist(playlistId)
+                    continue
+                }
+                val before = playlistTracks[playlistId].orEmpty().toSet()
+                val now = detail.tracks.map { it.id }.toSet()
+                if (!waitingForWifi) {
+                    for (track in detail.tracks) if (!index.containsKey(track.id)) download(track)
+                }
+                playlistIndex[playlistId] = detail.toPlaylist()
+                playlistTracks = playlistTracks + (playlistId to detail.tracks.map { it.id })
+                val stillNeeded = playlistTracks.values.flatten().toSet()
+                for (gone in before - now) if (gone !in stillNeeded) remove(gone)
+            }
+            persistKept()
+            persistPlaylists()
+
+            // Metadata delta for everything downloaded.
+            val since = store.loadMeta(KEY_SYNC_SINCE)
+            val changes = api.trackChanges(since)
+            var changed = false
+            for (track in changes.tracks) {
+                if (index.containsKey(track.id) && index[track.id] != track) {
+                    index[track.id] = track
+                    changed = true
+                }
+            }
+            for (id in changes.deleted) {
+                if (index.containsKey(id)) {
+                    store.delete(id)
+                    index.remove(id)
+                    changed = true
+                }
+            }
+            if (changed) persist()
+            store.saveMeta(KEY_SYNC_SINCE, changes.now)
+            lastSyncedAt = changes.now
+            store.saveMeta(KEY_SYNC_AT, changes.now)
+        } catch (e: Exception) {
+            lastError = friendlyError(e)
+        } finally {
+            syncing = false
+        }
+    }
+
+    private fun persistKept() {
+        store.saveMeta(KEY_KEPT, keptPlaylists.keys.joinToString(","))
+    }
 
     // ---------------------------------------------------------------- playlists
 
@@ -260,6 +394,7 @@ class DownloadManager(
         val ids = playlistTracks[playlistId].orEmpty()
         playlistIndex.remove(playlistId)
         playlistTracks = playlistTracks - playlistId
+        if (keptPlaylists.remove(playlistId) != null) persistKept()
 
         if (!keepTracks) {
             val stillNeeded = playlistTracks.values.flatten().toSet()
@@ -363,8 +498,13 @@ class DownloadManager(
         removeAll()
         playlistIndex.clear()
         playlistTracks = emptyMap()
+        keptPlaylists.clear()
+        persistKept()
         persistPlaylists()
         store.saveMeta(KEY_USER, null)
+        store.saveMeta(KEY_SYNC_SINCE, null)
+        store.saveMeta(KEY_SYNC_AT, null)
+        lastSyncedAt = null
     }
 
     // ---------------------------------------------------------------- internals
@@ -401,6 +541,10 @@ class DownloadManager(
         const val KEY_PLAYLISTS = "downloads.playlists"
         const val KEY_PLAYLIST_TRACKS = "downloads.playlistTracks"
         const val KEY_QUALITY = "downloads.quality"
+        const val KEY_WIFI_ONLY = "downloads.wifiOnly"
+        const val KEY_KEPT = "downloads.keptPlaylists"
+        const val KEY_SYNC_SINCE = "downloads.syncSince"
+        const val KEY_SYNC_AT = "downloads.syncAt"
     }
 }
 
