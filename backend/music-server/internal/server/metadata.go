@@ -92,8 +92,18 @@ func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Re
         ctx, cancel := context.WithTimeout(r.Context(), metadataLookupTimeout)
         defer cancel()
 
-        cands := lookupCandidates(ctx, meta, fileName)
-        cacheCandidates(id, cands, "")
+        cands, outcome := lookupCandidates(ctx, meta, fileName)
+
+        // The client hung up while the providers were still answering. What came
+        // back is an arbitrary subset, so caching it would hand that truncated
+        // list to the next request instead of searching again.
+        if r.Context().Err() != nil {
+                return
+        }
+
+        // A lookup that lost providers is cached only briefly, so a rate limit
+        // during upload doesn't pin the dialog to a short list for half an hour.
+        cacheCandidates(id, cands, "", outcome.cacheTTL())
         writeJSON(w, http.StatusOK, MetadataCandidatesResponse{
                 Candidates: toJSONCandidates(cands, ""),
                 // Nothing was auto-applied on this path: these are suggestions
@@ -165,8 +175,9 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
                         album:    strings.TrimSpace(dropPlaceholder(track.Album, "Unknown Album")),
                         duration: track.Duration,
                 }
-                entry = candidateCacheEntry{candidates: lookupCandidates(ctx, meta, fileName)}
-                cacheCandidates(id, entry.candidates, "")
+                cands, outcome := lookupCandidates(ctx, meta, fileName)
+                entry = candidateCacheEntry{candidates: cands}
+                cacheCandidates(id, cands, "", outcome.cacheTTL())
         }
 
         var chosen *scoredCandidate

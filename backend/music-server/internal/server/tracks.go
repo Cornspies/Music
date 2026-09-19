@@ -326,12 +326,14 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 
         absPath := filepath.Join(s.dataDir, savedPath)
         meta := readMetadata(absPath)
-        candidates, appliedID := s.enrichMissingMetadata(&meta, fileName)
+        candidates, appliedID, lookup := s.enrichMissingMetadata(&meta, fileName)
 
         id := strings.TrimSuffix(filepath.Base(savedPath), filepath.Ext(savedPath))
         // Keep the candidates around so the client can offer "not the right
-        // song?" without re-querying every provider.
-        cacheCandidates(id, candidates, appliedID)
+        // song?" without re-querying every provider. A lookup that lost providers
+        // gets a much shorter TTL: reopening the dialog should then find the full
+        // set rather than the degraded list this upload happened to get.
+        cacheCandidates(id, candidates, appliedID, lookup.cacheTTL())
         hasCover := false
         if len(meta.picture) > 0 {
                 if !safeCoverBytes(meta.picture) {

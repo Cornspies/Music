@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode"
@@ -128,6 +129,13 @@ func candidateID(c metadataCandidate) string {
 // the handler just re-runs the search.
 
 const candidateCacheTTL = 30 * time.Minute
+
+// A lookup that lost providers — one rate-limited, one timed out — is a
+// partial answer. Caching it for the full TTL means the review dialog keeps
+// showing that short list for half an hour even though a retry seconds later
+// would find more. Keep it just long enough to absorb a dialog being reopened.
+const candidateCachePartialTTL = 60 * time.Second
+
 const candidateCacheMaxEntries = 500
 
 type candidateCacheEntry struct {
@@ -141,7 +149,7 @@ var candidateCache = struct {
 	entries map[string]candidateCacheEntry
 }{entries: map[string]candidateCacheEntry{}}
 
-func cacheCandidates(trackID string, cands []scoredCandidate, appliedID string) {
+func cacheCandidates(trackID string, cands []scoredCandidate, appliedID string, ttl time.Duration) {
 	if trackID == "" {
 		return
 	}
@@ -165,7 +173,7 @@ func cacheCandidates(trackID string, cands []scoredCandidate, appliedID string) 
 		}
 	}
 	candidateCache.entries[trackID] = candidateCacheEntry{
-		candidates: cands, appliedID: appliedID, expires: now.Add(candidateCacheTTL),
+		candidates: cands, appliedID: appliedID, expires: now.Add(ttl),
 	}
 }
 
@@ -191,14 +199,39 @@ func metadataLookupDisabled() bool {
 	return config.MetadataLookupDisabled()
 }
 
+// lookupOutcome reports how much of a lookup actually happened. A provider
+// that errors or is skipped while rate-limited contributes nothing, and the
+// caller gets a short list that looks exactly like a complete one — so it
+// needs to be told the difference before caching the result.
+type lookupOutcome struct {
+	// failed counts providers that returned an error, including the ones
+	// skipped because they are cooling down from a rate limit.
+	failed int
+	// cancelled is true when the shared deadline expired, or the client hung
+	// up, while providers were still in flight.
+	cancelled bool
+}
+
+// degraded reports whether a retry could reasonably turn up more results.
+func (o lookupOutcome) degraded() bool { return o.failed > 0 || o.cancelled }
+
+// cacheTTL is how long this result deserves to be reused.
+func (o lookupOutcome) cacheTTL() time.Duration {
+	if o.degraded() {
+		return candidateCachePartialTTL
+	}
+	return candidateCacheTTL
+}
+
 // lookupCandidates searches every configured provider and returns all
 // candidates scored against what we know about the file, best first. Errors
 // from an individual provider are logged and skipped — one dead source never
-// prevents the others from contributing.
-func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName string) []scoredCandidate {
+// prevents the others from contributing — and reported in the outcome, which
+// says whether every provider was actually heard from.
+func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName string) ([]scoredCandidate, lookupOutcome) {
 	query, wantArtist, wantTitle := buildSearchPlan(meta, fallbackName)
 	if query == "" {
-		return nil
+		return nil, lookupOutcome{}
 	}
 
 	type source struct {
@@ -220,6 +253,7 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 	// lookup costs about as long as the slowest single provider instead of the
 	// sum of all of them.
 	results := make([][]metadataCandidate, len(sources))
+	var failed atomic.Int32
 	var wg sync.WaitGroup
 	for i, src := range sources {
 		wg.Add(1)
@@ -227,6 +261,7 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 			defer wg.Done()
 			cands, err := src.search(ctx, query)
 			if err != nil {
+				failed.Add(1)
 				// Rate limiting is an expected, self-healing condition, not a
 				// failure worth an ERROR line — the other providers cover it.
 				if errors.Is(err, errMusicBrainzBusy) {
@@ -240,6 +275,8 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 		}(i, src)
 	}
 	wg.Wait()
+
+	outcome := lookupOutcome{failed: int(failed.Load()), cancelled: ctx.Err() != nil}
 
 	// Flattened in the order the providers are declared, so the result is the
 	// same on every run regardless of which one answered first.
@@ -264,7 +301,7 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 	}
 
 	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
-	return out
+	return out, outcome
 }
 
 // enrichMissingMetadata fills in whatever's missing from an uploaded track's
@@ -273,28 +310,28 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 // only if that match is confident enough. Any tag actually embedded in the
 // file is left untouched, and if nothing clears the confidence bar the file
 // keeps exactly what it had. It returns every candidate found (best first)
-// plus the ID of the one applied, so the caller can cache them for the
-// user-facing "pick the right result" dialog. Entirely best-effort: no
-// network, no match, or any other error is silently non-fatal. Set
-// MUSIC_DISABLE_METADATA_LOOKUP to disable lookups altogether.
-func (s *Server) enrichMissingMetadata(meta *fileMetadata, fallbackName string) ([]scoredCandidate, string) {
+// plus the ID of the one applied and how complete the lookup was, so the
+// caller can cache them for the user-facing "pick the right result" dialog.
+// Entirely best-effort: no network, no match, or any other error is silently
+// non-fatal. Set MUSIC_DISABLE_METADATA_LOOKUP to disable lookups altogether.
+func (s *Server) enrichMissingMetadata(meta *fileMetadata, fallbackName string) ([]scoredCandidate, string, lookupOutcome) {
 	if metadataLookupDisabled() {
-		return nil, ""
+		return nil, "", lookupOutcome{}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), metadataLookupTimeout)
 	defer cancel()
 
-	cands := lookupCandidates(ctx, *meta, fallbackName)
+	cands, outcome := lookupCandidates(ctx, *meta, fallbackName)
 	if len(cands) == 0 {
-		return nil, ""
+		return nil, "", outcome
 	}
 
 	best := cands[0]
 	if best.score < acceptScoreThreshold {
 		log.Printf("metadata lookup: no confident match for %q (best %.2f from %s) — leaving metadata as-is, %d alternative(s) available",
 			fallbackName, best.score, best.source, len(cands))
-		return cands, ""
+		return cands, "", outcome
 	}
 
 	filled := applyCandidate(ctx, meta, best.metadataCandidate, false)
@@ -302,7 +339,7 @@ func (s *Server) enrichMissingMetadata(meta *fileMetadata, fallbackName string) 
 		log.Printf("metadata lookup: filled %s for %q from %s match %q by %q (confidence %.2f)",
 			strings.Join(filled, ", "), fallbackName, best.source, best.title, best.artist, best.score)
 	}
-	return cands, best.id
+	return cands, best.id, outcome
 }
 
 // applyCandidate copies fields from a candidate into meta. When overwrite is
@@ -649,18 +686,29 @@ var mbThrottleState struct {
 // mbThrottle waits until it's safe to issue the next MusicBrainz request,
 // serializing callers so concurrent uploads can't burst past the limit.
 // It returns ctx.Err() if the caller's deadline passes while waiting.
+//
+// The slot is claimed while the lock is held and waited for after releasing
+// it: sleeping with the mutex held made every other MusicBrainz caller — and
+// mbInCooldown, which shares the mutex — block on the sleeper rather than on
+// the rate limit itself.
 func mbThrottle(ctx context.Context) error {
 	mbThrottleState.mu.Lock()
-	defer mbThrottleState.mu.Unlock()
+	slot := mbThrottleState.last.Add(mbMinInterval)
+	if now := time.Now(); slot.Before(now) {
+		slot = now
+	}
+	mbThrottleState.last = slot
+	mbThrottleState.mu.Unlock()
 
-	if wait := time.Until(mbThrottleState.last.Add(mbMinInterval)); wait > 0 {
+	if wait := time.Until(slot); wait > 0 {
+		t := time.NewTimer(wait)
+		defer t.Stop()
 		select {
-		case <-time.After(wait):
+		case <-t.C:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
-	mbThrottleState.last = time.Now()
 	return nil
 }
 
@@ -758,9 +806,11 @@ func musicbrainzRequest(ctx context.Context, query string) (*musicbrainzSearchRe
 
 func searchMusicBrainz(ctx context.Context, query string) ([]metadataCandidate, error) {
 	// Still cooling down from a previous rate limit — skip quietly rather
-	// than spending part of the lookup budget on a near-certain 503.
+	// than spending part of the lookup budget on a near-certain 503. This is
+	// reported as an error so the result is not cached as a complete one:
+	// the cooldown lifts long before a 30-minute cache entry would.
 	if mbInCooldown() {
-		return nil, nil
+		return nil, errMusicBrainzBusy
 	}
 
 	parsed, err := musicbrainzRequest(ctx, query)
@@ -833,7 +883,6 @@ type youtubeVideosResponse struct {
 
 func searchYouTube(ctx context.Context, query string) ([]metadataCandidate, error) {
 	apiKey := config.YouTubeAPIKey()
-	apiKey = ""
 	if apiKey == "" {
 		return nil, nil // not configured — silently skip this source
 	}
