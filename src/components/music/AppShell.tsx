@@ -6,6 +6,7 @@ import { AudioLines, Home, Library, Menu, Search, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUIStore, type View } from "@/stores/ui"
 import { useLibraryStore } from "@/stores/library"
+import { restorePlayback } from "@/stores/player"
 import { SidebarContent } from "@/components/music/Sidebar"
 import { PlayerBar } from "@/components/music/PlayerBar"
 import { QueuePanel } from "@/components/music/QueuePanel"
@@ -159,6 +160,12 @@ export function AppShell() {
   useEffect(() => {
     if (!initialized) fetchAll().catch(() => {})
   }, [initialized, fetchAll])
+
+  // Put the last-played track back in the player bar (paused, at the saved
+  // position) so an accidentally closed tab, or another device, can resume.
+  useEffect(() => {
+    restorePlayback()
+  }, [])
 
   // scroll main area to top on view change
   useEffect(() => {

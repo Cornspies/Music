@@ -26,11 +26,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 /** Repeat modes for the player (off / repeat queue / repeat current track). */
 enum class RepeatMode { OFF, ALL, ONE }
+
+/** How often the playback position is written to the server while playing. */
+private const val PLAYBACK_SAVE_INTERVAL_MS = 10_000L
 
 /**
  * The single observable app state holder (ViewModel-lite).
@@ -138,6 +142,20 @@ class AppModel(
         // Player end-of-track → advance the queue on the main thread.
         player.onEnded = { scope.launch { onTrackEnded() } }
 
+        // Continue listening: save the position every few seconds while
+        // something plays, and the moment playback pauses (which also covers
+        // the end of a track and the app being sent to the background by a
+        // phone call or the like).
+        scope.launch {
+            while (true) {
+                delay(PLAYBACK_SAVE_INTERVAL_MS)
+                if (player.isPlaying.value) savePlayback()
+            }
+        }
+        scope.launch {
+            player.isPlaying.collect { playing -> if (!playing) savePlayback() }
+        }
+
         // Restore a previous session (the JWT may have expired — verify it).
         val token = store.loadToken()
         if (token.isNullOrBlank()) {
@@ -243,6 +261,7 @@ class AppModel(
         currentTrack = null
         queue = emptyList()
         queueIndex = 0
+        lastSavedQueueIds = emptyList()
         backStack.clear()
         backStack.add(Screen.Home)
         tracks = null
@@ -258,6 +277,7 @@ class AppModel(
         backStack.clear()
         backStack.add(Screen.Home)
         refreshAll()
+        scope.launch { restorePlayback() }
     }
 
     fun refreshAll() {
@@ -618,14 +638,7 @@ class AppModel(
     }
 
     private fun startCurrent() {
-        val track = queue.getOrNull(queueIndex) ?: return
-        currentTrack = track
-        // Downloaded copy wins over streaming: instant start, no data used, and
-        // it's the only thing that works with no connection.
-        // The Track overload asks for the compatible copy when this platform
-        // cannot decode the original (Ogg on iOS).
-        val source = downloads.localPathFor(track.id) ?: api.trackStreamUrl(track)
-        player.load(source, autoplay = true)
+        val track = loadCurrent(autoplay = true) ?: return
         scope.launch {
             try {
                 api.reportPlay(track.id)
@@ -634,6 +647,20 @@ class AppModel(
                 // Play counter is best-effort.
             }
         }
+        savePlayback()
+    }
+
+    /** Puts queue[queueIndex] into the player; returns it, or null if the queue is empty. */
+    private fun loadCurrent(autoplay: Boolean): Track? {
+        val track = queue.getOrNull(queueIndex) ?: return null
+        currentTrack = track
+        // Downloaded copy wins over streaming: instant start, no data used, and
+        // it's the only thing that works with no connection.
+        // The Track overload asks for the compatible copy when this platform
+        // cannot decode the original (Ogg on iOS).
+        val source = downloads.localPathFor(track.id) ?: api.trackStreamUrl(track)
+        player.load(source, autoplay = autoplay)
+        return track
     }
 
     fun togglePlayPause() {
@@ -685,6 +712,49 @@ class AppModel(
 
     fun seekTo(seconds: Double) {
         player.seekTo(seconds)
+        savePlayback()
+    }
+
+    // ------------------------------------------------------------ continue listening
+    //
+    // The server remembers what each user last had loaded — track, position and
+    // the up-next queue — so the app can pick up where they left off after
+    // being closed, or on another device. Restored paused: an app opened by
+    // accident shouldn't start making noise.
+
+    private var lastSavedQueueIds: List<String> = emptyList()
+
+    private fun savePlayback() {
+        val track = currentTrack ?: return
+        if (user == null || offlineMode) return
+        val ids = queue.map { it.id }
+        val queueChanged = ids != lastSavedQueueIds
+        val position = player.positionSec.value
+        scope.launch {
+            try {
+                api.savePlayback(track.id, position, if (queueChanged) ids else null)
+                if (queueChanged) lastSavedQueueIds = ids
+            } catch (_: Exception) {
+                // Best-effort: the next save carries the same information.
+            }
+        }
+    }
+
+    private suspend fun restorePlayback() {
+        if (currentTrack != null || offlineMode) return
+        val state = try {
+            api.playbackState()
+        } catch (_: Exception) {
+            null
+        } ?: return
+        // The user may have started something while the request was in flight.
+        if (currentTrack != null) return
+        queue = state.queue
+        queueIndex = state.queueIndex
+        // What we just loaded is exactly what the server has.
+        lastSavedQueueIds = state.queue.map { it.id }
+        loadCurrent(autoplay = false) ?: return
+        player.seekTo(state.position)
     }
 
     private fun onTrackEnded() {

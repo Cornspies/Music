@@ -11,11 +11,13 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.Headers
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
@@ -272,6 +274,31 @@ class ApiClient(private val store: TokenStore) {
     /** Applies a user-chosen match, overwriting the track's tags; returns the updated track. */
     suspend fun applyMetadataCandidate(trackId: String, candidateId: String): Track =
         postJson("/api/tracks/$trackId/metadata/apply", ApplyMetadataRequest(candidateId))
+
+    // ---------------------------------------------------------------- playback position
+
+    /** Where this user left off, or null when there is nothing to resume (204). */
+    suspend fun playbackState(): PlaybackState? {
+        val response = client.get(url("/api/playback")) { auth() }
+        noteRefreshedToken(response)
+        if (response.status == HttpStatusCode.NoContent) return null
+        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        return response.body()
+    }
+
+    /**
+     * Records where the user is. Pass [queue] (track IDs) only when it changed;
+     * null leaves the server's copy alone, keeping the frequent saves tiny.
+     */
+    suspend fun savePlayback(trackId: String, position: Double, queue: List<String>? = null) {
+        expectNoContent(
+            client.put(url("/api/playback")) {
+                auth()
+                headers.append(HttpHeaders.ContentType, "application/json")
+                setBody(PlaybackRequest(trackId, position, queue))
+            },
+        )
+    }
 
     // ---------------------------------------------------------------- favorites
 

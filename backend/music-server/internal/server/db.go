@@ -86,6 +86,18 @@ func migrate(db *sql.DB) error {
                         created_at TEXT NOT NULL,
                         PRIMARY KEY (user_id, track_id)
                 )`,
+                // Where each listener left off, so a closed tab or another device
+                // can resume. One row per user; the cascade on track_id means a
+                // deleted track simply forgets the position rather than dangling.
+                // queue_json holds the "up next" list as track IDs; entries that no
+                // longer exist are dropped when the state is read back.
+                `CREATE TABLE IF NOT EXISTS playback_state (
+                        user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                        track_id   TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                        position   REAL NOT NULL DEFAULT 0,
+                        queue_json TEXT NOT NULL DEFAULT '[]',
+                        updated_at TEXT NOT NULL
+                )`,
         }
         for _, s := range stmts {
                 if _, err := db.Exec(s); err != nil {

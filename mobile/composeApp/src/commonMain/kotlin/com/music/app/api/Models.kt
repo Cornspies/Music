@@ -181,7 +181,30 @@ data class MetadataCandidatesResponse(
     val lookupDisabled: Boolean = false,
 )
 
+/**
+ * Where the user left off, as remembered by the server (GET /api/playback).
+ * The queue comes back as full tracks, with anything deleted since already
+ * dropped, so it can be restored without further requests.
+ */
+@Serializable
+data class PlaybackState(
+    val track: Track,
+    /** Seconds into the track. */
+    val position: Double = 0.0,
+    val queue: List<Track> = emptyList(),
+    val queueIndex: Int = 0,
+    val updatedAt: String = "",
+)
+
 // ---- request bodies ----
+
+@Serializable
+data class PlaybackRequest(
+    val trackId: String,
+    val position: Double,
+    /** Track IDs of the "up next" list. Null means "unchanged" — sent only when it changed. */
+    val queue: List<String>? = null,
+)
 
 @Serializable
 data class AuthRequest(

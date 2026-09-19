@@ -120,6 +120,17 @@ export interface MetadataCandidate {
   applied: boolean
 }
 
+/** Where the user left off, as remembered by the server (GET /api/playback). */
+export interface PlaybackState {
+  track: Track
+  /** Seconds into the track. */
+  position: number
+  /** The "up next" list, current track included; deleted tracks already dropped. */
+  queue: Track[]
+  queueIndex: number
+  updatedAt: string
+}
+
 export interface MetadataCandidatesResponse {
   autoApplied: boolean
   candidates: MetadataCandidate[]

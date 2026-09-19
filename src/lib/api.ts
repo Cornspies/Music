@@ -7,7 +7,7 @@
 // bundle at build time, so changing it needs a rebuild.
 
 import { API_PORT, gw } from "@/lib/gateway"
-import type { MetadataCandidatesResponse, Track, User } from "@/lib/types"
+import type { MetadataCandidatesResponse, PlaybackState, Track, User } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 
 // Re-exported so existing call sites can keep importing these from "@/lib/api".
@@ -168,6 +168,35 @@ export function fetchMetadataCandidates(
 }
 
 /** Apply a user-chosen metadata match, returning the updated track. */
+// ---- playback position ("continue listening") ------------------------------
+
+/** The saved position, or null when there is nothing to resume (204). */
+export async function fetchPlayback(): Promise<PlaybackState | null> {
+  return (await api<PlaybackState | undefined>("/api/playback")) ?? null
+}
+
+/**
+ * Records where the user is. `queue` (track IDs) is optional: leave it out for
+ * the frequent position-only saves and the server keeps the one it has.
+ * `keepalive` lets the request outlive a page that is being closed.
+ */
+export function savePlayback(
+  payload: { trackId: string; position: number; queue?: string[] },
+  keepalive = false
+): Promise<void> {
+  return api<void>("/api/playback", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive,
+  })
+}
+
+/** Forgets the saved position — used when playback is stopped on purpose. */
+export function clearPlayback(): Promise<void> {
+  return api<void>("/api/playback", { method: "DELETE" })
+}
+
 export function applyMetadataCandidate(trackId: string, candidateId: string): Promise<Track> {
   return api<Track>(`/api/tracks/${trackId}/metadata/apply`, {
     method: "POST",

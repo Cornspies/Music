@@ -125,6 +125,11 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("POST /api/playlists/{id}/tracks", s.requireAuth(s.handleAddPlaylistTrack))
         mux.HandleFunc("DELETE /api/playlists/{id}/tracks/{trackId}", s.requireAuth(s.handleRemovePlaylistTrack))
 
+        // Playback position ("continue listening")
+        mux.HandleFunc("GET /api/playback", s.requireAuth(s.handleGetPlayback))
+        mux.HandleFunc("PUT /api/playback", s.requireAuth(s.handlePutPlayback))
+        mux.HandleFunc("DELETE /api/playback", s.requireAuth(s.handleDeletePlayback))
+
         // Favorites
         mux.HandleFunc("GET /api/favorites", s.requireAuth(s.handleListFavorites))
         mux.HandleFunc("POST /api/favorites/{trackId}", s.requireAuth(s.handleAddFavorite))
@@ -143,7 +148,11 @@ func (s *Server) middleware(next http.Handler) http.Handler {
                 start := time.Now()
                 sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
                 next.ServeHTTP(sw, r)
-                if r.URL.Path != "/healthz" {
+                // Position saves arrive every few seconds from every playing client
+                // and would drown everything else in the log; they're only logged
+                // when something went wrong with one.
+                positionSave := r.Method == http.MethodPut && r.URL.Path == "/api/playback" && sw.code < 400
+                if r.URL.Path != "/healthz" && !positionSave {
                         log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, time.Since(start).Round(time.Millisecond))
                 }
         })

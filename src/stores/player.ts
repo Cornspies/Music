@@ -6,8 +6,9 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { toast } from "sonner"
-import type { Track } from "@/lib/types"
-import { api, coverUrl, streamUrl } from "@/lib/api"
+import type { PlaybackState, Track } from "@/lib/types"
+import { api, clearPlayback, coverUrl, fetchPlayback, savePlayback, streamUrl } from "@/lib/api"
+import { useAuthStore } from "@/stores/auth"
 
 export type RepeatMode = "off" | "all" | "one"
 
@@ -114,6 +115,13 @@ function wireEvents(a: HTMLAudioElement) {
   a.addEventListener("timeupdate", () => {
     usePlayerStore.setState({ position: a.currentTime })
     if (a.currentTime % 5 < 0.3) updatePositionState()
+    positionDirty = true
+    persistPlayback()
+  })
+  // A seek while paused changes what "continue listening" means, but the
+  // page-hide / pause saves pick it up; no need for a request per scrub.
+  a.addEventListener("seeked", () => {
+    positionDirty = true
   })
   a.addEventListener("loadedmetadata", () => {
     if (Number.isFinite(a.duration)) usePlayerStore.setState({ duration: a.duration })
@@ -127,7 +135,10 @@ function wireEvents(a: HTMLAudioElement) {
     updatePositionState()
   })
   a.addEventListener("playing", () => usePlayerStore.setState({ isPlaying: true }))
-  a.addEventListener("pause", () => usePlayerStore.setState({ isPlaying: false }))
+  a.addEventListener("pause", () => {
+    usePlayerStore.setState({ isPlaying: false })
+    persistPlayback({ force: true })
+  })
   a.addEventListener("ended", () => {
     const s = usePlayerStore.getState()
     if (s.sleepAfterTrack) {
@@ -191,6 +202,100 @@ function playIndex(index: number) {
   a.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
   reportPlay(track)
   updateMediaSession(track)
+  positionDirty = true
+  persistPlayback({ force: true })
+}
+
+// ---- continue listening ------------------------------------------------------
+//
+// The server remembers what each user last had loaded (track, position, up-next
+// queue), so a closed tab or a different device can pick up where they left
+// off. Saved every few seconds while playing, immediately on pause and on
+// track change, and with a keepalive request as the page goes away. Only
+// state that actually changed here is written, so a tab left paused for hours
+// never overwrites what another device has been doing since.
+
+const SAVE_INTERVAL_MS = 10_000
+let positionDirty = false
+let lastSaveAt = 0
+let lastSavedQueueKey = ""
+let restoring = false
+
+function queueKey(queue: Track[]): string {
+  return queue.map((t) => t.id).join(",")
+}
+
+function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
+  if (restoring) return
+  const s = usePlayerStore.getState()
+  if (!s.currentTrack || !useAuthStore.getState().token) return
+  const key = queueKey(s.queue)
+  const queueChanged = key !== lastSavedQueueKey
+  if (!positionDirty && !queueChanged) return
+  const now = Date.now()
+  if (!opts.force && !queueChanged && now - lastSaveAt < SAVE_INTERVAL_MS) return
+
+  lastSaveAt = now
+  positionDirty = false
+  // Marked as saved up front so a second call in the same tick doesn't send
+  // the queue twice; a failed request resets both so the next save resends.
+  if (queueChanged) lastSavedQueueKey = key
+  savePlayback(
+    {
+      trackId: s.currentTrack.id,
+      position: s.position,
+      ...(queueChanged ? { queue: s.queue.map((t) => t.id) } : {}),
+    },
+    opts.keepalive
+  ).catch(() => {
+    positionDirty = true
+    if (queueChanged) lastSavedQueueKey = ""
+  })
+}
+
+/**
+ * Loads the server-remembered track into the player, paused, at the saved
+ * position — never auto-playing: browsers block it, and a tab opened by
+ * accident shouldn't start making noise. Skipped when this session already
+ * has something loaded.
+ */
+export async function restorePlayback(): Promise<void> {
+  if (usePlayerStore.getState().currentTrack) return
+  let state: PlaybackState | null
+  try {
+    state = await fetchPlayback()
+  } catch {
+    return
+  }
+  if (!state || usePlayerStore.getState().currentTrack) return
+
+  restoring = true
+  usePlayerStore.setState({
+    queue: state.queue,
+    queueIndex: state.queueIndex,
+    currentTrack: state.track,
+    position: state.position,
+    duration: state.track.duration || 0,
+    isPlaying: false,
+  })
+  const a = getAudio()
+  if (a) {
+    a.src = streamUrl(state.track)
+    // The seek has to wait for metadata: before that, some browsers ignore
+    // a currentTime assignment outright.
+    const seek = () => {
+      a.currentTime = state.position
+      a.removeEventListener("loadedmetadata", seek)
+    }
+    a.addEventListener("loadedmetadata", seek)
+  }
+  updateMediaSession(state.track)
+  // What we just loaded is exactly what the server has — nothing to write
+  // until the user actually does something.
+  lastSavedQueueKey = queueKey(state.queue)
+  positionDirty = false
+  lastSaveAt = Date.now()
+  restoring = false
 }
 
 function rewindCurrent() {
@@ -394,6 +499,10 @@ export const usePlayerStore = create<PlayerState>()(
           position: 0,
           duration: 0,
         })
+        // Stopping is deliberate: there is nothing to come back to.
+        positionDirty = false
+        lastSavedQueueKey = ""
+        clearPlayback().catch(() => {})
         if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
           try {
             navigator.mediaSession.metadata = null
@@ -475,3 +584,18 @@ export const usePlayerStore = create<PlayerState>()(
     }
   )
 )
+
+if (typeof window !== "undefined") {
+  // pagehide covers tab close, navigation and bfcache; visibilitychange
+  // covers switching apps on mobile, where pagehide may never come.
+  window.addEventListener("pagehide", () => persistPlayback({ force: true, keepalive: true }))
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") persistPlayback({ force: true, keepalive: true })
+  })
+  // Queue edits (add / remove / reorder) are rare; write them straight away.
+  // Deferred a microtask so that playNow — which sets the queue and then the
+  // track in two updates — produces one save carrying both, not two.
+  usePlayerStore.subscribe((s, prev) => {
+    if (s.queue !== prev.queue) queueMicrotask(() => persistPlayback({ force: true }))
+  })
+}
