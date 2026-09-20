@@ -57,6 +57,12 @@ fun TrackRow(
     track: Track,
     context: List<Track>,
     modifier: Modifier = Modifier,
+    /**
+     * False hides the uploader, download and favourite controls: for lists
+     * like the history, where the row is a record of a play rather than a
+     * place to manage the track.
+     */
+    showActions: Boolean = true,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val model = LocalAppModel.current
@@ -109,7 +115,7 @@ fun TrackRow(
             if (trailing != null) trailing()
             // Uploader — the library is shared, so this shows who contributed the
             // file. Kept small and slightly dimmed: provenance, not a control.
-            if (track.uploadedBy.id.isNotEmpty()) {
+            if (showActions && track.uploadedBy.id.isNotEmpty()) {
                 UserAvatar(
                     userId = track.uploadedBy.id,
                     username = track.uploadedBy.username,
@@ -120,13 +126,15 @@ fun TrackRow(
                 )
                 Spacer(Modifier.width(6.dp))
             }
-            DownloadButton(track)
-            IconButton(onClick = { model.toggleFavorite(track) }) {
-                Icon(
-                    imageVector = if (track.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    contentDescription = if (track.isFavorite) "Remove from favorites" else "Add to favorites",
-                    tint = if (track.isFavorite) Emerald else Zinc500,
-                )
+            if (showActions) {
+                DownloadButton(track)
+                IconButton(onClick = { model.toggleFavorite(track) }) {
+                    Icon(
+                        imageVector = if (track.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = if (track.isFavorite) "Remove from favorites" else "Add to favorites",
+                        tint = if (track.isFavorite) Emerald else Zinc500,
+                    )
+                }
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {

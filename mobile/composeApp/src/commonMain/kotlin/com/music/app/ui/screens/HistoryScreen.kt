@@ -136,7 +136,7 @@ fun HistoryScreen() {
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     itemsIndexed(data.events, key = { i, ev -> "${ev.playedAt}-${ev.track.id}-$i" }) { _, ev ->
-                        TrackRow(track = ev.track, context = queue) {
+                        TrackRow(track = ev.track, context = queue, showActions = false) {
                             Text(
                                 formatPlayedAt(ev.playedAt),
                                 style = MaterialTheme.typography.labelSmall,
