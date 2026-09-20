@@ -74,7 +74,8 @@ import kotlin.math.roundToInt
 /**
  * Full-screen player.
  *
- * Swipe down anywhere to close. Laid out top to bottom with no scrolling: the cover takes whatever height is
+ * Swipe down anywhere to close; swipe the cover left or right to skip to the
+ * next or previous track. Laid out top to bottom with no scrolling: the cover takes whatever height is
  * left after everything else has been placed, so on a short phone it simply
  * shrinks rather than pushing the controls off the bottom. The waveform (when
  * the server has analysed the track) is the seek bar itself — tap or drag it;
@@ -117,6 +118,13 @@ private fun NowPlayingContent(track: Track) {
     val scope = rememberCoroutineScope()
     val dragOffset = remember { Animatable(0f) }
     val dismissThresholdPx = with(LocalDensity.current) { 140.dp.toPx() }
+
+    // Swipe the cover sideways to skip: left for the next track, right for the
+    // previous one. The art follows the finger, slides off the edge, and the
+    // new track's art slides in from the opposite side.
+    val coverOffset = remember { Animatable(0f) }
+    val skipThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
+    var skipping by remember { mutableStateOf(false) }
 
     // The background travels with the content, so what's underneath shows
     // through as the player slides away.
@@ -180,9 +188,46 @@ private fun NowPlayingContent(track: Track) {
             // make a square out of those — the art ended up stretched and
             // cropped.
             val edge = minOf(maxWidth, maxHeight)
+            val widthPx = constraints.maxWidth.toFloat()
             CoverImage(
                 track,
-                Modifier.size(edge),
+                Modifier
+                    .size(edge)
+                    .offset { IntOffset(coverOffset.value.roundToInt(), 0) }
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                if (skipping) return@detectHorizontalDragGestures
+                                val dx = coverOffset.value
+                                when {
+                                    dx < -skipThresholdPx -> scope.launch {
+                                        skipping = true
+                                        coverOffset.animateTo(-widthPx, tween(150))
+                                        model.next()
+                                        coverOffset.snapTo(widthPx)
+                                        coverOffset.animateTo(0f, tween(200))
+                                        skipping = false
+                                    }
+                                    dx > skipThresholdPx -> scope.launch {
+                                        skipping = true
+                                        coverOffset.animateTo(widthPx, tween(150))
+                                        model.previous()
+                                        coverOffset.snapTo(-widthPx)
+                                        coverOffset.animateTo(0f, tween(200))
+                                        skipping = false
+                                    }
+                                    else -> scope.launch {
+                                        coverOffset.animateTo(0f, spring(stiffness = Spring.StiffnessMedium))
+                                    }
+                                }
+                            },
+                            onDragCancel = { scope.launch { coverOffset.animateTo(0f) } },
+                            onHorizontalDrag = { change, dx ->
+                                change.consume()
+                                if (!skipping) scope.launch { coverOffset.snapTo(coverOffset.value + dx) }
+                            },
+                        )
+                    },
                 corner = 20.dp,
                 placeholderSize = edge / 3,
             )
