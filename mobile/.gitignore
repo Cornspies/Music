@@ -6,6 +6,7 @@ build/
 # Kotlin / Compose
 .kotlin/
 composeApp/build/
+composeApp/release/
 composeApp/xcode/
 
 # Android local config
@@ -20,3 +21,4 @@ iosApp/DerivedData/
 .idea/
 *.iml
 .DS_Store
+*.jks
