@@ -176,8 +176,8 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     // anything, hence the hand-rolled drag.
     val offset = remember(track.id) { Animatable(0f) }
     val density = LocalDensity.current
-    val threshold = with(density) { 96.dp.toPx() }
-    val maxReveal = with(density) { 128.dp.toPx() }
+    val threshold = with(density) { 160.dp.toPx() }
+    val maxReveal = with(density) { 200.dp.toPx() }
     val revealed = offset.value < 0f
 
     Box(Modifier.fillMaxWidth()) {
