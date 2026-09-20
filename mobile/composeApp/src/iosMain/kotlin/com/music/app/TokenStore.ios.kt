@@ -1,13 +1,15 @@
 package com.music.app.api
 
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import platform.CoreFoundation.CFDictionaryAddValue
 import platform.CoreFoundation.CFDictionaryCreateMutable
-import platform.CoreFoundation.CFDictionaryRef
 import platform.CoreFoundation.CFMutableDictionaryRef
 import platform.CoreFoundation.CFTypeRef
 import platform.CoreFoundation.CFTypeRefVar
@@ -17,11 +19,8 @@ import platform.CoreFoundation.kCFTypeDictionaryValueCallBacks
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSData
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.create
-import platform.Foundation.dataUsingEncoding
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
@@ -37,6 +36,7 @@ import platform.Security.kSecMatchLimit
 import platform.Security.kSecMatchLimitOne
 import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
+import platform.posix.memcpy
 
 internal actual val defaultBaseUrl: String = "http://localhost:3001" // simulator → host loopback
 
@@ -89,18 +89,20 @@ actual class TokenStore {
         return dict
     }
 
-    private fun retained(s: String): CFTypeRef? = CFBridgingRetain(NSString.create(string = s))
+    // Kotlin Strings bridge to NSString when handed to Objective-C, so the
+    // CFBridgingRetain takes the String directly.
+    private fun retained(s: String): CFTypeRef? = CFBridgingRetain(s)
 
     private fun keychainWrite(token: String) {
-        val data = (NSString.create(string = token) as NSString).dataUsingEncoding(NSUTF8StringEncoding) ?: return
+        val data = token.encodeToByteArray().toNSData()
         val query = baseQuery()
         CFDictionaryAddValue(query, kSecValueData, CFBridgingRetain(data))
         CFDictionaryAddValue(query, kSecAttrAccessible, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
-        val status = SecItemAdd(query as CFDictionaryRef?, null)
+        val status = SecItemAdd(query, null)
         if (status != errSecSuccess) {
             // Most likely a stale duplicate; clear and retry once.
             keychainDelete()
-            SecItemAdd(query as CFDictionaryRef?, null)
+            SecItemAdd(query, null)
         }
         CFBridgingRelease(query)
     }
@@ -111,17 +113,20 @@ actual class TokenStore {
         CFDictionaryAddValue(query, kSecMatchLimit, kSecMatchLimitOne)
         return memScoped {
             val result = alloc<CFTypeRefVar>()
-            val status = SecItemCopyMatching(query as CFDictionaryRef?, result.ptr)
+            val status = SecItemCopyMatching(query, result.ptr)
             CFBridgingRelease(query)
             if (status == errSecItemNotFound || status != errSecSuccess) return@memScoped null
             val data = CFBridgingRelease(result.value) as? NSData ?: return@memScoped null
-            NSString.create(data = data, encoding = NSUTF8StringEncoding) as String?
+            // Decoded by hand: an NSString built from the data is an
+            // NSString object, not a Kotlin String, so casting it to String
+            // always fails — which silently forgot the session on every launch.
+            data.toByteArray().decodeToString()
         }
     }
 
     private fun keychainDelete() {
         val query = baseQuery()
-        SecItemDelete(query as CFDictionaryRef?)
+        SecItemDelete(query)
         CFBridgingRelease(query)
     }
 
@@ -130,4 +135,15 @@ actual class TokenStore {
         const val ACCOUNT = "jwt"
         const val LEGACY_KEY = "token"
     }
+}
+
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+private fun ByteArray.toNSData(): NSData =
+    if (isEmpty()) NSData() else usePinned { NSData.create(bytes = it.addressOf(0), length = size.toULong()) }
+
+@OptIn(ExperimentalForeignApi::class)
+private fun NSData.toByteArray(): ByteArray {
+    val size = length.toInt()
+    if (size == 0) return ByteArray(0)
+    return ByteArray(size).also { out -> out.usePinned { memcpy(it.addressOf(0), bytes, length) } }
 }

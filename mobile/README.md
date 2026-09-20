@@ -106,6 +106,14 @@ Or simply open the project root in **Android Studio** and press ▶ on the
 3. Press ⌘R — the `ComposeApp` framework target runs
    `./gradlew :composeApp:embedAndSignAppleFrameworkForXcode` automatically.
 
+One-time setup in Xcode (Signing & Capabilities), once you have a Team ID:
+
+- **Associated Domains** → `applinks:<musicHost>` so `https://<host>/playlists/…`
+  and invite links open the app. The `music://playlist/<id>` scheme used by
+  the app's own share button needs nothing — it's registered in `Info.plist`.
+- **App Groups** → `group.com.music.app` on both the app and the widget
+  target, then add `MusicWidget/` as a Widget Extension target.
+
 > The pbxproj mirrors the official Compose Multiplatform template. If Xcode
 > complains (versions drift), recreate the shell: new iOS App named `iosApp` in this
 > folder, then (a) add a **framework target** `ComposeApp` whose only build phase is

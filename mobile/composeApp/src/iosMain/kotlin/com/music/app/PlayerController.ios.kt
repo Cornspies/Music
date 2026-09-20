@@ -6,6 +6,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
+import platform.AVFAudio.AVAudioSessionInterruptionNotification
+import platform.AVFAudio.AVAudioSessionInterruptionOptionKey
+import platform.AVFAudio.AVAudioSessionInterruptionOptionShouldResume
+import platform.AVFAudio.AVAudioSessionInterruptionTypeBegan
+import platform.AVFAudio.AVAudioSessionInterruptionTypeEnded
+import platform.AVFAudio.AVAudioSessionInterruptionTypeKey
 import platform.AVFAudio.setActive
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
@@ -25,6 +31,7 @@ import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSData
 import platform.Foundation.NSDefaultRunLoopMode
 import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSRunLoop
 import platform.Foundation.NSTimer
@@ -85,6 +92,35 @@ actual class PlayerController actual constructor() {
             onEnded?.invoke()
         }
 
+    /**
+     * A phone call, alarm or Siri takes the audio session away and iOS pauses
+     * the player for us; what it doesn't do is start it again. When the
+     * interruption ends and the system says resuming is appropriate (it isn't
+     * after, say, the user started music in another app), pick up where we
+     * were — the same thing ExoPlayer's audio-focus handling does on Android.
+     */
+    private var wasPlayingBeforeInterruption = false
+    private val interruptionObserver: NSObjectProtocol = NSNotificationCenter.defaultCenter
+        .addObserverForName(AVAudioSessionInterruptionNotification, `object` = null, queue = NSOperationQueue.mainQueue) { note ->
+            val info = note?.userInfo ?: return@addObserverForName
+            val type = (info[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.unsignedLongValue
+                ?: return@addObserverForName
+            when (type) {
+                AVAudioSessionInterruptionTypeBegan -> {
+                    wasPlayingBeforeInterruption = _isPlaying.value
+                }
+                AVAudioSessionInterruptionTypeEnded -> {
+                    val options = (info[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.unsignedLongValue ?: 0uL
+                    val shouldResume = options and AVAudioSessionInterruptionOptionShouldResume != 0uL
+                    if (wasPlayingBeforeInterruption && shouldResume) {
+                        configureAudioSession() // the session was deactivated by the interruption
+                        play()
+                    }
+                    wasPlayingBeforeInterruption = false
+                }
+            }
+        }
+
     private val poller: NSTimer = NSTimer.timerWithTimeInterval(0.25, repeats = true) { _ ->
         val p = player
         if (p != null) {
@@ -139,6 +175,7 @@ actual class PlayerController actual constructor() {
     actual fun release() {
         poller.invalidate()
         NSNotificationCenter.defaultCenter.removeObserver(endObserver)
+        NSNotificationCenter.defaultCenter.removeObserver(interruptionObserver)
         player?.pause()
         player?.replaceCurrentItemWithPlayerItem(null)
         player = null
