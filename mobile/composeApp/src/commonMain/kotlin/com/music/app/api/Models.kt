@@ -81,6 +81,8 @@ data class Track(
     /** Catalogue a Discover-added track came from ("ncs"); "" for uploads. */
     val source: String = "",
     val sourceId: String = "",
+    /** "#rrggbb" representative colour of the cover, "" until computed. */
+    val coverColor: String = "",
 )
 
 /** An online catalogue Discover can search. */

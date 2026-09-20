@@ -132,6 +132,9 @@ func migrate(db *sql.DB) error {
                 // song isn't added twice and Discover can show what's in.
                 {"tracks.source", `ALTER TABLE tracks ADD COLUMN source TEXT NOT NULL DEFAULT ''`},
                 {"tracks.source_id", `ALTER TABLE tracks ADD COLUMN source_id TEXT NOT NULL DEFAULT ''`},
+                // "#rrggbb" representative colour of the cover, for the
+                // lyrics view's background; computed in the background.
+                {"tracks.cover_color", `ALTER TABLE tracks ADD COLUMN cover_color TEXT NOT NULL DEFAULT ''`},
                 // Loudness analysis (integrated LUFS, EBU R128) for volume
                 // normalisation, and a coarse peaks array for waveform seek
                 // bars. NULL loudness means "not analysed yet".

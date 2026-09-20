@@ -22,6 +22,8 @@ interface LyricsPanelProps {
   position: number
   onSeek: (sec: number) => void
   className?: string
+  /** "full" is the immersive page: big, left-aligned, white on colour. */
+  size?: "compact" | "full"
 }
 
 /** A line is "current" from its own time until the next one starts. */
@@ -46,7 +48,8 @@ const SOURCE_LABEL: Record<Lyrics["source"], string> = {
  * line is highlighted and kept in view, and clicking a line seeks to it;
  * plain lyrics are just text to read. The panel scrolls, the page doesn't.
  */
-export function LyricsPanel({ trackId, position, onSeek, className }: LyricsPanelProps) {
+export function LyricsPanel({ trackId, position, onSeek, className, size = "compact" }: LyricsPanelProps) {
+  const full = size === "full"
   // Keyed on the track so a stale result never shows under a new title.
   const [state, setState] = useState<{ id: string; lyrics: Lyrics | null; error: string | null } | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -109,7 +112,7 @@ export function LyricsPanel({ trackId, position, onSeek, className }: LyricsPane
     body = <p className="py-10 text-center text-sm text-zinc-400">Instrumental</p>
   } else if (synced && synced.length > 0) {
     body = (
-      <ol className="flex flex-col gap-1 py-[35%]">
+      <ol className={cn("flex flex-col", full ? "gap-2 py-[30vh]" : "gap-1 py-[35%]")}>
         {synced.map((l, i) => (
           <li key={i}>
             <button
@@ -117,12 +120,17 @@ export function LyricsPanel({ trackId, position, onSeek, className }: LyricsPane
               data-line={i}
               onClick={() => onSeek(l.t)}
               className={cn(
-                "w-full rounded-lg px-3 py-1.5 text-left text-lg font-semibold leading-snug transition-colors duration-300 md:text-xl",
+                "w-full rounded-lg text-left transition-colors duration-300",
+                full
+                  ? "px-2 py-1 text-2xl font-extrabold leading-tight tracking-tight md:text-4xl lg:text-5xl"
+                  : "px-3 py-1.5 text-lg font-semibold leading-snug md:text-xl",
                 i === current
                   ? "text-white"
-                  : i < current
-                    ? "text-zinc-500 hover:text-zinc-300"
-                    : "text-zinc-400 hover:text-zinc-200"
+                  : full
+                    ? "text-white/45 hover:text-white/80"
+                    : i < current
+                      ? "text-zinc-500 hover:text-zinc-300"
+                      : "text-zinc-400 hover:text-zinc-200"
               )}
             >
               {l.line || "♪"}
@@ -133,7 +141,16 @@ export function LyricsPanel({ trackId, position, onSeek, className }: LyricsPane
     )
   } else {
     body = (
-      <p className="py-6 text-base leading-relaxed whitespace-pre-wrap text-zinc-200 md:text-lg">{lyrics.plain}</p>
+      <p
+        className={cn(
+          "whitespace-pre-wrap",
+          full
+            ? "px-2 py-[20vh] text-2xl font-extrabold leading-snug tracking-tight text-white/90 md:text-4xl"
+            : "py-6 text-base leading-relaxed text-zinc-200 md:text-lg"
+        )}
+      >
+        {lyrics.plain}
+      </p>
     )
   }
 
@@ -142,12 +159,15 @@ export function LyricsPanel({ trackId, position, onSeek, className }: LyricsPane
       <div
         ref={scroller}
         onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-2 [mask-image:linear-gradient(to_bottom,transparent,black_12%,black_88%,transparent)]"
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto px-2 [mask-image:linear-gradient(to_bottom,transparent,black_12%,black_88%,transparent)]",
+          full && "[scrollbar-width:none]"
+        )}
       >
         {body}
       </div>
       {loaded && (
-        <div className="flex items-center justify-between gap-2 px-3 pt-1 text-[11px] text-zinc-500">
+        <div className={cn("flex items-center justify-between gap-2 px-3 pt-1 text-[11px]", full ? "text-white/50" : "text-zinc-500")}>
           <span>{lyrics && lyrics.source !== "none" ? SOURCE_LABEL[lyrics.source] : ""}</span>
           {lyrics?.editable && (
             <button

@@ -76,6 +76,9 @@ type Track struct {
         // via Discover ("ncs"); both empty for ordinary uploads.
         Source   string `json:"source"`
         SourceID string `json:"sourceId"`
+        // CoverColor is a "#rrggbb" colour representative of the cover art,
+        // "" until computed (or when there is no cover).
+        CoverColor string `json:"coverColor"`
         // HasWaveform is true once GET /api/tracks/{id}/waveform has data.
         HasWaveform bool `json:"hasWaveform"`
 }
@@ -140,7 +143,7 @@ SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration
        t.user_id, COALESCE(u.username, ''), COALESCE(u.has_avatar, 0),
        COALESCE(t.alt_path, ''), COALESCE(t.alt_mime, ''), COALESCE(t.alt_size, 0),
        COALESCE(t.updated_at, ''), t.loudness, (COALESCE(t.waveform_json, '') <> ''),
-       COALESCE(t.source, ''), COALESCE(t.source_id, '')
+       COALESCE(t.source, ''), COALESCE(t.source_id, ''), COALESCE(t.cover_color, '')
 FROM tracks t
 LEFT JOIN users u ON u.id = t.user_id
 LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?`
@@ -169,7 +172,7 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
                 &t.UploadedBy.ID, &t.UploadedBy.Username, &uploaderAvatar,
                 &altPath, &t.CompatibleMime, &t.CompatibleSize,
                 &t.UpdatedAt, &loudness, &hasWaveform,
-                &t.Source, &t.SourceID,
+                &t.Source, &t.SourceID, &t.CoverColor,
         )
         if err != nil {
                 return nil, "", "", err
@@ -487,6 +490,9 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
         // refresh instead. Loudness/waveform analysis queues behind it.
         s.startCompatibleCopy(id, savedPath)
         s.queueAnalysis(id)
+        if hasCover {
+                go s.updateCoverColor(id)
+        }
 }
 
 // userQuotaBytes resolves MUSIC_MAX_BYTES_PER_USER (accepts plain bytes or a

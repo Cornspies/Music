@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dhowden/tag"
@@ -41,10 +42,12 @@ const (
 	// A miss is cached this long before LRCLIB is asked again.
 	lyricsMissTTL = 7 * 24 * time.Hour
 
-	lrclibBaseURL = "https://lrclib.net/api"
 	// LRCLIB asks clients to identify themselves.
 	lrclibUserAgent = "Music-SelfHosted-MusicPlayer/1.0 (https://github.com/cornspies/music-player)"
 )
+
+// lrclibBase is a variable so tests can point it at a stub.
+var lrclibBase = "https://lrclib.net/api"
 
 // LyricLine is one time-stamped line of synced lyrics.
 type LyricLine struct {
@@ -138,8 +141,15 @@ func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (
 	} else if !lyricsLookupDisabled() {
 		hit, err := lrclibLookup(ctx, t)
 		if err != nil {
-			logErr("lrclib", err)
-		} else if hit != nil {
+			// The provider is down or throttling (LRCLIB sits behind
+			// Cloudflare and has the odd 503). That says nothing about
+			// whether the lyrics exist, so it must not be cached as a miss
+			// — that would hide them for a week. Answer "none" for now and
+			// let the next request try again once the backoff has passed.
+			logErr("lyrics lookup", err)
+			return &fresh, nil
+		}
+		if hit != nil {
 			fresh = *hit
 		}
 	}
@@ -147,6 +157,48 @@ func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (
 		return nil, err
 	}
 	return &fresh, nil
+}
+
+// purgeStaleLyricsMisses runs once: builds before the backoff logic wrote a
+// provider outage into the cache as "no lyrics", so any miss recorded by
+// them is dropped and looked up afresh. Keyed in settings so it's a one-off.
+func (s *Server) purgeStaleLyricsMisses() {
+	const key = "lyrics_misses_purged"
+	if _, done := s.getSetting(key); done {
+		return
+	}
+	if _, err := s.db.Exec(`DELETE FROM lyrics WHERE source = ?`, lyricsSourceNone); err != nil {
+		logErr("purge lyrics misses", err)
+		return
+	}
+	_ = s.putSetting(key, nowRFC3339())
+}
+
+// lrclibBackoff holds the moment LRCLIB may be contacted again after it
+// answered with an error. One outage shouldn't turn every "open lyrics"
+// into another failing round-trip; the default matches its own Retry-After
+// when it sends one.
+var lrclibBackoff struct {
+	sync.Mutex
+	until time.Time
+}
+
+const lrclibDefaultBackoff = 2 * time.Minute
+
+func lrclibAvailable() bool {
+	lrclibBackoff.Lock()
+	defer lrclibBackoff.Unlock()
+	return time.Now().After(lrclibBackoff.until)
+}
+
+func lrclibPause(retryAfter string) {
+	d := lrclibDefaultBackoff
+	if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && secs > 0 {
+		d = time.Duration(secs) * time.Second
+	}
+	lrclibBackoff.Lock()
+	lrclibBackoff.until = time.Now().Add(d)
+	lrclibBackoff.Unlock()
 }
 
 // embeddedLyrics reads the lyrics tag (USLT for ID3, LYRICS for Vorbis) from
@@ -184,6 +236,9 @@ type lrclibRecord struct {
 func lrclibLookup(ctx context.Context, t *Track) (*lyricsRow, error) {
 	if strings.TrimSpace(t.Title) == "" || strings.TrimSpace(t.Artist) == "" {
 		return nil, nil // nothing to search by
+	}
+	if !lrclibAvailable() {
+		return nil, errors.New("lrclib is unavailable, waiting before asking again")
 	}
 	q := url.Values{}
 	q.Set("track_name", t.Title)
@@ -259,7 +314,7 @@ func pickLRCLIBResult(results []lrclibRecord, duration float64) *lrclibRecord {
 // It reports found=false on a 404 rather than an error, since "not in the
 // database" is the common, uninteresting case.
 func lrclibGet(ctx context.Context, pathAndQuery string, out any) (found bool, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, lrclibBaseURL+pathAndQuery, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, lrclibBase+pathAndQuery, nil)
 	if err != nil {
 		return false, err
 	}
@@ -267,13 +322,19 @@ func lrclibGet(ctx context.Context, pathAndQuery string, out any) (found bool, e
 	req.Header.Set("Accept", "application/json")
 	resp, err := metadataLookupClient.Do(req)
 	if err != nil {
+		lrclibPause("")
 		return false, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
 		return false, nil
-	}
-	if resp.StatusCode != http.StatusOK {
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		// Their problem, not a verdict on the track: back off and try later.
+		lrclibPause(resp.Header.Get("Retry-After"))
+		return false, fmt.Errorf("lrclib: status %d (paused)", resp.StatusCode)
+	default:
 		return false, fmt.Errorf("lrclib: status %d", resp.StatusCode)
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(nil, resp.Body, 1<<20)).Decode(out); err != nil {

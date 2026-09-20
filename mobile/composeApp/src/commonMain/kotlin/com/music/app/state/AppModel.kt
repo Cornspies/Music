@@ -35,7 +35,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.ExperimentalTime
 
 /** Repeat modes for the player (off / repeat queue / repeat current track). */
 enum class RepeatMode { OFF, ALL, ONE }
@@ -877,11 +879,27 @@ class AppModel(
     /** Lyrics for [track], or null while they haven't been fetched yet. */
     fun lyricsFor(track: Track): Lyrics? = lyrics[track.id]
 
+    /** When a miss was cached, so it can be asked again after a while. */
+    private val lyricsMissAt = mutableMapOf<String, Long>()
+
+    @OptIn(ExperimentalTime::class)
+    private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
+
     fun loadLyrics(track: Track) {
-        if (offlineMode || track.id in lyrics || !lyricsRequests.add(track.id)) return
+        if (offlineMode) return
+        val cached = lyrics[track.id]
+        // Hits are kept for the session. A miss may be the provider having
+        // been down (the server doesn't remember those), so it's re-asked
+        // after a few minutes.
+        val missFresh = (lyricsMissAt[track.id] ?: 0L) > nowMs() - 5 * 60_000
+        if (cached != null && (cached.found || missFresh)) return
+        if (!lyricsRequests.add(track.id)) return
         scope.launch {
             try {
-                runCatching { api.lyrics(track.id) }.getOrNull()?.let { lyrics[track.id] = it }
+                runCatching { api.lyrics(track.id) }.getOrNull()?.let {
+                    lyrics[track.id] = it
+                    if (!it.found) lyricsMissAt[track.id] = nowMs()
+                }
             } finally {
                 lyricsRequests.remove(track.id)
             }

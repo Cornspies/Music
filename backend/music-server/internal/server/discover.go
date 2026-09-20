@@ -368,6 +368,9 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	}
 	s.startCompatibleCopy(id, rel)
 	s.queueAnalysis(id)
+	if hasCover {
+		go s.updateCoverColor(id)
+	}
 	return id, nil
 }
 

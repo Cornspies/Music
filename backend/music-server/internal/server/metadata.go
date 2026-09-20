@@ -316,6 +316,9 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
         // later request re-searches against the corrected metadata.
         forgetCandidates(id)
         s.forgetLookedUpLyrics(id)
+        if len(meta.picture) > 0 && hasCover {
+                go s.updateCoverColor(id)
+        }
 
         t, _, _, ok := s.getTrack(w, r, u.ID, id)
         if !ok {

@@ -1,6 +1,11 @@
 package com.music.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -62,7 +67,7 @@ import com.music.app.api.Track
 import com.music.app.state.RepeatMode
 import com.music.app.ui.components.CoverImage
 import com.music.app.ui.components.EmptyState
-import com.music.app.ui.components.LyricsSheet
+import com.music.app.ui.components.LyricsScreen
 import com.music.app.ui.components.LyricsStrip
 import com.music.app.ui.components.WaveformBar
 import com.music.app.ui.formatDuration
@@ -78,7 +83,7 @@ import kotlin.math.roundToInt
  *
  * Swipe down anywhere to close; swipe the cover left or right to skip to the
  * next or previous track. When the track has lyrics, the line being sung sits
- * between the title and the seek bar and opens the full text. Laid out top to bottom with no scrolling: the cover takes whatever height is
+ * under the art and opens them full-screen. Laid out top to bottom with no scrolling: the cover takes whatever height is
  * left after everything else has been placed, so on a short phone it simply
  * shrinks rather than pushing the controls off the bottom. The waveform (when
  * the server has analysed the track) is the seek bar itself — tap or drag it;
@@ -238,6 +243,14 @@ private fun NowPlayingContent(track: Track) {
             )
         }
 
+        // ---- lyrics: the line being sung, right under the art; tap for the
+        // full-screen view. Absent when the track has none, and the cover
+        // takes the room back.
+        if (lyrics != null) {
+            LyricsStrip(lyrics, position = position, onClick = { lyricsOpen = true })
+            Spacer(Modifier.height(10.dp))
+        }
+
         // ---- title / artist with the heart alongside, not below ----
         Row(
             Modifier
@@ -269,14 +282,6 @@ private fun NowPlayingContent(track: Track) {
                     tint = if (track.isFavorite) Emerald else Zinc500,
                 )
             }
-        }
-
-        // ---- lyrics: the line being sung, between the art and the transport;
-        // tap for the whole text. Absent when the track has none, and the
-        // cover takes the room back.
-        if (lyrics != null) {
-            Spacer(Modifier.height(10.dp))
-            LyricsStrip(lyrics, position = position, onClick = { lyricsOpen = true })
         }
 
         Spacer(Modifier.height(8.dp))
@@ -368,8 +373,13 @@ private fun NowPlayingContent(track: Track) {
         }
     }
 
-    if (lyricsOpen) {
-        LyricsSheet(track, onDismiss = { lyricsOpen = false })
+    // Full-screen lyrics slide up over the player and take the cover's colour.
+    AnimatedVisibility(
+        visible = lyricsOpen,
+        enter = slideInVertically(tween(260)) { it } + fadeIn(tween(200)),
+        exit = slideOutVertically(tween(220)) { it } + fadeOut(tween(180)),
+    ) {
+        LyricsScreen(track, onClose = { lyricsOpen = false })
     }
 }
 

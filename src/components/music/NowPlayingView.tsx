@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { WaveformSeek } from "@/components/music/WaveformSeek"
 import { LyricsPanel } from "@/components/music/LyricsPanel"
+import { lyricsGradient } from "@/lib/color"
 
 const LYRICS_PREF = "np-lyrics"
 
@@ -84,7 +85,7 @@ export function NowPlayingView() {
   const queueIndex = usePlayerStore((s) => s.queueIndex)
 
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
-  // Lyrics take the cover's place while shown; the choice sticks per browser.
+  // Lyrics mode turns the page into the full-screen lyrics view; the choice sticks per browser.
   const [lyricsOpen, setLyricsOpen] = useState(readLyricsPref)
   const toggleLyrics = () => {
     const next = !lyricsOpen
@@ -131,8 +132,15 @@ export function NowPlayingView() {
           transition={{ type: "spring", damping: 32, stiffness: 340 }}
           className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-zinc-950"
         >
-          {/* ambient background: blurred, scaled-up copy of the cover art */}
-          {coverSrc ? (
+          {/* Lyrics mode paints the page in the cover's colour; otherwise
+              the ambient background is a blurred, scaled-up copy of the art. */}
+          {lyricsOpen ? (
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 transition-[background] duration-500"
+              style={{ background: lyricsGradient(currentTrack.coverColor) }}
+            />
+          ) : coverSrc ? (
             <>
               <img
                 src={coverSrc}
@@ -197,14 +205,32 @@ export function NowPlayingView() {
           </div>
 
           {/* content */}
-          <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center gap-5 overflow-y-auto px-6 pb-6 md:gap-8 md:px-10">
+          <div
+            className={cn(
+              "relative z-10 flex min-h-0 flex-1 flex-col items-center px-6 pb-6 md:px-10",
+              lyricsOpen ? "gap-3 overflow-hidden md:gap-4" : "justify-center gap-5 overflow-y-auto md:gap-8"
+            )}
+          >
             {lyricsOpen ? (
-              <LyricsPanel
-                trackId={currentTrack.id}
-                position={displayPosition}
-                onSeek={(v) => usePlayerStore.getState().seek(v)}
-                className="h-[42vh] w-full max-w-xl shrink-0 md:h-[48vh]"
-              />
+              <>
+                {/* who's playing, small, where the big cover used to be */}
+                <div className="flex w-full max-w-4xl items-center gap-3 pt-2">
+                  <span className="w-12 shrink-0 md:w-14">
+                    <CoverArt trackId={currentTrack.id} title={currentTrack.title} hasCover={currentTrack.hasCover} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-base font-bold text-white md:text-lg">{currentTrack.title}</span>
+                    <span className="block truncate text-sm text-white/60">{currentTrack.artist || "Unknown artist"}</span>
+                  </span>
+                </div>
+                <LyricsPanel
+                  trackId={currentTrack.id}
+                  position={displayPosition}
+                  onSeek={(v) => usePlayerStore.getState().seek(v)}
+                  size="full"
+                  className="min-h-0 w-full max-w-4xl flex-1"
+                />
+              </>
             ) : (
               /* cover */
               <motion.div
@@ -230,6 +256,7 @@ export function NowPlayingView() {
             )}
 
             {/* title + meta */}
+            {!lyricsOpen && (
             <div className="w-full max-w-xl text-center">
               <h1 className="truncate text-2xl font-bold tracking-tight text-white md:text-3xl">
                 {currentTrack.title}
@@ -245,6 +272,7 @@ export function NowPlayingView() {
                 </span>
               ) : null}
             </div>
+            )}
 
             {/* seek */}
             <div className="group/seek w-full max-w-xl">
@@ -352,7 +380,7 @@ export function NowPlayingView() {
             </div>
 
             {/* up next */}
-            {upNext && (
+            {upNext && !lyricsOpen && (
               <button
                 type="button"
                 onClick={() => usePlayerStore.getState().next()}

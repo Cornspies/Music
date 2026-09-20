@@ -287,6 +287,12 @@ export function fetchLyrics(trackId: string): Promise<Lyrics> {
         if (e instanceof LyricsMissing) return e.lyrics
         throw e
       })
+      .then((l) => {
+        // A miss isn't kept: it may just be the lyrics provider having been
+        // down, and the server re-asks on the next request anyway.
+        if (l.source === "none") lyricsCache.delete(trackId)
+        return l
+      })
       .catch((e) => {
         lyricsCache.delete(trackId)
         throw e

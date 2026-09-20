@@ -61,6 +61,8 @@ func (s *Server) queueAnalysis(trackID string) {
 // that has never been analysed. Called once from main after the server is
 // constructed.
 func (s *Server) StartBackgroundWork() {
+	s.purgeStaleLyricsMisses()
+	go s.backfillCoverColors()
 	if config.Flag("MUSIC_DISABLE_ANALYSIS") {
 		log.Printf("music-server analysis: disabled")
 		return

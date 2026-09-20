@@ -36,6 +36,8 @@ export interface Track {
   /** Catalogue a Discover-added track came from ("ncs"); "" for uploads. */
   source: string
   sourceId: string
+  /** "#rrggbb" representative colour of the cover, "" until computed. */
+  coverColor: string
 }
 
 /** Small public profile shown next to a track. */
