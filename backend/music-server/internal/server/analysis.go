@@ -63,6 +63,7 @@ func (s *Server) queueAnalysis(trackID string) {
 func (s *Server) StartBackgroundWork() {
 	s.purgeStaleLyricsMisses()
 	go s.backfillCoverColors()
+	s.startMetadataWorker()
 	if config.Flag("MUSIC_DISABLE_ANALYSIS") {
 		log.Printf("music-server analysis: disabled")
 		return

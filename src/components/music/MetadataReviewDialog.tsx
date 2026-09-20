@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Check, ChevronLeft, ChevronRight, ImageIcon, ImageOff, Loader2, Sparkles } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, ImageIcon, ImageOff, Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { applyMetadataCandidate, candidateArtworkUrl, fetchMetadataCandidates } from "@/lib/api"
+import { applyMetadataCandidate, candidateArtworkUrl, fetchMetadataCandidates, requestMetadataLookup } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
-import type { MetadataCandidate, Track } from "@/lib/types"
+import type { MetadataCandidate, MetadataCandidatesResponse, Track } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { Button } from "@/components/ui/button"
 import {
@@ -85,24 +85,32 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
   const [applyingId, setApplyingId] = useState<string | null>(null)
   const [lookupDisabled, setLookupDisabled] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Queue state of the current track's lookup, from the last response.
+  const [queue, setQueue] = useState<Pick<MetadataCandidatesResponse, "pending" | "queuePosition" | "partial" | "attempts"> | null>(null)
+  // Provider tab, keyed by track so a new track starts back on "all".
+  const [tab, setTab] = useState<{ id: string; tab: string } | null>(null)
   // Tracks the user has already resolved, so revisiting shows the outcome.
   const [resolved, setResolved] = useState<Record<string, string>>({})
 
   const abortRef = useRef<AbortController | null>(null)
   const track = tracks[index]
 
-  const load = useCallback(async (trackId: string) => {
+  const load = useCallback(async (trackId: string, quiet = false) => {
     abortRef.current?.abort()
     const ac = new AbortController()
     abortRef.current = ac
-    setLoading(true)
-    setError(null)
-    setCandidates([])
+    if (!quiet) {
+      setLoading(true)
+      setError(null)
+      setCandidates([])
+      setQueue(null)
+    }
     try {
       const res = await fetchMetadataCandidates(trackId, ac.signal)
       if (ac.signal.aborted) return
       setCandidates(res.candidates ?? [])
       setLookupDisabled(res.lookupDisabled)
+      setQueue({ pending: res.pending, queuePosition: res.queuePosition, partial: res.partial, attempts: res.attempts })
     } catch (e) {
       if ((e as Error)?.name === "AbortError") return
       setError((e as Error).message)
@@ -116,6 +124,35 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
     load(track.id)
     return () => abortRef.current?.abort()
   }, [open, track, load])
+
+  // While the lookup is queued or running, ask again every few seconds; the
+  // list grows as providers answer and the "position" counts down.
+  useEffect(() => {
+    if (!open || !track || !queue?.pending) return
+    const t = setInterval(() => load(track.id, true), 2500)
+    return () => clearInterval(t)
+  }, [open, track, queue?.pending, load])
+
+  const lookupAgain = async () => {
+    if (!track) return
+    try {
+      await requestMetadataLookup(track.id)
+      setResolved((r) => {
+        const next = { ...r }
+        delete next[track.id]
+        return next
+      })
+      setCandidates([])
+      setQueue({ pending: true, queuePosition: 1, partial: false, attempts: 0 })
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+
+  const sources = Array.from(new Set(candidates.map((c) => c.source)))
+  const sourceTab = track && tab?.id === track.id ? tab.tab : "all"
+  const setSourceTab = (t: string) => track && setTab({ id: track.id, tab: t })
+  const shown = sourceTab === "all" ? candidates : candidates.filter((c) => c.source === sourceTab)
 
   // Reset position whenever a fresh batch is handed to the dialog.
   useEffect(() => {
@@ -184,7 +221,52 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
           {loading && (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-zinc-400">
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              Searching MusicBrainz, Deezer, iTunes…
+              Loading suggestions…
+            </div>
+          )}
+
+          {!loading && !error && queue?.pending && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg border border-zinc-800/80 bg-zinc-950/50 px-3 py-2 text-xs text-zinc-400">
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-emerald-400" aria-hidden="true" />
+              <span>
+                {queue.queuePosition && queue.queuePosition > 1
+                  ? `Waiting for the lookup queue · ${queue.queuePosition - 1} ahead`
+                  : queue.attempts > 0
+                    ? `A provider was rate-limited — retrying (attempt ${queue.attempts + 1})`
+                    : "Searching MusicBrainz, Deezer, iTunes…"}
+                {candidates.length > 0 ? ` · ${candidates.length} found so far` : ""}
+              </span>
+            </div>
+          )}
+
+          {!loading && !error && !queue?.pending && queue?.partial && (
+            <p className="mt-3 text-xs text-amber-300/80">
+              Not every provider answered (rate limits); “Look up again” tries them all once more.
+            </p>
+          )}
+
+          {!loading && !error && sources.length > 1 && (
+            <div role="tablist" aria-label="Source" className="mt-3 flex flex-wrap gap-1">
+              {["all", ...sources].map((s) => {
+                const n = s === "all" ? candidates.length : candidates.filter((c) => c.source === s).length
+                return (
+                  <button
+                    key={s}
+                    role="tab"
+                    type="button"
+                    aria-selected={sourceTab === s}
+                    onClick={() => setSourceTab(s)}
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors",
+                      sourceTab === s
+                        ? (SOURCE_STYLES[s] ?? "bg-zinc-700/40 text-zinc-100 ring-zinc-500/50")
+                        : "bg-transparent text-zinc-400 ring-zinc-800 hover:text-zinc-200"
+                    )}
+                  >
+                    {s === "all" ? "All" : s} · {n}
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -208,15 +290,15 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
             </p>
           )}
 
-          {!loading && !error && !lookupDisabled && candidates.length === 0 && (
+          {!loading && !error && !lookupDisabled && !queue?.pending && candidates.length === 0 && (
             <p className="py-8 text-center text-sm text-zinc-500">
               No online matches found for this track.
             </p>
           )}
 
-          {!loading && !error && candidates.length > 0 && (
+          {!loading && !error && shown.length > 0 && (
             <ul className="mt-3 flex max-h-76 min-w-0 flex-col gap-2 overflow-y-auto pr-1">
-              {candidates.map((c) => {
+              {shown.map((c) => {
                 const conf = confidenceLabel(c.confidence)
                 const isApplied = appliedId === c.id
                 const wasAuto = c.applied && !appliedId
@@ -302,6 +384,19 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
             Previous
           </Button>
           <div className="flex items-center gap-2">
+            {!lookupDisabled && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={loading || !!queue?.pending}
+                className="h-8 px-2 text-xs text-zinc-400 hover:text-zinc-100"
+                onClick={lookupAgain}
+                title="Search every provider again"
+              >
+                <RefreshCw className="mr-1 size-3.5" aria-hidden="true" />
+                Look up again
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"

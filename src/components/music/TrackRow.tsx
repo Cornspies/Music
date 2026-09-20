@@ -14,11 +14,12 @@ import {
   MoreHorizontal,
   Music4,
   Pencil,
+  RefreshCw,
   Play,
   Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { downloadUrl } from "@/lib/api"
+import { downloadUrl, requestMetadataLookup } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
@@ -171,9 +172,19 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         >
           {track.title}
         </div>
-        <div className="truncate text-xs text-zinc-500">
-          {track.artist || "Unknown artist"}
-          {track.year ? ` · ${track.year}` : ""}
+        <div className="flex items-center gap-1.5 truncate text-xs text-zinc-500">
+          {(track.metadataStatus === "queued" || track.metadataStatus === "running") && (
+            <Loader2
+              className="size-3 shrink-0 animate-spin text-emerald-500/80"
+              aria-label="Looking up metadata"
+              // The online lookup hasn't been through this track yet; its
+              // tags may still be filled in.
+            />
+          )}
+          <span className="truncate">
+            {track.artist || "Unknown artist"}
+            {track.year ? ` · ${track.year}` : ""}
+          </span>
         </div>
       </div>
 
@@ -393,9 +404,20 @@ function TrackRowMenu({
         )
       ) : null}
       {canManage ? (
-        <DropdownMenuItem onClick={() => useUIStore.getState().setEditTrackId(track.id)}>
-          <Pencil className="size-4" /> Edit metadata…
-        </DropdownMenuItem>
+        <>
+          <DropdownMenuItem onClick={() => useUIStore.getState().setEditTrackId(track.id)}>
+            <Pencil className="size-4" /> Edit metadata…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              // Fresh search across every provider, then the review dialog.
+              requestMetadataLookup(track.id).catch((e: Error) => toast.error(e.message))
+              useUIStore.getState().setMetadataReviewTracks([track])
+            }}
+          >
+            <RefreshCw className="size-4" /> Look up metadata again
+          </DropdownMenuItem>
+        </>
       ) : null}
       <DropdownMenuItem asChild>
         <a

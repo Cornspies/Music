@@ -120,6 +120,8 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("DELETE /api/auth/avatar", s.requireAuth(s.handleDeleteAvatar))
         mux.HandleFunc("GET /api/users/{id}/avatar", s.requireMediaAuth(s.handleUserAvatar))
         mux.HandleFunc("GET /api/tracks/{id}/metadata/candidates", s.requireAuth(s.handleTrackMetadataCandidates))
+        mux.HandleFunc("POST /api/tracks/{id}/metadata/lookup", s.requireAuth(s.handleTrackMetadataLookup))
+        mux.HandleFunc("GET /api/metadata/queue", s.requireAuth(s.handleMetadataQueue))
         mux.HandleFunc("GET /api/tracks/{id}/metadata/candidates/{candidateId}/artwork", s.requireMediaAuth(s.handleCandidateArtwork))
         mux.HandleFunc("POST /api/tracks/{id}/metadata/apply", s.requireAuth(s.handleApplyTrackMetadata))
 

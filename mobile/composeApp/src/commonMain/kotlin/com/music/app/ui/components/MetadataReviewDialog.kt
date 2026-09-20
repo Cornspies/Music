@@ -28,6 +28,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.delay
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -122,25 +128,48 @@ fun MetadataReviewDialog(
     var lookupDisabled by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var applyingId by remember { mutableStateOf<String?>(null) }
+    // Queue state from the last response; polled while pending.
+    var pending by remember { mutableStateOf(false) }
+    var queuePosition by remember { mutableStateOf(0) }
+    var attempts by remember { mutableStateOf(0) }
+    var partial by remember { mutableStateOf(false) }
+
     // trackId -> chosen candidate id, so revisiting a track shows what was applied.
     var resolved by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     // Bumped to force a reload when the user retries after an error.
     var reloadKey by remember { mutableStateOf(0) }
 
     val track = tracks.getOrNull(index) ?: return
+    // Provider chip; null shows every source. Resets with the track.
+    var sourceFilter by remember(track.id) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(track.id, reloadKey) {
         loading = true
         error = null
         candidates = emptyList()
-        try {
-            val response = model.api.metadataCandidates(track.id)
-            candidates = response.candidates
-            lookupDisabled = response.lookupDisabled
-        } catch (e: Exception) {
-            error = friendlyError(e)
-        } finally {
-            loading = false
+        pending = false
+        // First answer, then — while the server's queue hasn't been through
+        // this track — ask again every few seconds. The list grows as
+        // providers answer and the position counts down.
+        var first = true
+        while (true) {
+            try {
+                val response = model.api.metadataCandidates(track.id)
+                candidates = response.candidates
+                lookupDisabled = response.lookupDisabled
+                pending = response.pending
+                queuePosition = response.queuePosition
+                attempts = response.attempts
+                partial = response.partial
+                error = null
+            } catch (e: Exception) {
+                if (first) error = friendlyError(e)
+            } finally {
+                loading = false
+                first = false
+            }
+            if (!pending) break
+            delay(2500.milliseconds)
         }
     }
 
@@ -188,6 +217,58 @@ fun MetadataReviewDialog(
 
                 Spacer(Modifier.height(12.dp))
 
+                if (!loading && error == null && pending) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Emerald)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            buildString {
+                                append(
+                                    when {
+                                        queuePosition > 1 -> "Waiting for the lookup queue · ${queuePosition - 1} ahead"
+                                        attempts > 0 -> "A provider was rate-limited — retrying (attempt ${attempts + 1})"
+                                        else -> "Searching MusicBrainz, Deezer, iTunes…"
+                                    },
+                                )
+                                if (candidates.isNotEmpty()) append(" · ${candidates.size} found so far")
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                } else if (!loading && error == null && partial) {
+                    Text(
+                        "Not every provider answered; “Look up again” tries them all once more.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                val sources = candidates.map { it.source }.distinct()
+                if (!loading && error == null && sources.size > 1) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        FilterChip(
+                            selected = sourceFilter == null,
+                            onClick = { sourceFilter = null },
+                            label = { Text("All · ${candidates.size}") },
+                        )
+                        sources.forEach { s ->
+                            FilterChip(
+                                selected = sourceFilter == s,
+                                onClick = { sourceFilter = s },
+                                label = { Text("$s · ${candidates.count { it.source == s }}") },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                val shown = if (sourceFilter == null) candidates else candidates.filter { it.source == sourceFilter }
+
                 when {
                     loading -> LoadingBox(Modifier.heightIn(max = 140.dp))
 
@@ -210,6 +291,8 @@ fun MetadataReviewDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
+                    candidates.isEmpty() && pending -> Spacer(Modifier.height(4.dp))
+
                     candidates.isEmpty() -> Text(
                         "No online matches found for this track.",
                         style = MaterialTheme.typography.bodySmall,
@@ -222,7 +305,7 @@ fun MetadataReviewDialog(
                             .heightIn(max = 340.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(candidates, key = { it.id }) { candidate ->
+                        items(shown, key = { it.id }) { candidate ->
                             CandidateRow(
                                 trackId = track.id,
                                 candidate = candidate,
@@ -261,9 +344,29 @@ fun MetadataReviewDialog(
             }
         },
         dismissButton = {
-            if (index > 0) {
-                TextButton(onClick = { index -= 1 }, enabled = applyingId == null) {
-                    Text("Previous")
+            Row {
+                if (index > 0) {
+                    TextButton(onClick = { index -= 1 }, enabled = applyingId == null) {
+                        Text("Previous")
+                    }
+                }
+                if (!lookupDisabled) {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    model.api.requestMetadataLookup(track.id)
+                                    resolved = resolved - track.id
+                                    reloadKey += 1
+                                } catch (e: Exception) {
+                                    error = friendlyError(e)
+                                }
+                            }
+                        },
+                        enabled = applyingId == null && !loading && !pending,
+                    ) {
+                        Text("Look up again")
+                    }
                 }
             }
         },

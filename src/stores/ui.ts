@@ -59,6 +59,9 @@ interface UIState {
   setLyricsPanelOpen: (open: boolean) => void
   editTrackId: string | null
   setEditTrackId: (id: string | null) => void
+  /** tracks open in the metadata review dialog (from a track's menu) */
+  metadataReviewTracks: Track[] | null
+  setMetadataReviewTracks: (tracks: Track[] | null) => void
   playlistDialog: PlaylistDialogState
   openPlaylistDialog: (dialog: NonNullable<PlaylistDialogState>) => void
   closePlaylistDialog: () => void
@@ -119,6 +122,8 @@ export const useUIStore = create<UIState>()((set) => ({
     }
   },
   editTrackId: null,
+  metadataReviewTracks: null,
+  setMetadataReviewTracks: (tracks) => set({ metadataReviewTracks: tracks }),
   setEditTrackId: (id) => set({ editTrackId: id }),
   playlistDialog: null,
   openPlaylistDialog: (dialog) => set({ playlistDialog: dialog }),

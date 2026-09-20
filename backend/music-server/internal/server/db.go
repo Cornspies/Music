@@ -190,6 +190,24 @@ func migrate(db *sql.DB) error {
                         fetched_at   TEXT NOT NULL,
                         instrumental INTEGER NOT NULL DEFAULT 0
                 )`,
+                // Online metadata lookups, one row per track, worked off by a
+                // single worker (see metaqueue.go). Kept after completion as the
+                // track's suggestion list for the review dialog.
+                `CREATE TABLE IF NOT EXISTS metadata_jobs (
+                        track_id        TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                        state           TEXT NOT NULL,
+                        reason          TEXT NOT NULL,
+                        requested_by    TEXT NOT NULL DEFAULT '',
+                        attempts        INTEGER NOT NULL DEFAULT 0,
+                        not_before      TEXT NOT NULL DEFAULT '',
+                        created_at      TEXT NOT NULL,
+                        finished_at     TEXT NOT NULL DEFAULT '',
+                        applied_id      TEXT NOT NULL DEFAULT '',
+                        candidates_json TEXT NOT NULL DEFAULT '[]',
+                        partial         INTEGER NOT NULL DEFAULT 0,
+                        last_error      TEXT NOT NULL DEFAULT ''
+                )`,
+                `CREATE INDEX IF NOT EXISTS idx_metadata_jobs_state ON metadata_jobs(state, created_at)`,
                 `CREATE TABLE IF NOT EXISTS invites (
                         code       TEXT PRIMARY KEY,
                         note       TEXT NOT NULL DEFAULT '',

@@ -16,6 +16,7 @@ import { ShortcutsDialog } from "@/components/music/ShortcutsDialog"
 import { PasswordDialog } from "@/components/music/PasswordDialog"
 import { UploadDialog } from "@/components/music/UploadDialog"
 import { EditTrackDialog } from "@/components/music/EditTrackDialog"
+import { MetadataReviewDialog } from "@/components/music/MetadataReviewDialog"
 import { PlaylistDialog } from "@/components/music/PlaylistDialog"
 import { HomeView } from "@/components/music/views/HomeView"
 import { SearchView } from "@/components/music/views/SearchView"
@@ -250,7 +251,22 @@ export function AppShell() {
       <PlaybackSettingsDialog />
       <UploadDialog />
       <EditTrackDialog />
+      <GlobalMetadataReview />
       <PlaylistDialog />
     </div>
+  )
+}
+
+/** The review dialog opened from a track's "Look up metadata again". */
+function GlobalMetadataReview() {
+  const tracks = useUIStore((s) => s.metadataReviewTracks)
+  return (
+    <MetadataReviewDialog
+      tracks={tracks ?? []}
+      open={tracks !== null}
+      onOpenChange={(o) => {
+        if (!o) useUIStore.getState().setMetadataReviewTracks(null)
+      }}
+    />
   )
 }

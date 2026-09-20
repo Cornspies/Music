@@ -40,40 +40,40 @@ const metadataLookupTimeout = 15 * time.Second
 // or compromised provider response could redirect the server into its own
 // network (an SSRF), which is especially unwelcome on a self-hosted box.
 var metadataLookupClient = &http.Client{
-        Timeout: 5 * time.Second,
-        CheckRedirect: func(req *http.Request, via []*http.Request) error {
-                if len(via) >= 5 {
-                        return fmt.Errorf("too many redirects")
-                }
-                return nil
-        },
-        Transport: &http.Transport{
-                // Control runs after DNS resolution, for every connection the
-                // transport makes — including ones reached through a redirect —
-                // so a hostname that resolves to a private address is still
-                // rejected. This is the check that actually closes the SSRF.
-                DialContext: (&net.Dialer{
-                        Timeout: 5 * time.Second,
-                        Control: dialGuard,
-                }).DialContext,
-        },
+	Timeout: 5 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("too many redirects")
+		}
+		return nil
+	},
+	Transport: &http.Transport{
+		// Control runs after DNS resolution, for every connection the
+		// transport makes — including ones reached through a redirect —
+		// so a hostname that resolves to a private address is still
+		// rejected. This is the check that actually closes the SSRF.
+		DialContext: (&net.Dialer{
+			Timeout: 5 * time.Second,
+			Control: dialGuard,
+		}).DialContext,
+	},
 }
 
 // dialGuard rejects connections to addresses that are not publicly routable.
 func dialGuard(network, address string, c syscall.RawConn) error {
-        host, _, err := net.SplitHostPort(address)
-        if err != nil {
-                return fmt.Errorf("blocked address %q", address)
-        }
-        ip := net.ParseIP(host)
-        if ip == nil {
-                return fmt.Errorf("blocked address %q", address)
-        }
-        if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
-                ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-                return fmt.Errorf("refusing to connect to non-public address %s", ip)
-        }
-        return nil
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("blocked address %q", address)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("blocked address %q", address)
+	}
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return fmt.Errorf("refusing to connect to non-public address %s", ip)
+	}
+	return nil
 }
 
 // acceptScoreThreshold is the minimum confidence (0-1) a candidate needs
@@ -122,79 +122,6 @@ func candidateID(c metadataCandidate) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// ---- candidate cache -------------------------------------------------------
-//
-// Candidates found during upload are kept briefly so the review dialog can
-// show them without re-querying every provider. A cache miss is never fatal:
-// the handler just re-runs the search.
-
-const candidateCacheTTL = 30 * time.Minute
-
-// A lookup that lost providers — one rate-limited, one timed out — is a
-// partial answer. Caching it for the full TTL means the review dialog keeps
-// showing that short list for half an hour even though a retry seconds later
-// would find more. Keep it just long enough to absorb a dialog being reopened.
-const candidateCachePartialTTL = 60 * time.Second
-
-const candidateCacheMaxEntries = 500
-
-type candidateCacheEntry struct {
-	candidates []scoredCandidate
-	appliedID  string // ID of the candidate auto-applied at upload, if any
-	expires    time.Time
-}
-
-var candidateCache = struct {
-	mu      sync.Mutex
-	entries map[string]candidateCacheEntry
-}{entries: map[string]candidateCacheEntry{}}
-
-func cacheCandidates(trackID string, cands []scoredCandidate, appliedID string, ttl time.Duration) {
-	if trackID == "" {
-		return
-	}
-	candidateCache.mu.Lock()
-	defer candidateCache.mu.Unlock()
-
-	now := time.Now()
-	// Opportunistically evict expired entries, and hard-cap total size so a
-	// long-running server can't grow this map without bound.
-	for k, v := range candidateCache.entries {
-		if now.After(v.expires) {
-			delete(candidateCache.entries, k)
-		}
-	}
-	if len(candidateCache.entries) >= candidateCacheMaxEntries {
-		for k := range candidateCache.entries {
-			delete(candidateCache.entries, k)
-			if len(candidateCache.entries) < candidateCacheMaxEntries {
-				break
-			}
-		}
-	}
-	candidateCache.entries[trackID] = candidateCacheEntry{
-		candidates: cands, appliedID: appliedID, expires: now.Add(ttl),
-	}
-}
-
-func cachedCandidates(trackID string) (candidateCacheEntry, bool) {
-	candidateCache.mu.Lock()
-	defer candidateCache.mu.Unlock()
-	e, ok := candidateCache.entries[trackID]
-	if !ok || time.Now().After(e.expires) {
-		return candidateCacheEntry{}, false
-	}
-	return e, true
-}
-
-func forgetCandidates(trackID string) {
-	candidateCache.mu.Lock()
-	defer candidateCache.mu.Unlock()
-	delete(candidateCache.entries, trackID)
-}
-
-// ---- lookup ----------------------------------------------------------------
-
 func metadataLookupDisabled() bool {
 	return config.MetadataLookupDisabled()
 }
@@ -214,14 +141,6 @@ type lookupOutcome struct {
 
 // degraded reports whether a retry could reasonably turn up more results.
 func (o lookupOutcome) degraded() bool { return o.failed > 0 || o.cancelled }
-
-// cacheTTL is how long this result deserves to be reused.
-func (o lookupOutcome) cacheTTL() time.Duration {
-	if o.degraded() {
-		return candidateCachePartialTTL
-	}
-	return candidateCacheTTL
-}
 
 // lookupCandidates searches every configured provider and returns all
 // candidates scored against what we know about the file, best first. Errors
@@ -302,44 +221,6 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 
 	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
 	return out, outcome
-}
-
-// enrichMissingMetadata fills in whatever's missing from an uploaded track's
-// tags (title, artist, album, genre, year, cover art) using the best match
-// found across MusicBrainz, Deezer, iTunes and (if configured) YouTube — but
-// only if that match is confident enough. Any tag actually embedded in the
-// file is left untouched, and if nothing clears the confidence bar the file
-// keeps exactly what it had. It returns every candidate found (best first)
-// plus the ID of the one applied and how complete the lookup was, so the
-// caller can cache them for the user-facing "pick the right result" dialog.
-// Entirely best-effort: no network, no match, or any other error is silently
-// non-fatal. Set MUSIC_DISABLE_METADATA_LOOKUP to disable lookups altogether.
-func (s *Server) enrichMissingMetadata(meta *fileMetadata, fallbackName string) ([]scoredCandidate, string, lookupOutcome) {
-	if metadataLookupDisabled() {
-		return nil, "", lookupOutcome{}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), metadataLookupTimeout)
-	defer cancel()
-
-	cands, outcome := lookupCandidates(ctx, *meta, fallbackName)
-	if len(cands) == 0 {
-		return nil, "", outcome
-	}
-
-	best := cands[0]
-	if best.score < acceptScoreThreshold {
-		log.Printf("metadata lookup: no confident match for %q (best %.2f from %s) — leaving metadata as-is, %d alternative(s) available",
-			fallbackName, best.score, best.source, len(cands))
-		return cands, "", outcome
-	}
-
-	filled := applyCandidate(ctx, meta, best.metadataCandidate, false)
-	if len(filled) > 0 {
-		log.Printf("metadata lookup: filled %s for %q from %s match %q by %q (confidence %.2f)",
-			strings.Join(filled, ", "), fallbackName, best.source, best.title, best.artist, best.score)
-	}
-	return cands, best.id, outcome
 }
 
 // applyCandidate copies fields from a candidate into meta. When overwrite is

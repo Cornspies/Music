@@ -83,6 +83,8 @@ data class Track(
     val sourceId: String = "",
     /** "#rrggbb" representative colour of the cover, "" until computed. */
     val coverColor: String = "",
+    /** Online lookup state: "queued" | "running" | "done" | "" (never queued). */
+    val metadataStatus: String = "",
 )
 
 /** An online catalogue Discover can search. */
@@ -294,7 +296,26 @@ data class MetadataCandidatesResponse(
     val candidates: List<MetadataCandidate> = emptyList(),
     /** True when online lookup is switched off server-side. */
     val lookupDisabled: Boolean = false,
+    /** True while the lookup is queued or running; [candidates] is what's been found so far. */
+    val pending: Boolean = false,
+    /** 1 = next up (or running now). */
+    val queuePosition: Int = 0,
+    /** A finished lookup that was missing a provider. */
+    val partial: Boolean = false,
+    val attempts: Int = 0,
 )
+
+/** GET /api/metadata/queue */
+@Serializable
+data class MetadataQueueStatus(
+    val queued: Int = 0,
+    val running: RunningLookup? = null,
+    val nextRetryAt: String? = null,
+    val disabled: Boolean = false,
+) {
+    @Serializable
+    data class RunningLookup(val trackId: String = "", val title: String = "")
+}
 
 /**
  * Where the user left off, as remembered by the server (GET /api/playback).

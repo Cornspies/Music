@@ -20,6 +20,7 @@ import type {
   Lyrics,
   DiscoverSource,
   DiscoverSearch,
+  MetadataQueueStatus,
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
@@ -188,6 +189,15 @@ export function fetchMetadataCandidates(
   signal?: AbortSignal
 ): Promise<MetadataCandidatesResponse> {
   return api<MetadataCandidatesResponse>(`/api/tracks/${trackId}/metadata/candidates`, { signal })
+}
+
+/** Queues a fresh online lookup for a track that's already in the library. */
+export function requestMetadataLookup(trackId: string): Promise<{ queued: boolean; position: number }> {
+  return api(`/api/tracks/${trackId}/metadata/lookup`, { method: "POST" })
+}
+
+export function fetchMetadataQueue(): Promise<MetadataQueueStatus> {
+  return api<MetadataQueueStatus>("/api/metadata/queue")
 }
 
 /** Apply a user-chosen metadata match, returning the updated track. */

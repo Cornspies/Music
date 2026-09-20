@@ -79,6 +79,9 @@ type Track struct {
         // CoverColor is a "#rrggbb" colour representative of the cover art,
         // "" until computed (or when there is no cover).
         CoverColor string `json:"coverColor"`
+        // MetadataStatus is the online lookup's state for this track:
+        // "queued", "running", "done", or "" when none was ever queued.
+        MetadataStatus string `json:"metadataStatus"`
         // HasWaveform is true once GET /api/tracks/{id}/waveform has data.
         HasWaveform bool `json:"hasWaveform"`
 }
@@ -143,10 +146,12 @@ SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration
        t.user_id, COALESCE(u.username, ''), COALESCE(u.has_avatar, 0),
        COALESCE(t.alt_path, ''), COALESCE(t.alt_mime, ''), COALESCE(t.alt_size, 0),
        COALESCE(t.updated_at, ''), t.loudness, (COALESCE(t.waveform_json, '') <> ''),
-       COALESCE(t.source, ''), COALESCE(t.source_id, ''), COALESCE(t.cover_color, '')
+       COALESCE(t.source, ''), COALESCE(t.source_id, ''), COALESCE(t.cover_color, ''),
+       COALESCE(mj.state, '')
 FROM tracks t
 LEFT JOIN users u ON u.id = t.user_id
-LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?`
+LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?
+LEFT JOIN metadata_jobs mj ON mj.track_id = t.id`
 
 // trackSelectArgs returns the leading bind values trackSelect expects.
 // Append any further WHERE arguments after these.
@@ -172,7 +177,7 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
                 &t.UploadedBy.ID, &t.UploadedBy.Username, &uploaderAvatar,
                 &altPath, &t.CompatibleMime, &t.CompatibleSize,
                 &t.UpdatedAt, &loudness, &hasWaveform,
-                &t.Source, &t.SourceID, &t.CoverColor,
+                &t.Source, &t.SourceID, &t.CoverColor, &t.MetadataStatus,
         )
         if err != nil {
                 return nil, "", "", err
@@ -422,14 +427,7 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
                 }
         }
         meta := readMetadata(absPath)
-        candidates, appliedID, lookup := s.enrichMissingMetadata(&meta, fileName)
-
         id := strings.TrimSuffix(filepath.Base(savedPath), filepath.Ext(savedPath))
-        // Keep the candidates around so the client can offer "not the right
-        // song?" without re-querying every provider. A lookup that lost providers
-        // gets a much shorter TTL: reopening the dialog should then find the full
-        // set rather than the degraded list this upload happened to get.
-        cacheCandidates(id, candidates, appliedID, lookup.cacheTTL())
         hasCover := false
         if len(meta.picture) > 0 {
                 if !safeCoverBytes(meta.picture) {
@@ -475,6 +473,12 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
                 os.Remove(absPath)
                 writeErr(w, http.StatusInternalServerError, "failed to store track")
                 return
+        }
+
+        // Whatever the file's tags left out is looked up online by the queue
+        // worker, after the response: a bulk upload never waits on providers.
+        if err := s.enqueueMetadataLookup(id, reasonUpload, u.ID); err != nil {
+                logErr("queue metadata lookup", err)
         }
 
         t, _, _, ok := s.getTrack(w, r, u.ID, id)

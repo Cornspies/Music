@@ -25,6 +25,7 @@ import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { EmptyState } from "@/components/music/EmptyState"
+import { MetadataQueueStatus } from "@/components/music/MetadataQueueStatus"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -386,6 +387,13 @@ export function AdminView() {
           <EmptyState icon={Shield} title="Couldn't load admin data" subtitle={error} compact />
         </div>
       ) : null}
+
+      <section className="mt-6">
+        <h2 className="mb-3 text-sm font-semibold text-zinc-300">Metadata lookups</h2>
+        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 px-4 py-3">
+          <MetadataQueueStatus showIdle />
+        </div>
+      </section>
 
       {settings ? (
         <section className="mt-6">

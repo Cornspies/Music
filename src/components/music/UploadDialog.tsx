@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { MetadataReviewDialog } from "@/components/music/MetadataReviewDialog"
+import { MetadataQueueStatus } from "@/components/music/MetadataQueueStatus"
 
 type TaskStatus = "measuring" | "uploading" | "done" | "error"
 
@@ -334,15 +335,18 @@ export function UploadDialog() {
           )}
 
           {!busy && uploadedTracks.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="mt-3 w-full border-emerald-700/60 bg-emerald-600/10 text-xs text-emerald-300 hover:bg-emerald-600/20 hover:text-emerald-200"
-              onClick={() => setReviewOpen(true)}
-            >
-              <Sparkles className="mr-1.5 size-3.5" aria-hidden="true" />
-              Check track details ({uploadedTracks.length})
-            </Button>
+            <>
+              <MetadataQueueStatus className="mt-3" />
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3 w-full border-emerald-700/60 bg-emerald-600/10 text-xs text-emerald-300 hover:bg-emerald-600/20 hover:text-emerald-200"
+                onClick={() => setReviewOpen(true)}
+              >
+                <Sparkles className="mr-1.5 size-3.5" aria-hidden="true" />
+                Check track details ({uploadedTracks.length})
+              </Button>
+            </>
           )}
         </div>
       </DialogContent>

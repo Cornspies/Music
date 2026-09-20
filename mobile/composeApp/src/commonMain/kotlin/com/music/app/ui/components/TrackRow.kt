@@ -1,6 +1,8 @@
 package com.music.app.ui.components
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -17,6 +19,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +51,7 @@ import kotlinx.coroutines.launch
  * (e.g. remove-from-playlist), and the favorite heart. Tapping the row plays it now
  * with [context] as the queue.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TrackRow(
     track: Track,
@@ -55,57 +60,90 @@ fun TrackRow(
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val model = LocalAppModel.current
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clickable { model.playTrack(track, context) }
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CoverImage(track, 48.dp)
-        Column(
+    // Long-press: the track's own actions. Only the uploader (or an admin)
+    // can change its details, so others get nothing here.
+    val mine = model.user?.let { it.id == track.uploadedBy.id || it.isAdmin } == true
+    var menuOpen by remember { mutableStateOf(false) }
+    var reviewOpen by remember { mutableStateOf(false) }
+    val lookingUp = track.metadataStatus == "queued" || track.metadataStatus == "running"
+
+    Box(modifier) {
+        Row(
             Modifier
-                .weight(1f)
-                .padding(horizontal = 12.dp),
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = { model.playTrack(track, context) },
+                    onLongClick = { if (mine) menuOpen = true },
+                )
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                track.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                trackSubtitle(track),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            CoverImage(track, 48.dp)
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+            ) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (lookingUp) {
+                        // The online lookup hasn't been through this track yet.
+                        CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = Emerald)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        trackSubtitle(track),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (trailing != null) trailing()
+            // Uploader — the library is shared, so this shows who contributed the
+            // file. Kept small and slightly dimmed: provenance, not a control.
+            if (track.uploadedBy.id.isNotEmpty()) {
+                UserAvatar(
+                    userId = track.uploadedBy.id,
+                    username = track.uploadedBy.username,
+                    hasAvatar = track.uploadedBy.hasAvatar,
+                    size = 18.dp,
+                    label = "Uploaded by ${track.uploadedBy.username.ifBlank { "someone" }}",
+                    modifier = Modifier.alpha(0.75f),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            DownloadButton(track)
+            IconButton(onClick = { model.toggleFavorite(track) }) {
+                Icon(
+                    imageVector = if (track.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (track.isFavorite) "Remove from favorites" else "Add to favorites",
+                    tint = if (track.isFavorite) Emerald else Zinc500,
+                )
+            }
         }
-        if (trailing != null) trailing()
-        // Uploader — the library is shared, so this shows who contributed the
-        // file. Kept small and slightly dimmed: provenance, not a control.
-        if (track.uploadedBy.id.isNotEmpty()) {
-            UserAvatar(
-                userId = track.uploadedBy.id,
-                username = track.uploadedBy.username,
-                hasAvatar = track.uploadedBy.hasAvatar,
-                size = 18.dp,
-                label = "Uploaded by ${track.uploadedBy.username.ifBlank { "someone" }}",
-                modifier = Modifier.alpha(0.75f),
-            )
-            Spacer(Modifier.width(6.dp))
-        }
-        DownloadButton(track)
-        IconButton(onClick = { model.toggleFavorite(track) }) {
-            Icon(
-                imageVector = if (track.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                contentDescription = if (track.isFavorite) "Remove from favorites" else "Add to favorites",
-                tint = if (track.isFavorite) Emerald else Zinc500,
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Check track details") },
+                onClick = {
+                    menuOpen = false
+                    reviewOpen = true
+                },
             )
         }
     }
+
+    if (reviewOpen) {
+        MetadataReviewDialog(tracks = listOf(track), onDismiss = { reviewOpen = false })
+    }
+
 }
 
 fun trackSubtitle(track: Track): String {

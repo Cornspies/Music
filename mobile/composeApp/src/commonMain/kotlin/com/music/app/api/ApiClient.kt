@@ -376,6 +376,15 @@ class ApiClient(private val store: TokenStore) {
     suspend fun metadataCandidates(trackId: String): MetadataCandidatesResponse =
         getJson("/api/tracks/$trackId/metadata/candidates")
 
+    /** Queues a fresh online lookup for a track already in the library. */
+    suspend fun requestMetadataLookup(trackId: String) {
+        val response = client.post(url("/api/tracks/$trackId/metadata/lookup")) { auth() }
+        noteRefreshedToken(response)
+        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+    }
+
+    suspend fun metadataQueue(): MetadataQueueStatus = getJson("/api/metadata/queue")
+
     /** Applies a user-chosen match, overwriting the track's tags; returns the updated track. */
     suspend fun applyMetadataCandidate(trackId: String, candidateId: String): Track =
         postJson("/api/tracks/$trackId/metadata/apply", ApplyMetadataRequest(candidateId))

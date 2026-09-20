@@ -38,6 +38,8 @@ export interface Track {
   sourceId: string
   /** "#rrggbb" representative colour of the cover, "" until computed. */
   coverColor: string
+  /** Online lookup state: "queued" | "running" | "done" | "" (never queued). */
+  metadataStatus: string
 }
 
 /** Small public profile shown next to a track. */
@@ -248,6 +250,22 @@ export interface MetadataCandidatesResponse {
   autoApplied: boolean
   candidates: MetadataCandidate[]
   lookupDisabled: boolean
+  /** True while the lookup is queued or running; candidates are partial. Poll. */
+  pending: boolean
+  /** 1 = next up (or running now). */
+  queuePosition?: number
+  /** A finished lookup that was missing a provider. */
+  partial: boolean
+  attempts: number
+}
+
+/** GET /api/metadata/queue */
+export interface MetadataQueueStatus {
+  queued: number
+  running: { trackId: string; title: string } | null
+  /** Set when everything left is waiting on a provider's rate limit. */
+  nextRetryAt?: string
+  disabled: boolean
 }
 
 

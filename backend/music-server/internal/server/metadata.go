@@ -2,6 +2,8 @@ package server
 
 import (
         "context"
+        "database/sql"
+        "errors"
         "fmt"
         "net/http"
         "os"
@@ -38,6 +40,15 @@ type MetadataCandidatesResponse struct {
         Candidates  []MetadataCandidate `json:"candidates"`
         // LookupDisabled is true when online lookups are switched off server-side.
         LookupDisabled bool `json:"lookupDisabled"`
+        // Pending is true while the lookup is still queued or running; the
+        // candidates are then what has been found so far. Poll again later.
+        Pending bool `json:"pending"`
+        // QueuePosition is 1 when the track is next (or being looked up now).
+        QueuePosition int `json:"queuePosition,omitempty"`
+        // Partial is true when the finished lookup was missing a provider.
+        Partial bool `json:"partial"`
+        // Attempts counts lookups made so far, for "retry 3 of 8" wording.
+        Attempts int `json:"attempts"`
 }
 
 func toJSONCandidates(cands []scoredCandidate, appliedID string) []MetadataCandidate {
@@ -53,66 +64,48 @@ func toJSONCandidates(cands []scoredCandidate, appliedID string) []MetadataCandi
 }
 
 // handleTrackMetadataCandidates returns the metadata matches found for a
-// track, best first. Candidates found during upload are served from a short
-// lived cache; on a miss (or for an older track the user wants to re-tag) the
-// search is re-run live against every provider.
+// track, best first, from its lookup job. A track without a job (older than
+// the queue, or never looked up) gets one queued here, and the response says
+// "pending" until the worker has been through it — clients poll.
 func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         id := r.PathValue("id")
 
-        track, _, fileName, ok := s.getTrack(w, r, u.ID, id)
-        if !ok {
+        if _, _, _, ok := s.getTrack(w, r, u.ID, id); !ok {
                 return
         }
         if metadataLookupDisabled() {
                 writeJSON(w, http.StatusOK, MetadataCandidatesResponse{
-                        Candidates: []MetadataCandidate{}, LookupDisabled: true, AutoApplied: false,
+                        Candidates: []MetadataCandidate{}, LookupDisabled: true,
                 })
                 return
         }
 
-        if entry, hit := cachedCandidates(id); hit {
+        job, err := s.loadMetadataJob(id)
+        if errors.Is(err, sql.ErrNoRows) {
+                if err := s.enqueueMetadataLookup(id, reasonView, u.ID); err != nil {
+                        s.internalErr(w, "queue lookup", err)
+                        return
+                }
                 writeJSON(w, http.StatusOK, MetadataCandidatesResponse{
-                        AutoApplied:    entry.appliedID != "",
-                        Candidates:     toJSONCandidates(entry.candidates, entry.appliedID),
-                        LookupDisabled: false,
+                        Candidates: []MetadataCandidate{}, Pending: true, QueuePosition: s.queuePosition(id),
                 })
                 return
-        }
-
-        // Cache miss — search again using what the track currently has. Placeholder
-        // values written at upload ("Unknown Artist"/"Unknown Album", or a title
-        // that's just the filename) are deliberately treated as absent so they
-        // don't poison the query or the match scoring.
-        meta := fileMetadata{
-                title:    trackSearchTitle(track.Title, fileName),
-                artist:   strings.TrimSpace(dropPlaceholder(track.Artist, "Unknown Artist")),
-                album:    strings.TrimSpace(dropPlaceholder(track.Album, "Unknown Album")),
-                duration: track.Duration,
-        }
-
-        ctx, cancel := context.WithTimeout(r.Context(), metadataLookupTimeout)
-        defer cancel()
-
-        cands, outcome := lookupCandidates(ctx, meta, fileName)
-
-        // The client hung up while the providers were still answering. What came
-        // back is an arbitrary subset, so caching it would hand that truncated
-        // list to the next request instead of searching again.
-        if r.Context().Err() != nil {
+        } else if err != nil {
+                s.internalErr(w, "load lookup", err)
                 return
         }
-
-        // A lookup that lost providers is cached only briefly, so a rate limit
-        // during upload doesn't pin the dialog to a short list for half an hour.
-        cacheCandidates(id, cands, "", outcome.cacheTTL())
-        writeJSON(w, http.StatusOK, MetadataCandidatesResponse{
-                Candidates: toJSONCandidates(cands, ""),
-                // Nothing was auto-applied on this path: these are suggestions
-                // for a track the user is re-tagging by hand.
-                AutoApplied:    false,
-                LookupDisabled: false,
-        })
+        resp := MetadataCandidatesResponse{
+                AutoApplied: job.AppliedID != "",
+                Candidates:  toJSONCandidates(job.Candidates, job.AppliedID),
+                Pending:     job.State != jobDone,
+                Partial:     job.Partial,
+                Attempts:    job.Attempts,
+        }
+        if resp.Pending {
+                resp.QueuePosition = s.queuePosition(id)
+        }
+        writeJSON(w, http.StatusOK, resp)
 }
 
 // candidateArtworkTimeout bounds a single thumbnail fetch. It is shorter than
@@ -137,15 +130,15 @@ func (s *Server) handleCandidateArtwork(w http.ResponseWriter, r *http.Request) 
                 return
         }
 
-        entry, hit := cachedCandidates(id)
-        if !hit {
-                writeErr(w, http.StatusNotFound, "suggestions have expired — reload them to see artwork")
+        cands, err := s.jobCandidates(id)
+        if err != nil {
+                writeErr(w, http.StatusNotFound, "no suggestions for this track — reload them to see artwork")
                 return
         }
         var artURL string
-        for i := range entry.candidates {
-                if entry.candidates[i].id == candidateID {
-                        artURL = entry.candidates[i].artURL()
+        for i := range cands {
+                if cands[i].id == candidateID {
+                        artURL = cands[i].artURL()
                         break
                 }
         }
@@ -232,7 +225,7 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
                 return
         }
 
-        track, _, fileName, ok := s.getTrack(w, r, u.ID, id)
+        track, _, _, ok := s.getTrack(w, r, u.ID, id)
         if !ok {
                 return
         }
@@ -244,27 +237,16 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
                 return
         }
 
-        entry, hit := cachedCandidates(id)
-        if !hit {
-                // The cached list expired between viewing and choosing — re-run the
-                // search so a stale dialog still resolves instead of erroring out.
-                ctx, cancel := context.WithTimeout(r.Context(), metadataLookupTimeout)
-                defer cancel()
-                meta := fileMetadata{
-                        title:    trackSearchTitle(track.Title, fileName),
-                        artist:   strings.TrimSpace(dropPlaceholder(track.Artist, "Unknown Artist")),
-                        album:    strings.TrimSpace(dropPlaceholder(track.Album, "Unknown Album")),
-                        duration: track.Duration,
-                }
-                cands, outcome := lookupCandidates(ctx, meta, fileName)
-                entry = candidateCacheEntry{candidates: cands}
-                cacheCandidates(id, cands, "", outcome.cacheTTL())
+        cands, err := s.jobCandidates(id)
+        if err != nil {
+                writeErr(w, http.StatusNotFound, "that result is no longer available — reload the suggestions and try again")
+                return
         }
 
         var chosen *scoredCandidate
-        for i := range entry.candidates {
-                if entry.candidates[i].id == body.CandidateID {
-                        chosen = &entry.candidates[i]
+        for i := range cands {
+                if cands[i].id == body.CandidateID {
+                        chosen = &cands[i]
                         break
                 }
         }
@@ -312,9 +294,9 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
                 return
         }
 
-        // The user has resolved this track; drop the cached suggestions so a
-        // later request re-searches against the corrected metadata.
-        forgetCandidates(id)
+        // The user has resolved this track. The suggestions stay (they're the
+        // job row) but the applied one is marked so the dialog shows it.
+        _, _ = s.db.Exec(`UPDATE metadata_jobs SET applied_id = ? WHERE track_id = ?`, chosen.id, id)
         s.forgetLookedUpLyrics(id)
         if len(meta.picture) > 0 && hasCover {
                 go s.updateCoverColor(id)
