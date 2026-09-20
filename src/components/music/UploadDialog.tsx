@@ -304,7 +304,7 @@ export function UploadDialog() {
                     )}
                   </div>
                   {task.status === "uploading" && (
-                    <Progress value={task.progress} className="mt-2 h-1.5 bg-zinc-800 [&>div]:bg-emerald-500" />
+                    <Progress value={task.progress} className="mt-2 h-1.5 bg-zinc-800" />
                   )}
                 </li>
               ))}

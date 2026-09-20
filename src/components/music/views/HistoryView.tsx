@@ -69,7 +69,7 @@ function EventRow({ event, queue }: { event: PlayEvent; queue: PlayEvent[] }) {
           type="button"
           aria-label={`Play ${event.track.title}`}
           onClick={play}
-          className="absolute inset-0 flex items-center justify-center rounded-md bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          className="absolute inset-0 flex items-center justify-center rounded-md bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"
         >
           {isCurrent ? <EqualizerIcon playing={isPlaying} /> : <Play className="size-4 fill-current" />}
         </button>
