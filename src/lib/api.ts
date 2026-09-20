@@ -6,7 +6,7 @@
 // MUSIC_API_PORT. NEXT_PUBLIC_ is required: it is inlined into the browser
 // bundle at build time, so changing it needs a rebuild.
 
-import { API_PORT, gw } from "@/lib/gateway"
+import { gw } from "@/lib/gateway"
 import type {
   AdminSettings,
   AdminUser,
@@ -15,7 +15,6 @@ import type {
   MetadataCandidatesResponse,
   PlaybackState,
   Track,
-  TrackChanges,
   User,
   Waveform,
 } from "@/lib/types"
@@ -23,13 +22,13 @@ import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
 
 // Re-exported so existing call sites can keep importing these from "@/lib/api".
-export { API_PORT, gw }
+export { gw }
 
 /** Header the server uses to hand back a renewed session token. */
 const REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
 
 /** Persists a renewed token, if the response carried one. */
-export function noteRefreshedToken(res: Response): void {
+function noteRefreshedToken(res: Response): void {
   const fresh = res.headers.get(REFRESHED_TOKEN_HEADER)
   if (fresh && fresh !== useAuthStore.getState().token) {
     useAuthStore.setState({ token: fresh })
@@ -99,7 +98,7 @@ export function streamUrl(track: Pick<Track, "id" | "mimeType" | "hasCompatible"
  * the answer is no and the server made a compatible copy at upload time, the
  * player streams that instead.
  */
-export function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boolean {
+function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boolean {
   if (!track.hasCompatible) return true // nothing else to offer anyway
   if (typeof document === "undefined") return true // SSR: decided on the client
   const probe = document.createElement("audio")
@@ -234,11 +233,6 @@ export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?:
 }
 
 // ---- delta sync -------------------------------------------------------------
-
-/** Everything changed or deleted since `since` (omit for a full listing). */
-export function fetchTrackChanges(since?: string): Promise<TrackChanges> {
-  return api<TrackChanges>(`/api/tracks/changes${since ? `?since=${encodeURIComponent(since)}` : ""}`)
-}
 
 // ---- waveform ---------------------------------------------------------------
 

@@ -851,6 +851,16 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
                 writeErr(w, http.StatusNotFound, "no cover art")
                 return
         }
+        // The ETag carries updated_at, which moves whenever art is replaced,
+        // so a match can be answered before the file is even opened — which is
+        // most cover requests once the list has been scrolled once.
+        etag := `"cover-` + id + `-` + t.UpdatedAt + `"`
+        w.Header().Set("Cache-Control", "private, max-age=86400")
+        w.Header().Set("ETag", etag)
+        if r.Header.Get("If-None-Match") == etag {
+                w.WriteHeader(http.StatusNotModified)
+                return
+        }
         b, err := os.ReadFile(filepath.Join(s.covDir, id+".img"))
         if err != nil {
                 s.internalErr(w, "read cover", err)
@@ -868,15 +878,8 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
                 writeErr(w, http.StatusNotFound, "no cover art")
                 return
         }
-        etag := `"cover-` + id + `"`
         w.Header().Set("Content-Type", ct)
         w.Header().Set("X-Content-Type-Options", "nosniff")
-        w.Header().Set("Cache-Control", "private, max-age=86400")
-        w.Header().Set("ETag", etag)
-        if r.Header.Get("If-None-Match") == etag {
-                w.WriteHeader(http.StatusNotModified)
-                return
-        }
         w.Header().Set("Content-Length", strconv.Itoa(len(b)))
         w.WriteHeader(http.StatusOK)
         if r.Method != http.MethodHead {

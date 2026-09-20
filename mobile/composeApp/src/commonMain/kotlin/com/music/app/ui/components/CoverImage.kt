@@ -17,6 +17,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
 import com.music.app.LocalAppModel
 import com.music.app.api.Track
 import com.music.app.ui.theme.EmeraldDark
@@ -45,8 +47,17 @@ fun CoverImage(
         contentAlignment = Alignment.Center,
     ) {
         if (track.hasCover) {
+            // The URL carries the media token, which rotates every few hours;
+            // keyed on the URL every rotation would throw the whole cover cache
+            // away. Keyed on the track (and its edit time, so replaced art
+            // shows up) it survives across sessions.
+            val cacheKey = "cover:${track.id}:${track.updatedAt}"
             AsyncImage(
-                model = model.api.coverUrl(track.id),
+                model = ImageRequest.Builder(LocalPlatformContext.current)
+                    .data(model.api.coverUrl(track.id))
+                    .memoryCacheKey(cacheKey)
+                    .diskCacheKey(cacheKey)
+                    .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

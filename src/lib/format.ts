@@ -50,11 +50,6 @@ export function formatRelativeDate(iso: string): string {
   return `${years} year${years === 1 ? "" : "s"} ago`
 }
 
-export function formatPlays(plays: number): string {
-  if (!Number.isFinite(plays) || plays <= 0) return "never played"
-  return `${plays.toLocaleString()} play${plays === 1 ? "" : "s"}`
-}
-
 /** mm:ss countdown for sleep timer remaining seconds */
 export function formatCountdown(totalSec: number): string {
   const s = Math.max(0, Math.ceil(totalSec))
@@ -62,16 +57,6 @@ export function formatCountdown(totalSec: number): string {
   return `${m}:${String(s % 60).padStart(2, "0")}`
 }
 
-/** "Artist · Album" metadata line with year when known */
-export function trackMetaLine(track: {
-  artist: string
-  album: string
-  year: number
-}): string {
-  const artist = track.artist || "Unknown artist"
-  const album = track.album || "—"
-  return track.year ? `${artist} · ${album} · ${track.year}` : `${artist} · ${album}`
-}
 
 // Warm dark gradient set (deterministic pick from seed string).
 const GRADIENTS = [

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
@@ -48,6 +49,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
+import com.music.app.Screen
 import com.music.app.api.friendlyError
 import com.music.app.ui.components.AvatarEditor
 import com.music.app.ui.components.DownloadQualitySetting
@@ -125,6 +127,15 @@ fun ProfileScreen() {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+
+        // ---- listening ----
+        SectionCard("Listening") {
+            SettingRow(
+                icon = Icons.Filled.History,
+                title = "History",
+                onClick = { model.push(Screen.History) },
             )
         }
 

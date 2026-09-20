@@ -207,6 +207,20 @@ func migrate(db *sql.DB) error {
                 return fmt.Errorf("create idx_tracks_created: %w", err)
         }
 
+        // Every table that references tracks(id) cascades on delete. SQLite
+        // finds the child rows by scanning unless the referencing column is
+        // indexed, so deleting one track walked the whole play history.
+        for _, stmt := range []string{
+                `CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id)`,
+                `CREATE INDEX IF NOT EXISTS idx_play_stats_track ON play_stats(track_id)`,
+                `CREATE INDEX IF NOT EXISTS idx_play_events_track ON play_events(track_id)`,
+                `CREATE INDEX IF NOT EXISTS idx_favorites_track ON favorites(track_id)`,
+        } {
+                if _, err := db.Exec(stmt); err != nil {
+                        return fmt.Errorf("create track fk index: %w", err)
+                }
+        }
+
         // Play counts used to live on tracks as a single shared number. They are
         // per-listener now, so seed each uploader's history from the old column.
         // INSERT OR IGNORE keeps this idempotent across restarts, and the legacy

@@ -172,6 +172,7 @@ data class Stats(
     val playCount: Int = 0,
 )
 
+
 /** One listen, from GET /api/history. */
 @Serializable
 data class PlayEvent(

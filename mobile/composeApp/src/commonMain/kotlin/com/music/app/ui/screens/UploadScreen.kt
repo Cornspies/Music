@@ -6,16 +6,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -73,97 +76,114 @@ fun UploadScreen() {
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
+            .verticalScroll(rememberScrollState()),
     ) {
-        Spacer(Modifier.height(24.dp))
-        Icon(Icons.Filled.CloudUpload, contentDescription = null, tint = Emerald)
-        Spacer(Modifier.height(8.dp))
-        Text("Upload music", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(16.dp))
-
-        if (canUploadFromDevice) {
-            Button(onClick = pick, enabled = !uploading) {
-                Text(if (entries.isEmpty()) "Choose audio files" else "Choose different files")
+        // Same header as the other pushed screens: back, icon, title.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 8.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = { model.pop() }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
-            Spacer(Modifier.height(16.dp))
-
-            entries.forEachIndexed { index, entry ->
-                UploadRow(entry)
-                if (index != entries.lastIndex) Spacer(Modifier.height(8.dp))
-            }
-
-            if (entries.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        onClick = {
-                            if (uploading) return@Button
-                            scope.launch {
-                                uploading = true
-                                uploadedTracks = emptyList()
-                                entries = entries.map { it.copy(status = UploadStatus.UPLOADING) }
-                                val succeeded = mutableListOf<Track>()
-                                for ((i, entry) in entries.withIndex()) {
-                                    try {
-                                        val bytes = withContext(Dispatchers.Default) { entry.file.readBytes() }
-                                        val track = model.api.uploadTrack(
-                                            fileName = entry.file.name,
-                                            mimeType = mimeTypeForFile(entry.file.name),
-                                            bytes = bytes,
-                                            durationSec = entry.file.durationSec,
-                                        )
-                                        succeeded.add(track)
-                                        entries = entries.toMutableList().also {
-                                            it[i] = entry.copy(status = UploadStatus.DONE)
-                                        }
-                                    } catch (e: Exception) {
-                                        entries = entries.toMutableList().also {
-                                            it[i] = entry.copy(
-                                                status = UploadStatus.FAILED,
-                                                error = e.message ?: "Upload failed",
-                                            )
-                                        }
-                                    }
-                                }
-                                uploading = false
-                                uploadedTracks = succeeded
-                                model.loadLibrary()
-                                model.loadStats()
-                            }
-                        },
-                        enabled = !uploading,
-                    ) {
-                        Text("Upload ${entries.size} file(s)")
-                    }
-                    if (uploading) {
-                        Spacer(Modifier.padding(start = 12.dp))
-                        CircularProgressIndicator(Modifier.height(20.dp))
-                    }
-                }
-
-                if (!uploading && uploadedTracks.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(onClick = { reviewOpen = true }) {
-                        Icon(
-                            Icons.Filled.AutoAwesome,
-                            contentDescription = null,
-                            tint = Emerald,
-                            modifier = Modifier.height(18.dp),
-                        )
-                        Spacer(Modifier.padding(start = 8.dp))
-                        Text("Check track details (${uploadedTracks.size})")
-                    }
-                }
-            }
-        } else {
-            EmptyState(
-                icon = Icons.Filled.CloudUpload,
-                title = "Upload from the web app",
+            Icon(Icons.Filled.CloudUpload, contentDescription = null, tint = Emerald)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Upload music",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
             )
         }
+        Spacer(Modifier.height(8.dp))
 
-        Spacer(Modifier.height(24.dp))
+        Column(Modifier.padding(horizontal = 16.dp)) {
+
+            if (canUploadFromDevice) {
+                Button(onClick = pick, enabled = !uploading) {
+                    Text(if (entries.isEmpty()) "Choose audio files" else "Choose different files")
+                }
+                Spacer(Modifier.height(16.dp))
+
+                entries.forEachIndexed { index, entry ->
+                    UploadRow(entry)
+                    if (index != entries.lastIndex) Spacer(Modifier.height(8.dp))
+                }
+
+                if (entries.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(
+                            onClick = {
+                                if (uploading) return@Button
+                                scope.launch {
+                                    uploading = true
+                                    uploadedTracks = emptyList()
+                                    entries = entries.map { it.copy(status = UploadStatus.UPLOADING) }
+                                    val succeeded = mutableListOf<Track>()
+                                    for ((i, entry) in entries.withIndex()) {
+                                        try {
+                                            val bytes = withContext(Dispatchers.Default) { entry.file.readBytes() }
+                                            val track = model.api.uploadTrack(
+                                                fileName = entry.file.name,
+                                                mimeType = mimeTypeForFile(entry.file.name),
+                                                bytes = bytes,
+                                                durationSec = entry.file.durationSec,
+                                            )
+                                            succeeded.add(track)
+                                            entries = entries.toMutableList().also {
+                                                it[i] = entry.copy(status = UploadStatus.DONE)
+                                            }
+                                        } catch (e: Exception) {
+                                            entries = entries.toMutableList().also {
+                                                it[i] = entry.copy(
+                                                    status = UploadStatus.FAILED,
+                                                    error = e.message ?: "Upload failed",
+                                                )
+                                            }
+                                        }
+                                    }
+                                    uploading = false
+                                    uploadedTracks = succeeded
+                                    model.loadLibrary()
+                                    model.loadStats()
+                                }
+                            },
+                            enabled = !uploading,
+                        ) {
+                            Text("Upload ${entries.size} file(s)")
+                        }
+                        if (uploading) {
+                            Spacer(Modifier.padding(start = 12.dp))
+                            CircularProgressIndicator(Modifier.height(20.dp))
+                        }
+                    }
+
+                    if (!uploading && uploadedTracks.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(onClick = { reviewOpen = true }) {
+                            Icon(
+                                Icons.Filled.AutoAwesome,
+                                contentDescription = null,
+                                tint = Emerald,
+                                modifier = Modifier.height(18.dp),
+                            )
+                            Spacer(Modifier.padding(start = 8.dp))
+                            Text("Check track details (${uploadedTracks.size})")
+                        }
+                    }
+                }
+            } else {
+                EmptyState(
+                    icon = Icons.Filled.CloudUpload,
+                    title = "Upload from the web app",
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+        }
     }
 
     if (reviewOpen) {

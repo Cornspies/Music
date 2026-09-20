@@ -71,9 +71,11 @@ interface TrackRowProps {
 }
 
 export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: TrackRowProps) {
-  const currentTrack = usePlayerStore((s) => s.currentTrack)
-  const isPlaying = usePlayerStore((s) => s.isPlaying)
-  const isCurrent = currentTrack?.id === track.id
+  // Booleans, not the track object: with a long list only the row that
+  // starts or stops being current re-renders on a track change, not all of
+  // them.
+  const isCurrent = usePlayerStore((s) => s.currentTrack?.id === track.id)
+  const isPlaying = usePlayerStore((s) => s.isPlaying && s.currentTrack?.id === track.id)
 
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)

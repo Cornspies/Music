@@ -127,12 +127,6 @@ export interface HistoryResponse {
   trackCount: number
 }
 
-/** GET /api/tracks/changes?since= — delta sync. */
-export interface TrackChanges {
-  tracks: Track[]
-  deleted: string[]
-  now: string
-}
 
 /** GET /api/tracks/{id}/waveform */
 export interface Waveform {
@@ -201,10 +195,6 @@ export interface MetadataCandidatesResponse {
   lookupDisabled: boolean
 }
 
-export interface ChangePasswordPayload {
-  currentPassword: string
-  newPassword: string
-}
 
 /**
  * Sign-up policy, fetched before the auth form renders so it can show the

@@ -152,8 +152,6 @@ class DownloadManager(
 
     val count: Int get() = index.size
 
-    fun isDownloaded(trackId: String): Boolean = index.containsKey(trackId)
-
     fun stateOf(trackId: String): DownloadState = when {
         index.containsKey(trackId) -> DownloadState.DONE
         else -> transient[trackId] ?: DownloadState.NONE
@@ -349,12 +347,6 @@ class DownloadManager(
         return trackIds.isNotEmpty() && trackIds.all { index.containsKey(it) }
     }
 
-    /**
-     * How much of a playlist is on the device, for showing partial progress.
-     * Returns 0 when the playlist has never been downloaded.
-     */
-    fun downloadedTrackCount(playlistId: String): Int =
-        playlistTracks[playlistId].orEmpty().count { index.containsKey(it) }
 
     /**
      * Downloads every track in a playlist and records the playlist itself, so

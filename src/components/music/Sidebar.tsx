@@ -274,11 +274,3 @@ export function SidebarContent() {
   )
 }
 
-/** Desktop sidebar panel. */
-export function Sidebar() {
-  return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950/70 md:flex">
-      <SidebarContent />
-    </aside>
-  )
-}

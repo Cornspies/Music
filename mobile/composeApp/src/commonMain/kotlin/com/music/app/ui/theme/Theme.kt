@@ -12,7 +12,6 @@ val EmeraldLight = Color(0xFF6EE7B7)
 val EmeraldDark = Color(0xFF059669) // emerald-600
 val OnEmerald = Color(0xFF022C22) // deep emerald-950
 
-val Zinc50 = Color(0xFFFAFAFA)
 val Zinc100 = Color(0xFFF4F4F5)
 val Zinc400 = Color(0xFFA1A1AA)
 val Zinc500 = Color(0xFF71717A)

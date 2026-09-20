@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import {
   Clock3,
   Disc3,
@@ -120,23 +120,27 @@ export function HomeView() {
   const playlists = useLibraryStore((s) => s.playlists)
   const navigate = useUIStore((s) => s.navigate)
 
-  const recent = [...tracks]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 8)
+  // Timestamps are RFC 3339 in UTC, so they order correctly as strings — no
+  // Date parsing inside the comparator, and only when the list changes.
+  const recent = useMemo(
+    () => [...tracks].sort((a, b) => (b.createdAt < a.createdAt ? -1 : b.createdAt > a.createdAt ? 1 : 0)).slice(0, 8),
+    [tracks]
+  )
 
   // Recently played comes from the server's listening history, so it covers
   // every device; the local lastPlayedAt sort is the fallback for an older
   // server that doesn't send it.
-  const recentlyPlayed =
-    stats?.recentlyPlayed && stats.recentlyPlayed.length > 0
-      ? stats.recentlyPlayed.slice(0, 8)
-      : [...tracks]
-          .filter((t) => t.lastPlayedAt)
-          .sort(
-            (a, b) =>
-              new Date(b.lastPlayedAt!).getTime() - new Date(a.lastPlayedAt!).getTime()
-          )
-          .slice(0, 6)
+  const serverRecent = stats?.recentlyPlayed
+  const recentlyPlayed = useMemo(
+    () =>
+      serverRecent && serverRecent.length > 0
+        ? serverRecent.slice(0, 8)
+        : tracks
+            .filter((t) => t.lastPlayedAt)
+            .sort((a, b) => (b.lastPlayedAt! < a.lastPlayedAt! ? -1 : b.lastPlayedAt! > a.lastPlayedAt! ? 1 : 0))
+            .slice(0, 6),
+    [serverRecent, tracks]
+  )
 
   // keep the history fresh: play events happen while Home is mounted
   useEffect(() => {

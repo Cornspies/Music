@@ -18,7 +18,7 @@ import type { Track } from "@/lib/types"
 import { gw } from "@/lib/gateway"
 import { useAuthStore } from "@/stores/auth"
 
-export const OFFLINE_CACHE = "music-offline-v1"
+const OFFLINE_CACHE = "music-offline-v1"
 
 const audioKey = (id: string) => `/offline/audio/${id}`
 const coverKey = (id: string) => `/offline/cover/${id}`

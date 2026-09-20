@@ -217,11 +217,10 @@ class ApiClient(private val store: TokenStore) {
 
     // ---------------------------------------------------------------- history & sync
 
-    /** Recent listens, newest first; [distinct] collapses repeats per track. */
-    suspend fun history(limit: Int = 50, distinct: Boolean = false, since: String? = null): HistoryResponse =
+    /** Recent listens, newest first; [since] (RFC 3339) narrows the window. */
+    suspend fun history(limit: Int = 200, since: String? = null): HistoryResponse =
         getJson("/api/history") {
             parameter("limit", limit)
-            if (distinct) parameter("distinct", "1")
             if (!since.isNullOrBlank()) parameter("since", since)
         }
 
@@ -451,12 +450,6 @@ class ApiClient(private val store: TokenStore) {
     suspend fun removePlaylistTrack(playlistId: String, trackId: String) {
         expectNoContent(client.delete(url("/api/playlists/$playlistId/tracks/$trackId")) { auth() })
     }
-
-    // ---------------------------------------------------------------- library aggregates
-
-    suspend fun albums(): List<Album> = getJson("/api/albums")
-
-    suspend fun artists(): List<Artist> = getJson("/api/artists")
 
     // ---------------------------------------------------------------- search & stats
 
