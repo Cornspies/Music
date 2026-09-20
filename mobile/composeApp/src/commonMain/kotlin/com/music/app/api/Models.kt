@@ -92,7 +92,6 @@ data class Track(
 data class DiscoverSource(
     val key: String,
     val name: String,
-    val attribution: String? = null,
 )
 
 /** One Discover search hit. */

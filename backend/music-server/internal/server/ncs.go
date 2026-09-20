@@ -41,9 +41,6 @@ func (ncsSource) coverAllowed(u string) bool {
 
 func (ncsSource) key() string  { return "ncs" }
 func (ncsSource) name() string { return "NoCopyrightSounds" }
-func (ncsSource) attribution() string {
-	return "Free to use with credit: “Music provided by NoCopyrightSounds” — see ncs.io/usage-policy."
-}
 
 // One result row: the play button carries everything as data attributes.
 var (

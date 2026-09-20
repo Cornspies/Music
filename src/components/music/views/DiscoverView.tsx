@@ -150,9 +150,6 @@ export function DiscoverView() {
               Search
             </Button>
           </form>
-          {source?.attribution ? (
-            <p className="mt-2 text-[11px] text-zinc-500">{source.attribution}</p>
-          ) : null}
 
           <div className="mt-6">
             {!submitted ? null : searching ? (

@@ -159,8 +159,6 @@ export interface Lyrics {
 export interface DiscoverSource {
   key: string
   name: string
-  /** The catalogue's condition of use, if any. */
-  attribution?: string
 }
 
 /** One Discover search hit. */

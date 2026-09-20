@@ -128,7 +128,7 @@ fun SearchScreen() {
         Spacer(Modifier.height(12.dp))
 
         if (source != null) {
-            DiscoverResults(source!!, query, attribution = sources.firstOrNull { it.key == source }?.attribution)
+            DiscoverResults(source!!, query)
             return@Column
         }
 
@@ -212,24 +212,19 @@ fun SearchScreen() {
 
 /** Catalogue results: thumbnail, title, and an Add button that turns into "In library". */
 @Composable
-private fun DiscoverResults(source: String, query: String, attribution: String?) {
+private fun DiscoverResults(source: String, query: String) {
     val model = LocalAppModel.current
     val results = model.discoverResults
     val error = model.discoverError
 
     when {
         query.isBlank() -> {
-            Column(Modifier.padding(top = 32.dp, start = 8.dp)) {
-                Text(
-                    "Search the catalogue; tracks you add are downloaded into the library.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (attribution != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(attribution, style = MaterialTheme.typography.bodySmall, color = Zinc500)
-                }
-            }
+            Text(
+                "Search the catalogue; tracks you add are downloaded into the library.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 32.dp, start = 8.dp),
+            )
         }
         error != null && results == null -> Text(
             error,

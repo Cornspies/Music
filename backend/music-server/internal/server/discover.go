@@ -78,9 +78,6 @@ type sourceDownload struct {
 type DiscoverSource struct {
 	Key  string `json:"key"`
 	Name string `json:"name"`
-	// Attribution is the catalogue's own condition of use, shown once so
-	// people know what they're agreeing to.
-	Attribution string `json:"attribution,omitempty"`
 }
 
 // DiscoverSearch is what GET /api/discover/search returns.
@@ -118,11 +115,7 @@ func (s *Server) handleDiscoverSources(w http.ResponseWriter, _ *http.Request) {
 	out := []DiscoverSource{}
 	if !discoverDisabled() {
 		for _, src := range discoverSources {
-			d := DiscoverSource{Key: src.key(), Name: src.name()}
-			if a, ok := src.(interface{ attribution() string }); ok {
-				d.Attribution = a.attribution()
-			}
-			out = append(out, d)
+			out = append(out, DiscoverSource{Key: src.key(), Name: src.name()})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
