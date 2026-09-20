@@ -6,6 +6,7 @@ import {
   CloudDownload,
   Disc3,
   Heart,
+  Compass,
   History,
   Home,
   Keyboard,
@@ -53,6 +54,7 @@ const NAV_ITEMS: NavItem[] = [
   { view: "playlists", label: "Playlists", icon: ListMusic },
   { view: "favorites", label: "Favorites", icon: Heart },
   { view: "history", label: "History", icon: History },
+  { view: "discover", label: "Discover", icon: Compass },
   { view: "offline", label: "Downloads", icon: CloudDownload },
 ]
 

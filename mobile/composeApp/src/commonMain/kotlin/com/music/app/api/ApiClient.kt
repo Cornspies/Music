@@ -473,6 +473,27 @@ class ApiClient(private val store: TokenStore) {
 
     suspend fun stats(): Stats = getJson("/api/stats")
 
+    // ---------------------------------------------------------------- discover
+
+    suspend fun discoverSources(): List<DiscoverSource> = getJson("/api/discover/sources")
+
+    suspend fun discoverSearch(source: String, query: String, page: Int = 1): DiscoverSearch =
+        getJson("/api/discover/search") {
+            parameter("source", source)
+            parameter("q", query)
+            parameter("page", page)
+        }
+
+    /** Has the server download the track into the library; returns it. */
+    suspend fun discoverAdd(source: String, id: String): Track =
+        postJson("/api/discover/add", DiscoverAddRequest(source, id))
+
+    /** Result thumbnail, proxied by the server (Coil AsyncImage). */
+    fun discoverArtworkUrl(source: String, coverUrl: String): String =
+        url("/api/discover/artwork") + "?source=" + source.encodeURLParameter() +
+            "&u=" + coverUrl.encodeURLParameter() +
+            "&token=" + mediaOrSessionToken.encodeURLParameter()
+
     // ---------------------------------------------------------------- helpers
 
     private fun url(path: String): String = baseUrl + path

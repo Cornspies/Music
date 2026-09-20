@@ -33,6 +33,9 @@ export interface Track {
   loudness: number | null
   /** True once GET /api/tracks/{id}/waveform has peaks. */
   hasWaveform: boolean
+  /** Catalogue a Discover-added track came from ("ncs"); "" for uploads. */
+  source: string
+  sourceId: string
 }
 
 /** Small public profile shown next to a track. */
@@ -146,6 +149,37 @@ export interface Lyrics {
   instrumental: boolean
   /** The uploader and admins may edit. */
   editable: boolean
+}
+
+/** An online catalogue Discover can search ("ncs"). */
+export interface DiscoverSource {
+  key: string
+  name: string
+  /** The catalogue's condition of use, if any. */
+  attribution?: string
+}
+
+/** One Discover search hit. */
+export interface DiscoverResult {
+  source: string
+  id: string
+  title: string
+  artist: string
+  genre?: string
+  year?: number
+  coverUrl?: string
+  /** The track's page on the catalogue's site. */
+  pageUrl?: string
+  /** Streams the track from the catalogue, for a listen before adding. */
+  previewUrl?: string
+  /** Set when this result is already in the library. */
+  trackId?: string
+}
+
+export interface DiscoverSearch {
+  results: DiscoverResult[]
+  page: number
+  hasMore: boolean
 }
 
 export interface Waveform {

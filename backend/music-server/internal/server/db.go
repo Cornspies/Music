@@ -127,6 +127,11 @@ func migrate(db *sql.DB) error {
                 // Bumped on every metadata/cover/transcode change so clients can
                 // ask for "what changed since I last looked".
                 {"tracks.updated_at", `ALTER TABLE tracks ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`},
+                // Where a track came from when it wasn't uploaded by hand:
+                // the catalogue's name ("ncs") and its id there, so the same
+                // song isn't added twice and Discover can show what's in.
+                {"tracks.source", `ALTER TABLE tracks ADD COLUMN source TEXT NOT NULL DEFAULT ''`},
+                {"tracks.source_id", `ALTER TABLE tracks ADD COLUMN source_id TEXT NOT NULL DEFAULT ''`},
                 // Loudness analysis (integrated LUFS, EBU R128) for volume
                 // normalisation, and a coarse peaks array for waveform seek
                 // bars. NULL loudness means "not analysed yet".
@@ -226,6 +231,7 @@ func migrate(db *sql.DB) error {
                 `CREATE INDEX IF NOT EXISTS idx_play_stats_track ON play_stats(track_id)`,
                 `CREATE INDEX IF NOT EXISTS idx_play_events_track ON play_events(track_id)`,
                 `CREATE INDEX IF NOT EXISTS idx_favorites_track ON favorites(track_id)`,
+                `CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks(source, source_id)`,
         } {
                 if _, err := db.Exec(stmt); err != nil {
                         return fmt.Errorf("create track fk index: %w", err)

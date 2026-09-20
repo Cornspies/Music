@@ -10,6 +10,9 @@ import com.music.app.Screen
 import com.music.app.api.ApiClient
 import com.music.app.api.AuthConfig
 import com.music.app.api.ApiException
+import com.music.app.api.DiscoverResult
+import com.music.app.api.DiscoverSearch
+import com.music.app.api.DiscoverSource
 import com.music.app.api.Lyrics
 import com.music.app.api.Playlist
 import com.music.app.api.PlaylistDetail
@@ -663,6 +666,79 @@ class AppModel(
 
     fun clearSearch() {
         searchResults = null
+    }
+
+    // ------------------------------------------------------------ discover
+
+    /** Catalogues the server can search; null until asked, empty when off. */
+    var discoverSources by mutableStateOf<List<DiscoverSource>?>(null)
+        private set
+    var discoverResults by mutableStateOf<DiscoverSearch?>(null)
+        private set
+    var discoverLoading by mutableStateOf(false)
+        private set
+    var discoverError by mutableStateOf<String?>(null)
+        private set
+    private var discoverQuery: Pair<String, String>? = null // source to query
+
+    fun loadDiscoverSources() {
+        if (discoverSources != null) return
+        scope.launch {
+            discoverSources = runCatching { api.discoverSources() }.getOrDefault(emptyList())
+        }
+    }
+
+    /** Debounced by SearchScreen, like [search]. */
+    fun discoverSearch(source: String, query: String) {
+        val q = query.trim()
+        discoverQuery = source to q
+        scope.launch {
+            discoverLoading = true
+            discoverError = null
+            try {
+                val r = api.discoverSearch(source, q)
+                if (discoverQuery == source to q) discoverResults = r
+            } catch (e: Exception) {
+                if (discoverQuery == source to q) discoverError = friendlyError(e)
+            } finally {
+                discoverLoading = false
+            }
+        }
+    }
+
+    fun discoverLoadMore() {
+        val (source, q) = discoverQuery ?: return
+        val current = discoverResults ?: return
+        if (discoverLoading || !current.hasMore) return
+        scope.launch {
+            discoverLoading = true
+            try {
+                val next = api.discoverSearch(source, q, current.page + 1)
+                if (discoverQuery == source to q) {
+                    discoverResults = next.copy(results = current.results + next.results)
+                }
+            } catch (_: Exception) {
+                // Keep what's shown; "load more" can be tapped again.
+            } finally {
+                discoverLoading = false
+            }
+        }
+    }
+
+    fun clearDiscover() {
+        discoverQuery = null
+        discoverResults = null
+        discoverError = null
+    }
+
+    /** Adds one result to the library and marks it in the shown results. */
+    suspend fun discoverAdd(result: DiscoverResult): Track {
+        val track = api.discoverAdd(result.source, result.id)
+        discoverResults = discoverResults?.let { r ->
+            r.copy(results = r.results.map { if (it.id == result.id) it.copy(trackId = track.id) else it })
+        }
+        loadLibrary()
+        return track
     }
 
     // ------------------------------------------------------------ playlist mutations

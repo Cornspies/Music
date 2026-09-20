@@ -78,7 +78,44 @@ data class Track(
     val loudness: Double? = null,
     /** True once /api/tracks/{id}/waveform has peaks. */
     val hasWaveform: Boolean = false,
+    /** Catalogue a Discover-added track came from ("ncs"); "" for uploads. */
+    val source: String = "",
+    val sourceId: String = "",
 )
+
+/** An online catalogue Discover can search. */
+@Serializable
+data class DiscoverSource(
+    val key: String,
+    val name: String,
+    val attribution: String? = null,
+)
+
+/** One Discover search hit. */
+@Serializable
+data class DiscoverResult(
+    val source: String,
+    val id: String,
+    val title: String = "",
+    val artist: String = "",
+    val genre: String? = null,
+    val year: Int? = null,
+    val coverUrl: String? = null,
+    val pageUrl: String? = null,
+    val previewUrl: String? = null,
+    /** Set when this result is already in the library. */
+    val trackId: String? = null,
+)
+
+@Serializable
+data class DiscoverSearch(
+    val results: List<DiscoverResult> = emptyList(),
+    val page: Int = 1,
+    val hasMore: Boolean = false,
+)
+
+@Serializable
+data class DiscoverAddRequest(val source: String, val id: String)
 
 @Serializable
 data class Playlist(

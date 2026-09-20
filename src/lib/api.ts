@@ -18,6 +18,8 @@ import type {
   User,
   Waveform,
   Lyrics,
+  DiscoverSource,
+  DiscoverSearch,
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
@@ -241,6 +243,27 @@ export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?:
 
 // ---- delta sync -------------------------------------------------------------
 
+// ---- discover ---------------------------------------------------------------
+
+export const discover = {
+  sources: () => api<DiscoverSource[]>("/api/discover/sources"),
+  search: (source: string, q: string, page = 1, signal?: AbortSignal) =>
+    api<DiscoverSearch>(
+      `/api/discover/search?source=${encodeURIComponent(source)}&q=${encodeURIComponent(q)}&page=${page}`,
+      { signal }
+    ),
+  /** Result thumbnail, proxied through the server (see handleDiscoverArtwork). */
+  artworkUrl: (source: string, u: string) =>
+    gw(`/api/discover/artwork?source=${encodeURIComponent(source)}&u=${encodeURIComponent(u)}`) + tokenQuery(),
+  /** Downloads the track into the library; the server answers with the Track. */
+  add: (source: string, id: string) =>
+    api<Track>("/api/discover/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, id }),
+    }),
+}
+
 // ---- lyrics -----------------------------------------------------------------
 
 class LyricsMissing extends Error {
@@ -277,10 +300,18 @@ export function fetchLyrics(trackId: string): Promise<Lyrics> {
 export async function saveLyrics(trackId: string, text: string): Promise<Lyrics | null> {
   lyricsCache.delete(trackId)
   if (text.trim() === "") {
-    await api<void>(`/api/tracks/${trackId}/lyrics`, { method: "PUT", body: JSON.stringify({ text: "" }) })
+    await api<void>(`/api/tracks/${trackId}/lyrics`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "" }),
+    })
     return null
   }
-  return api<Lyrics>(`/api/tracks/${trackId}/lyrics`, { method: "PUT", body: JSON.stringify({ text }) })
+  return api<Lyrics>(`/api/tracks/${trackId}/lyrics`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  })
 }
 
 // ---- waveform ---------------------------------------------------------------

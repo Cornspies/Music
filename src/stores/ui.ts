@@ -21,6 +21,7 @@ export type View =
   | "artist"
   | "offline"
   | "history"
+  | "discover"
   | "admin"
 
 export type PlaylistDialogState =

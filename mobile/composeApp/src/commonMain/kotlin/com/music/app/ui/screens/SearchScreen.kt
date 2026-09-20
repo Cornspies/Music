@@ -11,23 +11,30 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +44,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.music.app.LocalAppModel
+import com.music.app.api.DiscoverResult
+import com.music.app.api.friendlyError
+import com.music.app.ui.theme.Emerald
 import com.music.app.ui.components.CoverImage
 import com.music.app.ui.components.TrackRow
 import com.music.app.ui.formatTotalDuration
@@ -45,24 +56,38 @@ import com.music.app.ui.theme.EmeraldDark
 import com.music.app.ui.theme.Zinc500
 import com.music.app.ui.theme.Zinc800
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
-/** Search tab — debounced full-library search (tracks, albums, artists, playlists). */
+/**
+ * Search tab — debounced search of the library (tracks, albums, artists,
+ * playlists), or, with a catalogue chip selected, of an online catalogue
+ * whose tracks can be added to the library on the spot.
+ */
 @Composable
 fun SearchScreen() {
     val model = LocalAppModel.current
 
     var query by remember { mutableStateOf("") }
+    // null = the library; otherwise a Discover source key ("ncs").
+    var source by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
 
+    LaunchedEffect(Unit) { model.loadDiscoverSources() }
+    val sources = model.discoverSources.orEmpty()
+
     // Debounce keystrokes (350 ms), then ask the server.
-    LaunchedEffect(query) {
+    LaunchedEffect(query, source) {
         val trimmed = query.trim()
+        val src = source
         if (trimmed.isEmpty()) {
             model.clearSearch()
+            model.clearDiscover()
         } else {
             delay(350.milliseconds)
-            if (query.trim() == trimmed) model.search(trimmed)
+            if (query.trim() == trimmed) {
+                if (src == null) model.search(trimmed) else model.discoverSearch(src, trimmed)
+            }
         }
     }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -79,7 +104,9 @@ fun SearchScreen() {
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester),
-            placeholder = { Text("Songs, artists, albums…") },
+            placeholder = {
+                Text(if (source == null) "Songs, artists, albums…" else "Search ${sources.firstOrNull { it.key == source }?.name ?: source}")
+            },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             trailingIcon = {
                 if (query.isNotEmpty()) {
@@ -90,7 +117,20 @@ fun SearchScreen() {
             },
             singleLine = true,
         )
+        if (sources.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = source == null, onClick = { source = null }, label = { Text("Library") })
+                sources.forEach { s ->
+                    FilterChip(selected = source == s.key, onClick = { source = s.key }, label = { Text(s.name) })
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
+
+        if (source != null) {
+            DiscoverResults(source!!, query, attribution = sources.firstOrNull { it.key == source }?.attribution)
+            return@Column
+        }
 
         val results = model.searchResults
         if (query.isBlank()) {
@@ -166,6 +206,140 @@ fun SearchScreen() {
                     }
                 }
             }
+        }
+    }
+}
+
+/** Catalogue results: thumbnail, title, and an Add button that turns into "In library". */
+@Composable
+private fun DiscoverResults(source: String, query: String, attribution: String?) {
+    val model = LocalAppModel.current
+    val results = model.discoverResults
+    val error = model.discoverError
+
+    when {
+        query.isBlank() -> {
+            Column(Modifier.padding(top = 32.dp, start = 8.dp)) {
+                Text(
+                    "Search the catalogue; tracks you add are downloaded into the library.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (attribution != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(attribution, style = MaterialTheme.typography.bodySmall, color = Zinc500)
+                }
+            }
+        }
+        error != null && results == null -> Text(
+            error,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 32.dp, start = 8.dp),
+        )
+        results == null -> if (model.discoverLoading) {
+            Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+        results.results.isEmpty() -> Text(
+            "No results",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 32.dp, start = 8.dp),
+        )
+        else -> LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
+        ) {
+            items(results.results, key = { "${it.source}-${it.id}" }) { result ->
+                DiscoverRow(source, result)
+            }
+            if (results.hasMore) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                        if (model.discoverLoading) {
+                            CircularProgressIndicator(Modifier.size(24.dp))
+                        } else {
+                            TextButton(onClick = { model.discoverLoadMore() }) { Text("Load more") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscoverRow(source: String, result: DiscoverResult) {
+    val model = LocalAppModel.current
+    val scope = rememberCoroutineScope()
+    var adding by remember(result.id) { mutableStateOf(false) }
+    var error by remember(result.id) { mutableStateOf<String?>(null) }
+    val inLibrary = result.trackId != null
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Zinc800),
+        ) {
+            if (result.coverUrl != null) {
+                AsyncImage(
+                    model = model.api.discoverArtworkUrl(source, result.coverUrl),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                result.title,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Text(
+                listOfNotNull(result.artist.ifBlank { null }, result.genre, result.year?.toString()).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            error?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, maxLines = 2)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        when {
+            inLibrary -> TextButton(onClick = {
+                model.tracks?.firstOrNull { it.id == result.trackId }?.let { model.playTrack(it, listOf(it)) }
+            }) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = Emerald, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("In library", color = Emerald)
+            }
+            adding -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            else -> Button(onClick = {
+                adding = true
+                error = null
+                scope.launch {
+                    try {
+                        model.discoverAdd(result)
+                    } catch (e: Exception) {
+                        error = friendlyError(e)
+                    } finally {
+                        adding = false
+                    }
+                }
+            }) { Text("Add") }
         }
     }
 }

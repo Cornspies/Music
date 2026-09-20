@@ -28,6 +28,7 @@ import { PlaylistView } from "@/components/music/views/PlaylistView"
 import { FavoritesView } from "@/components/music/views/FavoritesView"
 import { OfflineView } from "@/components/music/views/OfflineView"
 import { HistoryView } from "@/components/music/views/HistoryView"
+import { DiscoverView } from "@/components/music/views/DiscoverView"
 import { AdminView } from "@/components/music/views/AdminView"
 import { OfflineBanner } from "@/components/music/OfflineBanner"
 import { PlaybackSettingsDialog } from "@/components/music/PlaybackSettingsDialog"
@@ -133,6 +134,8 @@ function renderView(view: View) {
       return <OfflineView />
     case "history":
       return <HistoryView />
+    case "discover":
+      return <DiscoverView />
     case "admin":
       return <AdminView />
   }

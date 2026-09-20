@@ -72,6 +72,10 @@ type Track struct {
         // Loudness is the integrated loudness in LUFS (EBU R128), for volume
         // normalisation. Null until the background analysis has run.
         Loudness *float64 `json:"loudness"`
+        // Source and SourceID identify the catalogue a track was added from
+        // via Discover ("ncs"); both empty for ordinary uploads.
+        Source   string `json:"source"`
+        SourceID string `json:"sourceId"`
         // HasWaveform is true once GET /api/tracks/{id}/waveform has data.
         HasWaveform bool `json:"hasWaveform"`
 }
@@ -135,7 +139,8 @@ SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration
        t.created_at, t.file_path, t.file_name,
        t.user_id, COALESCE(u.username, ''), COALESCE(u.has_avatar, 0),
        COALESCE(t.alt_path, ''), COALESCE(t.alt_mime, ''), COALESCE(t.alt_size, 0),
-       COALESCE(t.updated_at, ''), t.loudness, (COALESCE(t.waveform_json, '') <> '')
+       COALESCE(t.updated_at, ''), t.loudness, (COALESCE(t.waveform_json, '') <> ''),
+       COALESCE(t.source, ''), COALESCE(t.source_id, '')
 FROM tracks t
 LEFT JOIN users u ON u.id = t.user_id
 LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?`
@@ -164,6 +169,7 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
                 &t.UploadedBy.ID, &t.UploadedBy.Username, &uploaderAvatar,
                 &altPath, &t.CompatibleMime, &t.CompatibleSize,
                 &t.UpdatedAt, &loudness, &hasWaveform,
+                &t.Source, &t.SourceID,
         )
         if err != nil {
                 return nil, "", "", err
