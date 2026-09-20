@@ -3,6 +3,7 @@ package com.music.app.state
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.music.app.Screen
@@ -745,6 +746,7 @@ class AppModel(
     private fun loadCurrent(autoplay: Boolean): Track? {
         val track = queue.getOrNull(queueIndex) ?: return null
         currentTrack = track
+        prefetchNeighbourWaveforms()
         // Downloaded copy wins over streaming: instant start, no data used, and
         // it's the only thing that works with no connection.
         // The Track overload asks for the compatible copy when this platform
@@ -766,17 +768,44 @@ class AppModel(
 
     // ------------------------------------------------------------ waveform
 
-    /** Peaks for the current track's seek bar, or null while loading / unavailable. */
-    var currentWaveform by mutableStateOf<Pair<String, List<Int>>?>(null)
-        private set
+    /**
+     * Peaks by track id. Kept for the whole session (200 ints a track) so
+     * skipping back to something already heard shows its waveform at once.
+     */
+    private val waveforms = mutableStateMapOf<String, List<Int>>()
 
-    /** Fetches the waveform for [track] if the server has one; cached per id. */
+    /** Ids a fetch is already in flight for, so neighbours aren't requested twice. */
+    private val waveformRequests = mutableSetOf<String>()
+
+    /** Peaks for [track]'s seek bar, or null while loading / unavailable. */
+    fun waveformFor(track: Track): List<Int>? = waveforms[track.id]
+
+    /** Fetches the waveform for [track] if the server has one and it isn't cached yet. */
     fun loadWaveform(track: Track) {
-        if (!track.hasWaveform || currentWaveform?.first == track.id || offlineMode) return
+        if (!track.hasWaveform || offlineMode) return
+        if (track.id in waveforms || !waveformRequests.add(track.id)) return
         scope.launch {
-            val peaks = runCatching { api.waveform(track.id) }.getOrNull() ?: return@launch
-            if (currentTrack?.id == track.id) currentWaveform = track.id to peaks
+            try {
+                runCatching { api.waveform(track.id) }.getOrNull()?.let { waveforms[track.id] = it }
+            } finally {
+                waveformRequests.remove(track.id)
+            }
         }
+    }
+
+    /**
+     * Warms the cache for the tracks either side of the current one, so a
+     * skip lands on a seek bar that's already a waveform instead of flashing
+     * the plain slider first. (Shuffle picks are unpredictable; those still
+     * load on arrival.)
+     */
+    private fun prefetchNeighbourWaveforms() {
+        if (queue.isEmpty()) return
+        listOf(queueIndex, queueIndex + 1, queueIndex - 1)
+            .map { (it + queue.size) % queue.size }
+            .distinct()
+            .mapNotNull { queue.getOrNull(it) }
+            .forEach(::loadWaveform)
     }
 
 

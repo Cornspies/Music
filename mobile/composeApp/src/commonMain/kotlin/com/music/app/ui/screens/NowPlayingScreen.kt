@@ -109,7 +109,7 @@ private fun NowPlayingContent(track: Track) {
     val shownPosition = dragValue ?: position
 
     LaunchedEffect(track.id, track.hasWaveform) { model.loadWaveform(track) }
-    val waveform = model.currentWaveform?.takeIf { it.first == track.id }?.second
+    val waveform = model.waveformFor(track)
 
     // Swipe down to close, the way every full-screen player does: the content
     // follows the finger, and past a third of the screen letting go dismisses
@@ -271,6 +271,10 @@ private fun NowPlayingContent(track: Track) {
         // ---- seek ----
         SeekBar(
             waveform = waveform,
+            // A track the server has analysed gets a waveform-shaped
+            // placeholder while its peaks arrive, not the slider: swapping
+            // slider → waveform a moment after every skip looked like a glitch.
+            expectWaveform = track.hasWaveform,
             position = shownPosition,
             duration = duration,
             onPreview = { dragValue = it },
@@ -355,18 +359,23 @@ private fun NowPlayingContent(track: Track) {
 /**
  * The waveform as a seek bar: tap anywhere to jump, drag to scrub. Without a
  * waveform, a standard slider does the same job at the same height so the
- * layout doesn't jump when the analysis arrives.
+ * layout doesn't jump when the analysis arrives. With [expectWaveform] but no
+ * peaks yet, a flat bar of the same shape stands in until they load.
  */
+/** Low, even bars: what a waveform looks like before its peaks have arrived. */
+private val PLACEHOLDER_PEAKS: List<Int> = List(200) { 6 }
+
 @Composable
 private fun SeekBar(
     waveform: List<Int>?,
+    expectWaveform: Boolean,
     position: Double,
     duration: Double,
     onPreview: (Double) -> Unit,
     onSeek: (Double) -> Unit,
 ) {
     val enabled = duration > 0.0
-    if (waveform != null) {
+    if (waveform != null || expectWaveform) {
         Box(
             Modifier
                 .fillMaxWidth()
@@ -396,7 +405,7 @@ private fun SeekBar(
                 },
         ) {
             WaveformBar(
-                peaks = waveform,
+                peaks = waveform ?: PLACEHOLDER_PEAKS,
                 fraction = if (enabled) (position / duration).toFloat().coerceIn(0f, 1f) else 0f,
                 modifier = Modifier.fillMaxSize(),
             )
