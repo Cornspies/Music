@@ -89,7 +89,6 @@ fun NowPlayingScreen() {
         EmptyState(
             Icons.Filled.MusicNote,
             "Nothing playing",
-            subtitle = "Pick a track from your library or playlists.",
         )
         return
     }

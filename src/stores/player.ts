@@ -99,9 +99,7 @@ function getEngine(): AudioEngine | null {
         const s = usePlayerStore.getState()
         if (s.sleepAfterTrack) {
           usePlayerStore.setState({ sleepAfterTrack: false, isPlaying: false })
-          toast("Sleep timer — stopped after track", {
-            description: `${s.currentTrack?.title ?? "Playback"} finished. Good night 🌙`,
-          })
+          toast("Sleep timer")
           return
         }
         if (s.repeat === "one" && s.currentTrack) {
@@ -588,9 +586,7 @@ export const usePlayerStore = create<PlayerState>()(
           // 0 = "end of current track"
           set({ sleepEndsAt: null, sleepAfterTrack: true })
           prepareNext()
-          toast("Sleep timer set — end of track", {
-            description: "Playback stops when the current track finishes.",
-          })
+          toast("Sleep timer set")
           return
         }
         const endsAt = Date.now() + minutes * 60_000
@@ -599,9 +595,7 @@ export const usePlayerStore = create<PlayerState>()(
           const e = getEngine()
           if (e && !e.paused) {
             e.pause()
-            toast("Sleep timer ended", {
-              description: "Playback paused. Good night 🌙",
-            })
+            toast("Sleep timer ended")
           }
           usePlayerStore.setState({ sleepEndsAt: null })
         }, minutes * 60_000)

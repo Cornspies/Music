@@ -195,7 +195,6 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
             detail == null || detail.tracks.isEmpty() -> EmptyState(
                 Icons.AutoMirrored.Filled.QueueMusic,
                 "Empty playlist",
-                subtitle = "Tap the + button to add tracks from your library.",
             )
             else -> {
                 Button(
@@ -418,17 +417,7 @@ private fun PlaylistDownloadButton(detail: PlaylistDetail) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             title = { Text("Downloaded playlist") },
-            text = {
-                Column {
-                    Text(
-                        if (kept) {
-                            "This playlist is kept offline: tracks added on any device are downloaded automatically, and removed ones are dropped."
-                        } else {
-                            "Keep it offline to have it follow the server — new tracks download by themselves on the next launch."
-                        },
-                    )
-                }
-            },
+            text = if (kept) ({ Text("New tracks download automatically.") }) else null,
             confirmButton = {
                 Column(horizontalAlignment = Alignment.End) {
                     TextButton(onClick = {

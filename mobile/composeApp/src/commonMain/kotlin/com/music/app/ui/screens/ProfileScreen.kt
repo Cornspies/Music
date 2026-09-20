@@ -133,14 +133,12 @@ fun ProfileScreen() {
             SettingRow(
                 icon = Icons.Filled.Key,
                 title = "Change password",
-                subtitle = "Signs out your other devices",
                 onClick = { passwordOpen = true },
             )
             HorizontalDivider()
             SettingRow(
                 icon = Icons.AutoMirrored.Filled.ExitToApp,
                 title = "Sign out",
-                subtitle = "Here, or on every device",
                 onClick = { logoutOpen = true },
             )
         }
@@ -166,7 +164,7 @@ fun ProfileScreen() {
             title = { Text("Sign out?") },
             text = {
                 Column {
-                    Text("Sign out on this phone, or on every device this account is signed in on. Downloads on this phone are removed either way.")
+                    Text("Downloads on this phone are removed.")
                     everywhereError?.let {
                         Spacer(Modifier.height(8.dp))
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -233,7 +231,6 @@ private fun SectionCard(
 private fun SettingRow(
     icon: ImageVector,
     title: String,
-    subtitle: String,
     onClick: () -> Unit,
 ) {
     Row(
@@ -245,10 +242,7 @@ private fun SettingRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Icon(icon, contentDescription = null, tint = Emerald, modifier = Modifier.size(22.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Icon(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
@@ -300,7 +294,7 @@ private fun ChangePasswordDialog(onDismiss: () -> Unit) {
         title = { Text(if (done) "Password changed" else "Change password") },
         text = {
             if (done) {
-                Text("Your other devices have been signed out. This one stays signed in.")
+                Text("Other devices were signed out.")
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(

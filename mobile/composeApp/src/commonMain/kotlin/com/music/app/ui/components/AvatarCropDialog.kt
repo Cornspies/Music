@@ -113,11 +113,6 @@ fun AvatarCropDialog(
                         color = MaterialTheme.colorScheme.error,
                     )
                 } else {
-                    Text(
-                        "Drag to move, pinch or use the slider to zoom.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     Box(
                         Modifier
                             .padding(top = 12.dp)

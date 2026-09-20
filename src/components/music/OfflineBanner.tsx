@@ -25,9 +25,7 @@ export function OfflineBanner() {
         >
           {count} downloaded track{count === 1 ? "" : "s"} still play.
         </button>
-      ) : (
-        <span>Downloads would still play.</span>
-      )}
+      ) : null}
     </div>
   )
 }

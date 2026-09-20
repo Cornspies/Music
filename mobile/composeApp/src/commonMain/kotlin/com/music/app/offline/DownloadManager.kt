@@ -177,7 +177,7 @@ class DownloadManager(
         if (transient[track.id] == DownloadState.DOWNLOADING) return
         if (waitingForWifi) {
             transient[track.id] = DownloadState.FAILED
-            lastError = "Waiting for Wi-Fi — downloads are set to Wi-Fi only."
+            lastError = "Waiting for Wi-Fi."
             return
         }
 

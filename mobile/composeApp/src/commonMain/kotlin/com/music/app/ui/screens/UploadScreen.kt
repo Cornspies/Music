@@ -160,8 +160,6 @@ fun UploadScreen() {
             EmptyState(
                 icon = Icons.Filled.CloudUpload,
                 title = "Upload from the web app",
-                subtitle = "File uploads are available on Android and on the Music web app. " +
-                    "Open the server URL in a browser to add music, then it appears here everywhere.",
             )
         }
 

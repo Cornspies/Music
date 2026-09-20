@@ -106,7 +106,6 @@ fun FavoritesScreen() {
                 EmptyState(
                     icon = Icons.Filled.Favorite,
                     title = "No favorites yet",
-                    subtitle = "Tap the heart on any track to keep it here.",
                 )
             else -> RefreshableContent(
                 isRefreshing = model.favoritesLoading,

@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -105,12 +104,9 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
 
   return (
     <Dialog open={file !== null} onOpenChange={(open) => !open && !busy && onCancel()}>
-      <DialogContent className="max-w-md gap-0 overflow-hidden border-zinc-800 bg-zinc-900 p-0 sm:max-w-md">
+      <DialogContent aria-describedby={undefined} className="max-w-md gap-0 overflow-hidden border-zinc-800 bg-zinc-900 p-0 sm:max-w-md">
         <DialogHeader className="border-b border-zinc-800/80 px-5 py-4">
           <DialogTitle className="text-base">Position your picture</DialogTitle>
-          <DialogDescription className="text-xs">
-            Drag to move, and zoom in to fill the circle.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col items-center px-5 py-4">

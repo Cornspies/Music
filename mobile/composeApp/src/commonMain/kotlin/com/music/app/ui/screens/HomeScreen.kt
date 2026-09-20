@@ -129,7 +129,6 @@ fun HomeScreen() {
                 EmptyState(
                     Icons.Filled.MusicNote,
                     "No music yet",
-                    subtitle = "Upload audio from this device or the web app — it appears here instantly.",
                 )
             }
             !tracks.isNullOrEmpty() -> {
@@ -146,7 +145,6 @@ fun HomeScreen() {
                     EmptyState(
                         Icons.Filled.MusicNote,
                         "Nothing played yet",
-                        subtitle = "Play a few tracks and your favorites will show up here.",
                     )
                 }
             } else {

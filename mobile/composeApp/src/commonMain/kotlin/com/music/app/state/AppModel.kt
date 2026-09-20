@@ -70,9 +70,7 @@ fun insecureServerWarning(baseUrl: String): String? {
     if (!url.startsWith("http://", ignoreCase = true)) return null
     val host = url.removePrefix("http://").removePrefix("HTTP://").substringBefore('/').substringBefore(':')
     if (host.isBlank() || isPrivateHost(host)) return null
-    return "This server address uses plain http:// outside your local network, so your password and " +
-        "session would travel unencrypted. Use https:// (put the server behind Caddy or another TLS proxy), " +
-        "or confirm below that you understand the risk."
+    return "Plain http:// outside your local network sends your password unencrypted. Use https://."
 }
 
 /**
@@ -593,7 +591,7 @@ class AppModel(
                 // Offline and not downloaded: say so plainly rather than
                 // showing a generic network error.
                 playlistDetailError = if (offlineMode) {
-                    "This playlist isn't downloaded, so it needs a connection."
+                    "This playlist isn't downloaded"
                 } else {
                     friendlyError(e)
                 }

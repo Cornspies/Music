@@ -93,7 +93,6 @@ fun PlaylistsScreen() {
             playlists.isNullOrEmpty() -> EmptyState(
                 Icons.AutoMirrored.Filled.QueueMusic,
                 "No playlists",
-                subtitle = "Create one to group tracks for any mood or road trip.",
             )
             else -> RefreshableContent(
                 isRefreshing = model.playlistsLoading,
@@ -113,11 +112,6 @@ fun PlaylistsScreen() {
                                 "Shared with you",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                "Playlists other people made public. Pin one to keep it here.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -248,7 +242,6 @@ private fun PlaylistRow(playlist: Playlist) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("Delete \"${playlist.name}\"?") },
-            text = { Text("The playlist is removed. Your tracks stay in the library.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
@@ -407,10 +400,7 @@ private fun PlaylistRowDownloadButton(playlist: Playlist) {
             onDismissRequest = { confirmRemove = false },
             title = { Text("Remove downloaded playlist?") },
             text = {
-                Text(
-                    "The audio is deleted from this device, except for tracks another " +
-                        "downloaded playlist still needs. The playlist itself is untouched.",
-                )
+                Text("The audio is deleted from this device.")
             },
             confirmButton = {
                 TextButton(onClick = {

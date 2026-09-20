@@ -5,7 +5,6 @@ import { useUIStore } from "@/stores/ui"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -35,6 +34,7 @@ export function ShortcutsDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
+        aria-describedby={undefined}
         // Reference sheet only — no input, so the shortcuts it documents keep
         // working while you read it.
         data-shortcuts-allowed=""
@@ -45,9 +45,6 @@ export function ShortcutsDialog() {
             <Keyboard className="size-4 text-emerald-400" aria-hidden="true" />
             Keyboard shortcuts
           </DialogTitle>
-          <DialogDescription className="text-xs text-zinc-500">
-            Music is built for keyboards — navigate your whole library without touching the mouse.
-          </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto p-2">
           {SHORTCUTS.map((s) => (

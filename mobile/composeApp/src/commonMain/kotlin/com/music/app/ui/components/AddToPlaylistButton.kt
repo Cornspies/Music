@@ -105,7 +105,7 @@ private fun AddToPlaylistSheet(track: Track, onDismiss: () -> Unit) {
                 when {
                     model.playlists == null -> LoadingBox(Modifier.heightIn(max = 120.dp))
                     own.isEmpty() -> Text(
-                        "You don't have any playlists yet. Create one.",
+                        "No playlists yet.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

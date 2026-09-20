@@ -194,7 +194,7 @@ export function UploadDialog() {
             Upload music
           </DialogTitle>
           <DialogDescription className="text-xs">
-            MP3, WAV, FLAC, OGG, M4A — tags & cover art are read automatically.
+            MP3, WAV, FLAC, OGG, M4A
           </DialogDescription>
         </DialogHeader>
 

@@ -52,14 +52,14 @@ function SettingRow({
   children,
 }: {
   title: string
-  description: React.ReactNode
+  description?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
     <div className="flex items-start justify-between gap-4 rounded-xl border border-zinc-800/80 bg-zinc-900/50 px-4 py-3">
       <div className="min-w-0">
         <p className="text-sm font-medium text-zinc-100">{title}</p>
-        <p className="mt-0.5 text-xs text-zinc-500">{description}</p>
+        {description ? <p className="mt-0.5 text-xs text-zinc-500">{description}</p> : null}
       </div>
       <div className="shrink-0 pt-0.5">{children}</div>
     </div>
@@ -170,10 +170,6 @@ function InvitesSection() {
         <Ticket className="size-4" aria-hidden="true" />
         Invite links
       </h2>
-      <p className="mb-3 text-xs text-zinc-500">
-        Each link creates exactly one account and stops working after that, when it expires, or when you revoke
-        it — so a leaked link can&apos;t be reused. Sign-ups can stay closed; a valid link always gets its holder in.
-      </p>
       <form
         className="flex flex-col gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/50 p-3 sm:flex-row sm:items-center"
         onSubmit={(e) => {
@@ -325,7 +321,7 @@ export function AdminView() {
   if (me?.role !== "admin") {
     return (
       <div className="p-4 md:p-6">
-        <EmptyState icon={Shield} title="Admins only" subtitle="Ask the person who runs this server." compact />
+        <EmptyState icon={Shield} title="Admins only" compact />
       </div>
     )
   }
@@ -399,12 +395,8 @@ export function AdminView() {
               title="Open registration"
               description={
                 settings.registrationPinned ? (
-                  <>Fixed by <code className="text-zinc-400">MUSIC_ALLOW_REGISTRATION</code> in the server&apos;s environment.</>
-                ) : settings.inviteRequired ? (
-                  "Anyone with the invite code can create an account."
-                ) : (
-                  "When on, anyone who finds this server's address can create an account and add to the shared library."
-                )
+                  <>Set by <code className="text-zinc-400">MUSIC_ALLOW_REGISTRATION</code> on the server.</>
+                ) : undefined
               }
             >
               <Switch
@@ -418,8 +410,8 @@ export function AdminView() {
               title="Storage per user"
               description={
                 settings.userQuotaBytes > 0
-                  ? `Uploads are capped at ${formatFileSize(settings.userQuotaBytes)} per account (MUSIC_MAX_BYTES_PER_USER).`
-                  : "No cap. Set MUSIC_MAX_BYTES_PER_USER on the server to add one."
+                  ? `${formatFileSize(settings.userQuotaBytes)} per account`
+                  : "No cap (MUSIC_MAX_BYTES_PER_USER)"
               }
             >
               <span className="text-xs text-zinc-500">{settings.transcodingAvailable ? "ffmpeg ✓" : "no ffmpeg"}</span>

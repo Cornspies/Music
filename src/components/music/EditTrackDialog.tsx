@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -151,12 +150,11 @@ export function EditTrackDialog() {
         if (!o) setEditTrackId(null)
       }}
     >
-      <DialogContent className="border-zinc-800 bg-zinc-900">
+      <DialogContent aria-describedby={undefined} className="border-zinc-800 bg-zinc-900">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Pencil className="size-4 text-emerald-400" aria-hidden="true" /> Edit track
           </DialogTitle>
-          <DialogDescription>Update the metadata for this track.</DialogDescription>
         </DialogHeader>
         {track ? <EditTrackForm key={track.id} track={track} onClose={() => setEditTrackId(null)} /> : null}
       </DialogContent>

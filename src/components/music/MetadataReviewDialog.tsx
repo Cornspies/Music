@@ -157,16 +157,17 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
           below the intrinsic width of their content. Combined with `truncate`
           (white-space: nowrap) on the long title/album lines, that made the list
           overflow the dialog panel instead of ellipsising. */}
-      <DialogContent className="max-w-xl gap-0 overflow-hidden border-zinc-800 bg-zinc-900 p-0 sm:max-w-xl">
+      <DialogContent aria-describedby={undefined} className="max-w-xl gap-0 overflow-hidden border-zinc-800 bg-zinc-900 p-0 sm:max-w-xl">
         <DialogHeader className="border-b border-zinc-800/80 px-5 py-4">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Sparkles className="size-5 text-emerald-400" aria-hidden="true" />
             Confirm track details
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            {tracks.length > 1 ? `Track ${index + 1} of ${tracks.length} — ` : ""}
-            Pick the correct result, or keep what was detected.
-          </DialogDescription>
+          {tracks.length > 1 ? (
+            <DialogDescription className="text-xs">
+              Track {index + 1} of {tracks.length}
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
 
         <div className="min-w-0 px-5 py-4">

@@ -42,11 +42,13 @@ fun SyncSettings() {
                     "Download on Wi-Fi only",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Text(
-                    if (downloads.waitingForWifi) "On mobile data now — downloads are paused." else "Playlists kept offline still sync their track list on any connection.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (downloads.waitingForWifi) {
+                    Text(
+                        "Waiting for Wifi",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Switch(checked = downloads.wifiOnly, onCheckedChange = { downloads.updateWifiOnly(it) })
         }
@@ -56,7 +58,7 @@ fun SyncSettings() {
                 when {
                     downloads.syncing -> "Syncing kept playlists…"
                     downloads.lastSyncedAt != null -> "Last synced ${downloads.lastSyncedAt}"
-                    else -> "Mark a playlist “Keep offline” to sync it here automatically."
+                    else -> "Not synced yet"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -85,7 +87,7 @@ fun DownloadQualitySetting() {
 
     Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
         Text(
-            "Download preference",
+            "Quality",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

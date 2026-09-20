@@ -189,8 +189,7 @@ export function AuthView() {
                           ? "It has expired."
                           : inviteCheck.status === "revoked"
                             ? "It was revoked."
-                            : "It isn't a valid link."}{" "}
-                      Ask whoever sent it for a new one.
+                            : "It isn't a valid link."}
                     </p>
                   </>
                 ) : (
@@ -198,10 +197,9 @@ export function AuthView() {
                     <p className="font-medium">
                       {inviteCheck?.invitedBy ? `${inviteCheck.invitedBy} invited you to Music` : "You've been invited to Music"}
                     </p>
-                    <p className="mt-0.5 opacity-80">
-                      Pick a username and password to join.
-                      {inviteCheck?.expiresAt ? ` This link works once · ${timeLeft(inviteCheck.expiresAt)}.` : ""}
-                    </p>
+                    {inviteCheck?.expiresAt ? (
+                      <p className="mt-0.5 opacity-80">This link works once · {timeLeft(inviteCheck.expiresAt)}.</p>
+                    ) : null}
                   </>
                 )}
               </div>

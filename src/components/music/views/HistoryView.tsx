@@ -162,7 +162,6 @@ export function HistoryView() {
           <EmptyState
             icon={History}
             title="Nothing played yet"
-            subtitle="Every track you play, on any device, shows up here."
             compact
             actionLabel="Browse library"
             onAction={() => navigate("library")}

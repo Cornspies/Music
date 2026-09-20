@@ -121,7 +121,6 @@ export function LibraryView() {
           <EmptyState
             icon={Search}
             title="No matches"
-            subtitle={`Nothing matches “${query}” in your library.`}
             compact
           />
         ) : (

@@ -74,15 +74,13 @@ export function OfflineView() {
         {!supported ? (
           <EmptyState
             icon={CloudDownload}
-            title="Offline playback isn't available here"
-            subtitle="This browser doesn't offer Cache Storage. Try a current Chrome, Edge, Firefox or Safari, or install the app to your home screen."
+            title="Offline playback isn't supported in this browser"
             compact
           />
         ) : tracks.length === 0 ? (
           <EmptyState
             icon={CloudDownload}
             title="Nothing downloaded yet"
-            subtitle="Use “Download for offline” in any track's menu. Downloads play from the device even when the server is unreachable, and they don't use any data."
             compact
             actionLabel="Browse library"
             onAction={() => navigate("library")}

@@ -7,7 +7,6 @@ import { useUIStore } from "@/stores/ui"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -25,24 +24,18 @@ export function PlaybackSettingsDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-sm">
+      <DialogContent aria-describedby={undefined} className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <SlidersHorizontal className="size-4 text-emerald-400" aria-hidden="true" />
             Playback
           </DialogTitle>
-          <DialogDescription className="text-xs text-zinc-500">
-            How one track turns into the next.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-5 pt-1">
           <div>
             <p className="text-sm font-medium text-zinc-200">Crossfade</p>
-            <p className="mb-2.5 text-xs text-zinc-500">
-              Off means gapless: the next track is buffered ahead so it starts the
-              instant this one ends.
-            </p>
+            <p className="mb-2.5 text-xs text-zinc-500">Off is gapless.</p>
             <div role="radiogroup" aria-label="Crossfade length" className="flex gap-1.5">
               {CROSSFADE_OPTIONS.map((sec) => (
                 <button
@@ -69,10 +62,6 @@ export function PlaybackSettingsDialog() {
               <Label htmlFor="normalize" className="text-sm font-medium text-zinc-200">
                 Normalize volume
               </Label>
-              <p className="mt-0.5 text-xs text-zinc-500">
-                Levels quiet and loud masters to the same loudness, using the
-                server&apos;s analysis of each track.
-              </p>
             </div>
             <Switch
               id="normalize"

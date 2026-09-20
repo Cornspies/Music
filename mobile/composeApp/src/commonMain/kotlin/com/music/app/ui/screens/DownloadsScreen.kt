@@ -109,7 +109,7 @@ fun DownloadsScreen() {
         // other preferences; this screen is the list itself.
         if (downloads.waitingForWifi) {
             Text(
-                "Downloads are paused until you're on Wi-Fi (change this in your profile).",
+                "Waiting for Wi-Fi.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),

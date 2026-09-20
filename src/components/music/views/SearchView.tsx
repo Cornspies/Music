@@ -122,7 +122,6 @@ export function SearchView() {
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-zinc-800 px-6 py-12 text-center">
             <SearchX className="size-8 text-zinc-600" aria-hidden="true" />
             <p className="text-sm font-medium text-zinc-300">No results for “{q}”</p>
-            <p className="text-xs text-zinc-500">Try a different spelling or fewer words.</p>
           </div>
         ) : (
           <>

@@ -158,15 +158,13 @@ fun AvatarEditor(size: Dp = 96.dp) {
                 ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
             }
         }
-        Text(
-            if (canPickImageFromDevice) {
-                "Shown next to every track you upload."
-            } else {
-                "Shown next to every track you upload. Set it from the web app."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (!canPickImageFromDevice) {
+            Text(
+                "Use the website to set it",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         error?.let {
             Text(
                 it,

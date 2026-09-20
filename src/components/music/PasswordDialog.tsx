@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -80,7 +79,7 @@ export function PasswordDialog() {
         // an older server answers 204; the existing token is still valid then
       }
       toast.success("Password changed", {
-        description: "Other devices have been signed out; this one stays signed in.",
+        description: "Other devices were signed out.",
       })
       setOpen(false)
       reset()
@@ -99,15 +98,12 @@ export function PasswordDialog() {
         if (!o) reset()
       }}
     >
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-sm">
+      <DialogContent aria-describedby={undefined} className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <KeyRound className="size-4 text-emerald-400" aria-hidden="true" />
             Change password
           </DialogTitle>
-          <DialogDescription className="text-xs text-zinc-500">
-            Update the password you use to sign in to Music on all your devices.
-          </DialogDescription>
         </DialogHeader>
 
         <form

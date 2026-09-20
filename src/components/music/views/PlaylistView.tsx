@@ -57,7 +57,7 @@ async function copyPlaylistLink(playlistId: string): Promise<void> {
     } else {
       legacyCopy(url)
     }
-    toast.success("Link copied — anyone signed in can open this playlist")
+    toast.success("Link copied")
   } catch {
     try {
       legacyCopy(url)

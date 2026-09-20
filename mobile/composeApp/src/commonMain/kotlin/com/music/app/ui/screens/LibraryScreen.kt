@@ -120,7 +120,6 @@ fun LibraryScreen() {
             tracks.isNullOrEmpty() -> EmptyState(
                 Icons.Filled.MusicNote,
                 "No music yet",
-                subtitle = "Tap the upload icon to add audio files from this device.",
             )
             else -> RefreshableContent(
                 isRefreshing = model.tracksLoading,
@@ -216,10 +215,7 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
             onDismissRequest = { confirming = false },
             title = { Text("Delete this track?") },
             text = {
-                Text(
-                    "“${track.title}” is removed from the library for everyone, along " +
-                            "with its file. This cannot be undone.",
-                )
+                Text("“${track.title}” will be removed for everyone. This cannot be undone.")
             },
             confirmButton = {
                 TextButton(onClick = {
