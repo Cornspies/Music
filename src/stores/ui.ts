@@ -54,6 +54,9 @@ interface UIState {
   setPlaybackSettingsOpen: (open: boolean) => void
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
+  /** lyrics panel docked to the right of the main area (desktop) */
+  lyricsPanelOpen: boolean
+  setLyricsPanelOpen: (open: boolean) => void
   editTrackId: string | null
   setEditTrackId: (id: string | null) => void
   playlistDialog: PlaylistDialogState
@@ -62,6 +65,18 @@ interface UIState {
   /** track to auto-add to a freshly created playlist */
   pendingPlaylistTrack: Track | null
   setPendingPlaylistTrack: (track: Track | null) => void
+}
+
+const LYRICS_PANEL_PREF = "lyrics-panel"
+
+/** Whether the lyrics panel was open last time; applied after mount so the
+ * server-rendered markup (panel closed) matches the first client render. */
+export function readLyricsPanelPref(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(LYRICS_PANEL_PREF) === "1"
+  } catch {
+    return false
+  }
 }
 
 export const useUIStore = create<UIState>()((set) => ({
@@ -94,6 +109,15 @@ export const useUIStore = create<UIState>()((set) => ({
   setPlaybackSettingsOpen: (open) => set({ playbackSettingsOpen: open }),
   sidebarOpen: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  lyricsPanelOpen: false,
+  setLyricsPanelOpen: (open) => {
+    set({ lyricsPanelOpen: open })
+    try {
+      localStorage.setItem(LYRICS_PANEL_PREF, open ? "1" : "0")
+    } catch {
+      // per-viewer convenience only
+    }
+  },
   editTrackId: null,
   setEditTrackId: (id) => set({ editTrackId: id }),
   playlistDialog: null,

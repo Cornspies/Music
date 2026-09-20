@@ -10,6 +10,7 @@ import { restorePlayback } from "@/stores/player"
 import { SidebarContent } from "@/components/music/Sidebar"
 import { PlayerBar } from "@/components/music/PlayerBar"
 import { QueuePanel } from "@/components/music/QueuePanel"
+import { LyricsSidebar } from "@/components/music/LyricsSidebar"
 import { NowPlayingView } from "@/components/music/NowPlayingView"
 import { ShortcutsDialog } from "@/components/music/ShortcutsDialog"
 import { PasswordDialog } from "@/components/music/PasswordDialog"
@@ -230,6 +231,9 @@ export function AppShell() {
             </AnimatePresence>
           )}
         </main>
+
+        {/* lyrics, docked on the right (desktop) */}
+        <LyricsSidebar />
       </div>
 
       {/* bottom stack: mobile tabs + persistent player */}

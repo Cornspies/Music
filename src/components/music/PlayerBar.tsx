@@ -5,6 +5,7 @@ import {
   ChevronUp,
   Heart,
   ListMusic,
+  MicVocal,
   Pause,
   Play,
   Repeat,
@@ -34,6 +35,21 @@ const SEEK_SLIDER_CLASS =
 
 const VOLUME_SLIDER_CLASS =
   "[&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-range]]:bg-zinc-400 [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-zinc-300"
+
+/** Shows/hides the lyrics panel docked beside the main area. */
+function LyricsToggle() {
+  const open = useUIStore((s) => s.lyricsPanelOpen)
+  return (
+    <ControlButton
+      label={open ? "Hide lyrics" : "Show lyrics"}
+      active={open}
+      aria-pressed={open}
+      onClick={() => useUIStore.getState().setLyricsPanelOpen(!open)}
+    >
+      <MicVocal className="size-4" />
+    </ControlButton>
+  )
+}
 
 function ControlButton({
   label,
@@ -324,6 +340,7 @@ export function PlayerBar() {
             <SlidersHorizontal className="size-4" />
           </ControlButton>
           <SleepTimerMenu />
+          <LyricsToggle />
           <ControlButton
             label="Open queue"
             onClick={() => useUIStore.getState().setQueueOpen(true)}

@@ -22,8 +22,11 @@ interface LyricsPanelProps {
   position: number
   onSeek: (sec: number) => void
   className?: string
-  /** "full" is the immersive page: big, left-aligned, white on colour. */
-  size?: "compact" | "full"
+  /**
+   * "full" is the immersive page: big, left-aligned, white on colour.
+   * "side" is the docked panel: white on colour too, at reading size.
+   */
+  size?: "compact" | "full" | "side"
 }
 
 /** A line is "current" from its own time until the next one starts. */
@@ -50,6 +53,8 @@ const SOURCE_LABEL: Record<Lyrics["source"], string> = {
  */
 export function LyricsPanel({ trackId, position, onSeek, className, size = "compact" }: LyricsPanelProps) {
   const full = size === "full"
+  // White text over the cover colour, as opposed to zinc over the dark UI.
+  const tinted = size !== "compact"
   // Keyed on the track so a stale result never shows under a new title.
   const [state, setState] = useState<{ id: string; lyrics: Lyrics | null; error: string | null } | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -98,18 +103,18 @@ export function LyricsPanel({ trackId, position, onSeek, className, size = "comp
 
   let body: React.ReactNode
   if (!loaded) {
-    body = <p className="py-10 text-center text-sm text-zinc-500">Loading lyrics…</p>
+    body = <p className={cn("py-10 text-center text-sm", tinted ? "text-white/50" : "text-zinc-500")}>Loading lyrics…</p>
   } else if (loaded.error) {
-    body = <p className="py-10 text-center text-sm text-zinc-500">{loaded.error}</p>
+    body = <p className={cn("py-10 text-center text-sm", tinted ? "text-white/50" : "text-zinc-500")}>{loaded.error}</p>
   } else if (!lyrics || lyrics.source === "none") {
     body = (
       <div className="flex flex-col items-center gap-3 py-10 text-center">
-        <MicVocal className="size-8 text-zinc-600" aria-hidden="true" />
-        <p className="text-sm text-zinc-400">No lyrics found</p>
+        <MicVocal className={cn("size-8", tinted ? "text-white/40" : "text-zinc-600")} aria-hidden="true" />
+        <p className={cn("text-sm", tinted ? "text-white/60" : "text-zinc-400")}>No lyrics found</p>
       </div>
     )
   } else if (lyrics.instrumental && !lyrics.plain) {
-    body = <p className="py-10 text-center text-sm text-zinc-400">Instrumental</p>
+    body = <p className={cn("py-10 text-center text-sm", tinted ? "text-white/60" : "text-zinc-400")}>Instrumental</p>
   } else if (synced && synced.length > 0) {
     body = (
       <ol className={cn("flex flex-col", full ? "gap-2 py-[30vh]" : "gap-1 py-[35%]")}>
@@ -123,10 +128,12 @@ export function LyricsPanel({ trackId, position, onSeek, className, size = "comp
                 "w-full rounded-lg text-left transition-colors duration-300",
                 full
                   ? "px-2 py-1 text-2xl font-extrabold leading-tight tracking-tight md:text-4xl lg:text-5xl"
-                  : "px-3 py-1.5 text-lg font-semibold leading-snug md:text-xl",
+                  : size === "side"
+                    ? "px-2 py-1 text-lg font-bold leading-snug lg:text-xl"
+                    : "px-3 py-1.5 text-lg font-semibold leading-snug md:text-xl",
                 i === current
                   ? "text-white"
-                  : full
+                  : tinted
                     ? "text-white/45 hover:text-white/80"
                     : i < current
                       ? "text-zinc-500 hover:text-zinc-300"
@@ -146,7 +153,9 @@ export function LyricsPanel({ trackId, position, onSeek, className, size = "comp
           "whitespace-pre-wrap",
           full
             ? "px-2 py-[20vh] text-2xl font-extrabold leading-snug tracking-tight text-white/90 md:text-4xl"
-            : "py-6 text-base leading-relaxed text-zinc-200 md:text-lg"
+            : size === "side"
+              ? "px-2 py-6 text-lg font-bold leading-relaxed text-white/90"
+              : "py-6 text-base leading-relaxed text-zinc-200 md:text-lg"
         )}
       >
         {lyrics.plain}
@@ -167,7 +176,7 @@ export function LyricsPanel({ trackId, position, onSeek, className, size = "comp
         {body}
       </div>
       {loaded && (
-        <div className={cn("flex items-center justify-between gap-2 px-3 pt-1 text-[11px]", full ? "text-white/50" : "text-zinc-500")}>
+        <div className={cn("flex items-center justify-between gap-2 px-3 pt-1 text-[11px]", tinted ? "text-white/50" : "text-zinc-500")}>
           <span>{lyrics && lyrics.source !== "none" ? SOURCE_LABEL[lyrics.source] : ""}</span>
           {lyrics?.editable && (
             <button
