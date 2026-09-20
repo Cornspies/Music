@@ -821,7 +821,7 @@ class AppModel(
     private fun loadCurrent(autoplay: Boolean): Track? {
         val track = queue.getOrNull(queueIndex) ?: return null
         currentTrack = track
-        prefetchNeighbourWaveforms()
+        prefetchNeighbours()
         // Downloaded copy wins over streaming: instant start, no data used, and
         // it's the only thing that works with no connection.
         // The Track overload asks for the compatible copy when this platform
@@ -889,18 +889,21 @@ class AppModel(
     }
 
     /**
-     * Warms the cache for the tracks either side of the current one, so a
-     * skip lands on a seek bar that's already a waveform instead of flashing
-     * the plain slider first. (Shuffle picks are unpredictable; those still
-     * load on arrival.)
+     * Warms the caches for the tracks either side of the current one, so a
+     * skip lands on a seek bar that's already a waveform (instead of flashing
+     * the plain slider first) and a lyrics strip that's already there.
+     * (Shuffle picks are unpredictable; those still load on arrival.)
      */
-    private fun prefetchNeighbourWaveforms() {
+    private fun prefetchNeighbours() {
         if (queue.isEmpty()) return
         listOf(queueIndex, queueIndex + 1, queueIndex - 1)
             .map { (it + queue.size) % queue.size }
             .distinct()
             .mapNotNull { queue.getOrNull(it) }
-            .forEach(::loadWaveform)
+            .forEach {
+                loadWaveform(it)
+                loadLyrics(it)
+            }
     }
 
 

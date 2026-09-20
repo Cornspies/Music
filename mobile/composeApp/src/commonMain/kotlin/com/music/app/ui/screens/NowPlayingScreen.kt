@@ -27,7 +27,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -64,6 +63,7 @@ import com.music.app.state.RepeatMode
 import com.music.app.ui.components.CoverImage
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.LyricsSheet
+import com.music.app.ui.components.LyricsStrip
 import com.music.app.ui.components.WaveformBar
 import com.music.app.ui.formatDuration
 import com.music.app.ui.theme.Emerald
@@ -77,7 +77,8 @@ import kotlin.math.roundToInt
  * Full-screen player.
  *
  * Swipe down anywhere to close; swipe the cover left or right to skip to the
- * next or previous track. Laid out top to bottom with no scrolling: the cover takes whatever height is
+ * next or previous track. When the track has lyrics, the line being sung sits
+ * between the title and the seek bar and opens the full text. Laid out top to bottom with no scrolling: the cover takes whatever height is
  * left after everything else has been placed, so on a short phone it simply
  * shrinks rather than pushing the controls off the bottom. The waveform (when
  * the server has analysed the track) is the seek bar itself — tap or drag it;
@@ -127,6 +128,8 @@ private fun NowPlayingContent(track: Track) {
     val skipThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
     var skipping by remember { mutableStateOf(false) }
     var lyricsOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(track.id) { model.loadLyrics(track) }
+    val lyrics = model.lyricsFor(track)?.takeIf { it.found && !(it.instrumental && it.plain.isBlank()) }
 
     // The background travels with the content, so what's underneath shows
     // through as the player slides away.
@@ -175,9 +178,6 @@ private fun NowPlayingContent(track: Track) {
                 color = Zinc400,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = { lyricsOpen = true }) {
-                Icon(Icons.Filled.Lyrics, contentDescription = "Lyrics")
-            }
         }
 
         // ---- cover: a true square, as large as the leftover room allows ----
@@ -269,6 +269,14 @@ private fun NowPlayingContent(track: Track) {
                     tint = if (track.isFavorite) Emerald else Zinc500,
                 )
             }
+        }
+
+        // ---- lyrics: the line being sung, between the art and the transport;
+        // tap for the whole text. Absent when the track has none, and the
+        // cover takes the room back.
+        if (lyrics != null) {
+            Spacer(Modifier.height(10.dp))
+            LyricsStrip(lyrics, position = position, onClick = { lyricsOpen = true })
         }
 
         Spacer(Modifier.height(8.dp))
