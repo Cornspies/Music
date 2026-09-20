@@ -17,6 +17,7 @@ import type {
   Track,
   User,
   Waveform,
+  Lyrics,
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
@@ -64,9 +65,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     let message = `Request failed (${res.status})`
     try {
       const data: unknown = await res.json()
+      // A lyrics 404 is an answer ("nothing anywhere"), with the same body
+      // shape as a hit; fetchLyrics unwraps it.
+      if (res.status === 404 && (data as { source?: unknown })?.source === "none") {
+        throw new LyricsMissing(data as Lyrics)
+      }
       const msg = (data as { error?: unknown })?.error
       if (typeof msg === "string" && msg) message = msg
-    } catch {
+    } catch (e) {
+      if (e instanceof LyricsMissing) throw e
       // ignore JSON parse errors on error responses
     }
     throw new Error(message)
@@ -233,6 +240,48 @@ export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?:
 }
 
 // ---- delta sync -------------------------------------------------------------
+
+// ---- lyrics -----------------------------------------------------------------
+
+class LyricsMissing extends Error {
+  constructor(readonly lyrics: Lyrics) {
+    super("no lyrics")
+  }
+}
+
+const lyricsCache = new Map<string, Promise<Lyrics>>()
+
+/**
+ * Lyrics for a track. A 404 carries a body (source "none") and is returned
+ * as a value rather than thrown, so "no lyrics" needs no special casing.
+ */
+export function fetchLyrics(trackId: string): Promise<Lyrics> {
+  let cached = lyricsCache.get(trackId)
+  if (!cached) {
+    cached = api<Lyrics>(`/api/tracks/${trackId}/lyrics`)
+      .catch((e: Error) => {
+        // api() turns the 404 into an error; recover its body as the value.
+        if (e instanceof LyricsMissing) return e.lyrics
+        throw e
+      })
+      .catch((e) => {
+        lyricsCache.delete(trackId)
+        throw e
+      })
+    lyricsCache.set(trackId, cached)
+  }
+  return cached
+}
+
+/** Replaces the lyrics (LRC time tags make them synced); "" clears them. */
+export async function saveLyrics(trackId: string, text: string): Promise<Lyrics | null> {
+  lyricsCache.delete(trackId)
+  if (text.trim() === "") {
+    await api<void>(`/api/tracks/${trackId}/lyrics`, { method: "PUT", body: JSON.stringify({ text: "" }) })
+    return null
+  }
+  return api<Lyrics>(`/api/tracks/${trackId}/lyrics`, { method: "PUT", body: JSON.stringify({ text }) })
+}
 
 // ---- waveform ---------------------------------------------------------------
 

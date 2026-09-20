@@ -197,6 +197,28 @@ data class TrackChanges(
     val now: String = "",
 )
 
+/** One time-stamped line of synced lyrics. */
+@Serializable
+data class LyricLine(
+    /** Seconds from the start at which the line begins. */
+    val t: Double = 0.0,
+    val line: String = "",
+)
+
+/** GET /api/tracks/{id}/lyrics; source "none" means nothing was found. */
+@Serializable
+data class Lyrics(
+    val plain: String = "",
+    /** Null when only plain text is known. */
+    val synced: List<LyricLine>? = null,
+    /** "embedded", "lrclib", "manual" or "none". */
+    val source: String = "none",
+    val instrumental: Boolean = false,
+    val editable: Boolean = false,
+) {
+    val found: Boolean get() = source != "none"
+}
+
 /** GET /api/tracks/{id}/waveform */
 @Serializable
 data class Waveform(

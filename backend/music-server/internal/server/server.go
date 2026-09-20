@@ -108,6 +108,8 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("GET /api/tracks/{id}/download", s.requireMediaAuth(s.handleDownloadTrack))
         mux.HandleFunc("GET /api/tracks/{id}/cover", s.requireMediaAuth(s.handleTrackCover))
         mux.HandleFunc("GET /api/tracks/{id}/waveform", s.requireAuth(s.handleTrackWaveform))
+        mux.HandleFunc("GET /api/tracks/{id}/lyrics", s.requireAuth(s.handleTrackLyrics))
+        mux.HandleFunc("PUT /api/tracks/{id}/lyrics", s.requireAuth(s.handleSetLyrics))
         mux.HandleFunc("GET /api/tracks/changes", s.requireAuth(s.handleTrackChanges))
         mux.HandleFunc("POST /api/tracks/{id}/play", s.requireAuth(s.handleTrackPlay))
         mux.HandleFunc("POST /api/auth/avatar", s.requireAuth(s.handleUploadAvatar))

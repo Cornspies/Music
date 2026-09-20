@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Heart,
   ListMusic,
+  MicVocal,
   Pause,
   Play,
   Repeat,
@@ -25,6 +26,17 @@ import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { WaveformSeek } from "@/components/music/WaveformSeek"
+import { LyricsPanel } from "@/components/music/LyricsPanel"
+
+const LYRICS_PREF = "np-lyrics"
+
+function readLyricsPref(): boolean {
+  try {
+    return localStorage.getItem(LYRICS_PREF) === "1"
+  } catch {
+    return false
+  }
+}
 
 const SEEK_CLASS =
   "[&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-track]]:bg-white/15 [&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-range]]:shadow-[0_0_14px_rgba(16,185,129,0.5)] [&_[data-slot=slider-thumb]]:size-3.5 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:shadow-lg [&_[data-slot=slider-thumb]]:opacity-0 group/seek:[&_[data-slot=slider-thumb]]:opacity-100 [&_[data-slot=slider-thumb]]:transition-opacity"
@@ -72,6 +84,17 @@ export function NowPlayingView() {
   const queueIndex = usePlayerStore((s) => s.queueIndex)
 
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
+  // Lyrics take the cover's place while shown; the choice sticks per browser.
+  const [lyricsOpen, setLyricsOpen] = useState(readLyricsPref)
+  const toggleLyrics = () => {
+    const next = !lyricsOpen
+    setLyricsOpen(next)
+    try {
+      localStorage.setItem(LYRICS_PREF, next ? "1" : "0")
+    } catch {
+      // per-viewer convenience only
+    }
+  }
 
   // Escape closes the overlay
   useEffect(() => {
@@ -155,32 +178,56 @@ export function NowPlayingView() {
                 {queue.length > 1 ? `From queue · ${queueIndex + 1} of ${queue.length}` : "Single track"}
               </p>
             </div>
-            <SleepTimerMenu />
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={lyricsOpen ? "Hide lyrics" : "Show lyrics"}
+                aria-pressed={lyricsOpen}
+                onClick={toggleLyrics}
+                className={cn(
+                  "size-10 rounded-full hover:bg-white/10 hover:text-white",
+                  lyricsOpen ? "text-emerald-400" : "text-zinc-300"
+                )}
+              >
+                <MicVocal className="size-5" />
+              </Button>
+              <SleepTimerMenu />
+            </div>
           </div>
 
           {/* content */}
           <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center gap-5 overflow-y-auto px-6 pb-6 md:gap-8 md:px-10">
-            {/* cover */}
-            <motion.div
-              layout
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.08, duration: 0.25, ease: "easeOut" }}
-              className={cn(
-                "relative w-full max-w-[min(64vw,20rem)] shrink-0 md:max-w-[min(38vw,22rem)]",
-                isPlaying && "nowplaying-glow"
-              )}
-            >
-              {isPlaying && (
-                <span aria-hidden="true" className="eq-pulse absolute inset-0 rounded-2xl" />
-              )}
-              <CoverArt
+            {lyricsOpen ? (
+              <LyricsPanel
                 trackId={currentTrack.id}
-                title={currentTrack.title}
-                hasCover={currentTrack.hasCover}
-                className="rounded-2xl shadow-2xl shadow-black/60"
+                position={displayPosition}
+                onSeek={(v) => usePlayerStore.getState().seek(v)}
+                className="h-[42vh] w-full max-w-xl shrink-0 md:h-[48vh]"
               />
-            </motion.div>
+            ) : (
+              /* cover */
+              <motion.div
+                layout
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.08, duration: 0.25, ease: "easeOut" }}
+                className={cn(
+                  "relative w-full max-w-[min(64vw,20rem)] shrink-0 md:max-w-[min(38vw,22rem)]",
+                  isPlaying && "nowplaying-glow"
+                )}
+              >
+                {isPlaying && (
+                  <span aria-hidden="true" className="eq-pulse absolute inset-0 rounded-2xl" />
+                )}
+                <CoverArt
+                  trackId={currentTrack.id}
+                  title={currentTrack.title}
+                  hasCover={currentTrack.hasCover}
+                  className="rounded-2xl shadow-2xl shadow-black/60"
+                />
+              </motion.div>
+            )}
 
             {/* title + meta */}
             <div className="w-full max-w-xl text-center">

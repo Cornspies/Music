@@ -10,6 +10,7 @@ import com.music.app.Screen
 import com.music.app.api.ApiClient
 import com.music.app.api.AuthConfig
 import com.music.app.api.ApiException
+import com.music.app.api.Lyrics
 import com.music.app.api.Playlist
 import com.music.app.api.PlaylistDetail
 import com.music.app.api.SearchResults
@@ -787,6 +788,26 @@ class AppModel(
                 runCatching { api.waveform(track.id) }.getOrNull()?.let { waveforms[track.id] = it }
             } finally {
                 waveformRequests.remove(track.id)
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ lyrics
+
+    /** Lyrics by track id, including misses, for the session. */
+    private val lyrics = mutableStateMapOf<String, Lyrics>()
+    private val lyricsRequests = mutableSetOf<String>()
+
+    /** Lyrics for [track], or null while they haven't been fetched yet. */
+    fun lyricsFor(track: Track): Lyrics? = lyrics[track.id]
+
+    fun loadLyrics(track: Track) {
+        if (offlineMode || track.id in lyrics || !lyricsRequests.add(track.id)) return
+        scope.launch {
+            try {
+                runCatching { api.lyrics(track.id) }.getOrNull()?.let { lyrics[track.id] = it }
+            } finally {
+                lyricsRequests.remove(track.id)
             }
         }
     }

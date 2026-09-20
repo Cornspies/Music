@@ -315,6 +315,7 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
         // The user has resolved this track; drop the cached suggestions so a
         // later request re-searches against the corrected metadata.
         forgetCandidates(id)
+        s.forgetLookedUpLyrics(id)
 
         t, _, _, ok := s.getTrack(w, r, u.ID, id)
         if !ok {

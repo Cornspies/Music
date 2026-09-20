@@ -648,6 +648,8 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
                 s.internalErr(w, "update track", err)
                 return
         }
+        // Corrected tags are the usual reason a lyrics lookup missed.
+        s.forgetLookedUpLyrics(id)
         t, _, _, ok := s.getTrack(w, r, u.ID, id)
         if !ok {
                 return

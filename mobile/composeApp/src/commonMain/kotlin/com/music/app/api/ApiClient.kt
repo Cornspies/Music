@@ -239,6 +239,20 @@ class ApiClient(private val store: TokenStore) {
         return response.body<Waveform>().peaks
     }
 
+    /**
+     * Lyrics for a track. A 404 carries the same body shape (source "none"),
+     * so "no lyrics" is an ordinary value here, not an exception.
+     */
+    suspend fun lyrics(trackId: String): Lyrics {
+        val response = client.get(url("/api/tracks/$trackId/lyrics")) { auth() }
+        noteRefreshedToken(response)
+        if (response.status == HttpStatusCode.NotFound) {
+            return runCatching { response.body<Lyrics>() }.getOrDefault(Lyrics())
+        }
+        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        return response.body<Lyrics>()
+    }
+
     // ---------------------------------------------------------------- tracks
 
     /** sort: "created" | "title" | "artist" | "plays". */

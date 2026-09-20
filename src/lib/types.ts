@@ -129,6 +129,25 @@ export interface HistoryResponse {
 
 
 /** GET /api/tracks/{id}/waveform */
+/** One time-stamped line of synced lyrics. */
+export interface LyricLine {
+  /** Seconds from the start at which the line begins. */
+  t: number
+  line: string
+}
+
+/** GET /api/tracks/{id}/lyrics. */
+export interface Lyrics {
+  plain: string
+  /** null when only plain text is known. */
+  synced: LyricLine[] | null
+  /** "embedded" (from the file's tag), "lrclib", "manual", or "none". */
+  source: "embedded" | "lrclib" | "manual" | "none"
+  instrumental: boolean
+  /** The uploader and admins may edit. */
+  editable: boolean
+}
+
 export interface Waveform {
   /** 200 peaks, each 0-100, left to right. */
   peaks: number[]

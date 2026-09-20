@@ -171,6 +171,17 @@ func migrate(db *sql.DB) error {
                 // Single-use invite links minted by admins (see invites.go).
                 // used_by keeps the record of who joined through which link;
                 // deleting that user nulls it rather than losing the row.
+                // Lyrics per track: the file's own tag, an LRCLIB lookup, or a
+                // hand-typed text. A miss (source 'none') is stored too so the
+                // lookup isn't repeated on every open.
+                `CREATE TABLE IF NOT EXISTS lyrics (
+                        track_id     TEXT PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                        plain        TEXT NOT NULL DEFAULT '',
+                        synced       TEXT NOT NULL DEFAULT '',
+                        source       TEXT NOT NULL,
+                        fetched_at   TEXT NOT NULL,
+                        instrumental INTEGER NOT NULL DEFAULT 0
+                )`,
                 `CREATE TABLE IF NOT EXISTS invites (
                         code       TEXT PRIMARY KEY,
                         note       TEXT NOT NULL DEFAULT '',
