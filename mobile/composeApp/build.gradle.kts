@@ -2,17 +2,34 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidApplication)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinSerialization)
 }
 
+// This module is the shared code — commonMain, iosMain and the Android
+// implementation (Activity, playback service, widget) as an Android *library*.
+// The installable APK is built by :androidApp, which does nothing but depend on
+// this module and hold app-level settings (applicationId, signing, deep-link
+// host). AGP 9 dropped support for com.android.application inside a Kotlin
+// Multiplatform module, which is why the two are separate.
 kotlin {
-    androidTarget {
+    android {
+        namespace = "com.music.app"
+        compileSdk = 37
+        minSdk = 27
+        // The launcher icon, theme and widget definition live in androidMain/res.
+        androidResources.enable = true
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
         }
+    }
+
+    // TokenStore, PlayerController & co. are expect/actual *classes*, which the
+    // compiler still labels Beta; this opts in instead of warning on each one.
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
     // Compose Multiplatform 1.10+ no longer ships iosX64 artifacts, so the
@@ -58,51 +75,3 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.music.app"
-    compileSdk = 37
-
-    defaultConfig {
-        manifestPlaceholders += mapOf()
-        applicationId = "com.music.app"
-        minSdk = 27
-        targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
-
-        // Host that shared playlist links use, claimed by the deep-link
-        // intent-filter in AndroidManifest.xml. The server is self-hosted, so
-        // set this to your own domain:
-        //
-        //   gradle.properties:  musicHost=music.example.com
-        //   or on the command line:  ./gradlew assembleDebug -PmusicHost=music.example.com
-        //
-        // The placeholder must be non-empty for the manifest to merge, hence
-        // the example fallback — links only open the app once it matches.
-        manifestPlaceholders["musicHost"] =
-            (project.findProperty("musicHost") as String?)?.takeIf { it.isNotBlank() }
-                ?: "music.cornspies.com"
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-    dependenciesInfo {
-        includeInBundle = false
-        includeInApk = false
-    }
-    compileSdkMinor = 0
-}

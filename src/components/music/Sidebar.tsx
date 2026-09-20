@@ -247,7 +247,7 @@ export function SidebarContent() {
                 <LogOut className="size-4" /> Sign out here
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={signOutEverywhere} className="text-red-400 focus:text-red-300">
+              <DropdownMenuItem onClick={signOutEverywhere} className="text-red-400">
                 <ShieldCheck className="size-4" /> Sign out everywhere
               </DropdownMenuItem>
             </DropdownMenuContent>

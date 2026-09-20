@@ -37,6 +37,7 @@ import com.music.app.player.PlaybackService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import androidx.core.content.edit
 
 /**
  * Home-screen "now playing" widget.
@@ -135,17 +136,17 @@ object NowPlayingWidgetState {
     }
 
     fun publish(context: Context, title: String, artist: String, playing: Boolean, hasItem: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString("title", title)
-            .putString("artist", artist)
-            .putBoolean("playing", playing)
-            .putBoolean("hasItem", hasItem)
-            .apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+            putString("title", title)
+                .putString("artist", artist)
+                .putBoolean("playing", playing)
+                .putBoolean("hasItem", hasItem)
+        }
         refresh(context)
     }
 
     fun clear(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { clear() }
         refresh(context)
     }
 

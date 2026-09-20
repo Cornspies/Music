@@ -1,11 +1,16 @@
 package com.music.app.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,15 +23,11 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,13 +37,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
 import com.music.app.Screen
 import com.music.app.api.Track
 import com.music.app.api.friendlyError
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.ErrorState
 import com.music.app.ui.components.RefreshableContent
@@ -147,7 +152,6 @@ private fun TrackList(tracks: List<Track>) {
  * everyone else's rows are not swipeable at all rather than offering an action
  * that would fail.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     val model = LocalAppModel.current
@@ -163,52 +167,61 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     var confirming by remember(track.id) { mutableStateOf(false) }
     var error by remember(track.id) { mutableStateOf<String?>(null) }
 
-    val state = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value != SwipeToDismissBoxValue.Settled) confirming = true
-            // Always refuse the dismissal itself: the row stays put and the
-            // dialog decides. Letting it dismiss first would animate the row
-            // away before the user has agreed to anything.
-            false
-        },
-    )
+    // A right-to-left drag slides the row aside to reveal a bin; letting go
+    // past the threshold asks for confirmation, and the row springs back
+    // either way — the dialog decides, not the gesture. (A left-to-right
+    // drag is what people do to scroll or go back, so it does nothing here.)
+    // Material's SwipeToDismissBox can't veto a dismissal any more, and it
+    // would animate the row off-screen before the user had agreed to
+    // anything, hence the hand-rolled drag.
+    val offset = remember(track.id) { Animatable(0f) }
+    val density = LocalDensity.current
+    val threshold = with(density) { 96.dp.toPx() }
+    val maxReveal = with(density) { 128.dp.toPx() }
+    val revealed = offset.value < 0f
 
-    val swiping = state.dismissDirection != SwipeToDismissBoxValue.Settled
-
-    SwipeToDismissBox(
-        state = state,
-        // Delete is a right-to-left swipe only. A left-to-right drag is the
-        // gesture people make to scroll or go back, so offering the same
-        // destructive action there invited accidental confirmations.
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            // Only drawn while a swipe is actually in progress. The box sits
-            // behind the row at all times, so painting it unconditionally left
-            // a red stripe and a bin icon visible on every row.
-            if (swiping) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.errorContainer)
-                        .padding(horizontal = 20.dp),
-                    // The row slides left, so the bin is revealed on the right.
-                    contentAlignment = Alignment.CenterEnd,
-                ) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                    )
-                }
+    Box(Modifier.fillMaxWidth()) {
+        // Only drawn while a swipe is actually in progress. The box sits
+        // behind the row at all times, so painting it unconditionally left
+        // a red stripe and a bin icon visible on every row.
+        if (revealed) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 20.dp),
+                // The row slides left, so the bin is revealed on the right.
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
             }
-        },
-        content = {
-            // TrackRow itself is transparent, so the row needs an opaque
-            // backdrop of its own or the background shows through it as it
-            // slides rather than being revealed from behind.
-            Box(Modifier.background(MaterialTheme.colorScheme.background)) { row() }
-        },
-    )
+        }
+        // TrackRow itself is transparent, so the row needs an opaque
+        // backdrop of its own or the background shows through it as it
+        // slides rather than being revealed from behind.
+        Box(
+            Modifier
+                .offset { IntOffset(offset.value.roundToInt(), 0) }
+                .background(MaterialTheme.colorScheme.background)
+                .pointerInput(track.id) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (offset.value < -threshold) confirming = true
+                            scope.launch { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMedium)) }
+                        },
+                        onDragCancel = { scope.launch { offset.animateTo(0f) } },
+                        onHorizontalDrag = { change, dx ->
+                            change.consume()
+                            scope.launch { offset.snapTo((offset.value + dx).coerceIn(-maxReveal, 0f)) }
+                        },
+                    )
+                },
+        ) { row() }
+    }
 
     if (confirming) {
         AlertDialog(

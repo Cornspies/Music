@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Only the application-level attributes are declared here. The activity,
+      playback service, widget receiver and permissions come from
+      composeApp/src/androidMain/AndroidManifest.xml and are merged in.
+
+      Backups are off: the session token is Keystore-encrypted and would be
+      useless on another device anyway, and downloaded audio belongs to the
+      signed-in account rather than the phone. Nothing here is worth
+      shipping to a cloud backup.
+
+      Cleartext stays allowed at the platform level because the primary use
+      case is a self-hosted server on the LAN, and Android's network security
+      config can't express "private address ranges only". The app enforces
+      that itself: an http:// server outside loopback and RFC 1918 ranges is
+      refused unless the user explicitly accepts the warning on the sign-in
+      screen (see AppModel.insecureServerWarning).
+    -->
+    <application
+        android:label="Music"
+        android:theme="@style/Theme.Music"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true"
+        android:supportsRtl="true" />
+
+</manifest>

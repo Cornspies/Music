@@ -92,12 +92,12 @@ Team ID there (see `public/.well-known/README.md` in the repository root) and
 gradle wrapper --gradle-version 9.7.1
 
 # build the debug APK
-./gradlew :composeApp:assembleDebug
-# → composeApp/build/outputs/apk/debug/composeApp-debug.apk
+./gradlew :androidApp:assembleDebug
+# → androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
 Or simply open the project root in **Android Studio** and press ▶ on the
-`composeApp` configuration.
+`androidApp` configuration.
 
 ### iOS
 
@@ -115,7 +115,8 @@ Or simply open the project root in **Android Studio** and press ▶ on the
 ## Project layout
 
 ```
-composeApp/src/
+androidApp/                       # Android application shell: applicationId, version, deep-link host, app-level manifest — no code
+composeApp/src/                   # everything else, as a Kotlin Multiplatform library (Android library + iOS framework)
 ├── commonMain/kotlin/com/music/app/
 │   ├── App.kt                    # root composable + navigation + bottom tabs
 │   ├── Platform.kt               # expect: file picker / canUpload / readBytes
