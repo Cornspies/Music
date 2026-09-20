@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.MusicNote
@@ -32,7 +31,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,8 +52,6 @@ import com.music.app.ui.components.TrackRow
 import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc400
-import com.music.app.api.friendlyError
-import kotlinx.coroutines.launch
 
 /** Home: stats header, recently added (horizontal cards), most played list. */
 @Composable
@@ -65,8 +61,6 @@ fun HomeScreen() {
         model.loadStats()
         if (model.tracks == null) model.loadLibrary()
     }
-
-    var confirmLogout by remember { mutableStateOf(false) }
 
     val stats = model.stats
 
@@ -101,16 +95,14 @@ fun HomeScreen() {
                         )
                     }
                 }
-                AvatarButton()
                 IconButton(onClick = { model.push(Screen.Downloads) }) {
                     Icon(Icons.Filled.DownloadForOffline, contentDescription = "Downloads")
                 }
                 IconButton(onClick = { model.push(Screen.Upload) }) {
                     Icon(Icons.Filled.CloudUpload, contentDescription = "Upload music")
                 }
-                IconButton(onClick = { confirmLogout = true }) {
-                    Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Sign out")
-                }
+                // Profile: picture, password, sign out, download preferences.
+                AvatarButton()
             }
         }
 
@@ -165,45 +157,6 @@ fun HomeScreen() {
             }
         }
     }
-    }
-
-    if (confirmLogout) {
-        val scope = rememberCoroutineScope()
-        var everywhereError by remember { mutableStateOf<String?>(null) }
-        AlertDialog(
-            onDismissRequest = { confirmLogout = false },
-            title = { Text("Sign out?") },
-            text = {
-                Column {
-                    Text("Sign out on this phone, or on every device this account is signed in on.")
-                    everywhereError?.let {
-                        Spacer(Modifier.height(8.dp))
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            },
-            confirmButton = {
-                Column(horizontalAlignment = Alignment.End) {
-                    TextButton(onClick = {
-                        confirmLogout = false
-                        model.logout()
-                    }) { Text("Sign out here") }
-                    TextButton(onClick = {
-                        scope.launch {
-                            try {
-                                model.logoutEverywhere()
-                                confirmLogout = false
-                            } catch (e: Exception) {
-                                everywhereError = friendlyError(e)
-                            }
-                        }
-                    }) { Text("Sign out everywhere", color = MaterialTheme.colorScheme.error) }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmLogout = false }) { Text("Cancel") }
-            },
-        )
     }
 }
 

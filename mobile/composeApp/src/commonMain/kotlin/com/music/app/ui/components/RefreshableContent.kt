@@ -4,6 +4,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 
 /**
@@ -28,9 +33,27 @@ fun RefreshableContent(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    // The loading flag also flips for the fetch every screen does when it
+    // appears, and that must not look like a pull: the indicator is shown only
+    // for a refresh this gesture started, and hidden again once that fetch
+    // has come and gone.
+    var pulled by remember { mutableStateOf(false) }
+    var sawRefreshing by remember { mutableStateOf(false) }
+    LaunchedEffect(isRefreshing) {
+        if (isRefreshing) {
+            sawRefreshing = true
+        } else if (sawRefreshing) {
+            sawRefreshing = false
+            pulled = false
+        }
+    }
+
     PullToRefreshBox(
-        isRefreshing = isRefreshing,
-        onRefresh = onRefresh,
+        isRefreshing = pulled && isRefreshing,
+        onRefresh = {
+            pulled = true
+            onRefresh()
+        },
         modifier = modifier.fillMaxSize(),
     ) {
         content()

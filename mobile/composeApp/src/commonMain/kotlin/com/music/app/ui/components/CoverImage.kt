@@ -33,6 +33,8 @@ fun CoverImage(
     track: Track,
     modifier: Modifier = Modifier,
     corner: Dp = 8.dp,
+    /** Size of the music-note placeholder; scale it up for big tiles. */
+    placeholderSize: Dp = 20.dp,
 ) {
     val model = LocalAppModel.current
     val gradient = Brush.linearGradient(listOf(Zinc800, EmeraldDark.copy(alpha = 0.35f)))
@@ -54,7 +56,7 @@ fun CoverImage(
                 imageVector = Icons.Filled.MusicNote,
                 contentDescription = null,
                 tint = Zinc500,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(placeholderSize),
             )
         }
     }

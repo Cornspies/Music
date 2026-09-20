@@ -1,26 +1,32 @@
 package com.music.app.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -40,27 +46,40 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
 import com.music.app.api.Track
 import com.music.app.state.RepeatMode
-import com.music.app.ui.components.WaveformBar
 import com.music.app.ui.components.CoverImage
 import com.music.app.ui.components.EmptyState
+import com.music.app.ui.components.WaveformBar
 import com.music.app.ui.formatDuration
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.OnEmerald
 import com.music.app.ui.theme.Zinc400
 import com.music.app.ui.theme.Zinc500
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
-/** Full-screen player: big cover, seek slider, prev/play/next, shuffle & repeat. */
+/**
+ * Full-screen player.
+ *
+ * Swipe down anywhere to close. Laid out top to bottom with no scrolling: the cover takes whatever height is
+ * left after everything else has been placed, so on a short phone it simply
+ * shrinks rather than pushing the controls off the bottom. The waveform (when
+ * the server has analysed the track) is the seek bar itself — tap or drag it;
+ * a plain slider stands in until then.
+ */
 @Composable
 fun NowPlayingScreen() {
     val model = LocalAppModel.current
@@ -83,143 +102,171 @@ private fun NowPlayingContent(track: Track) {
     val isPlaying by model.player.isPlaying.collectAsState()
     val position by model.player.positionSec.collectAsState()
 
-    var dragging by remember { mutableStateOf(false) }
-    var dragValue by remember { mutableStateOf(0f) }
-
+    // While the finger is down the bar follows it, not the player.
+    var dragValue by remember { mutableStateOf<Double?>(null) }
     val duration = track.duration
-    val sliderValue = when {
-        dragging -> dragValue
-        duration > 0.0 -> position.toFloat().coerceIn(0f, duration.toFloat())
-        else -> 0f
-    }
-    val shownPosition = if (dragging) dragValue.toDouble() else position
+    val shownPosition = dragValue ?: position
 
+    LaunchedEffect(track.id, track.hasWaveform) { model.loadWaveform(track) }
+    val waveform = model.currentWaveform?.takeIf { it.first == track.id }?.second
+
+    // Swipe down to close, the way every full-screen player does: the content
+    // follows the finger, and past a third of the screen letting go dismisses
+    // it; short of that it springs back. Only vertical drags are claimed, so
+    // scrubbing the waveform sideways still works.
+    val scope = rememberCoroutineScope()
+    val dragOffset = remember { Animatable(0f) }
+    val dismissThresholdPx = with(LocalDensity.current) { 140.dp.toPx() }
+
+    // The background travels with the content, so what's underneath shows
+    // through as the player slides away.
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .offset { IntOffset(0, dragOffset.value.roundToInt()) }
+            .background(MaterialTheme.colorScheme.background)
+            .systemBarsPadding()
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragEnd = {
+                        if (dragOffset.value > dismissThresholdPx) {
+                            scope.launch {
+                                dragOffset.animateTo(size.height.toFloat(), tween(180))
+                                model.pop()
+                            }
+                        } else {
+                            scope.launch { dragOffset.animateTo(0f, spring(stiffness = Spring.StiffnessMedium)) }
+                        }
+                    },
+                    onDragCancel = {
+                        scope.launch { dragOffset.animateTo(0f) }
+                    },
+                    onVerticalDrag = { change, dy ->
+                        change.consume()
+                        // Upward drags do nothing; downward ones track the finger.
+                        scope.launch { dragOffset.snapTo((dragOffset.value + dy).coerceAtLeast(0f)) }
+                    },
+                )
+            }
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // ---- header ----
+        // ---- header: collapse chevron, nothing else competing for height ----
         Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { model.pop() }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Back")
             }
             Text(
                 "Now playing",
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelLarge,
+                color = Zinc400,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.size(48.dp)) // balances the back button
         }
 
-        Spacer(Modifier.height(20.dp))
+        // ---- cover: a true square, as large as the leftover room allows ----
+        BoxWithConstraints(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Measured explicitly rather than with aspectRatio(): inside a
+            // weighted slot the constraints are tight, and aspectRatio can't
+            // make a square out of those — the art ended up stretched and
+            // cropped.
+            val edge = minOf(maxWidth, maxHeight)
+            CoverImage(
+                track,
+                Modifier.size(edge),
+                corner = 20.dp,
+                placeholderSize = edge / 3,
+            )
+        }
 
-        // ---- cover ----
-        CoverImage(
-            track,
+        // ---- title / artist with the heart alongside, not below ----
+        Row(
             Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f),
-            corner = 24.dp,
-        )
-
-        Spacer(Modifier.height(28.dp))
-
-        // ---- title / artist / favorite ----
-        Text(
-            track.title,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            track.artist.ifBlank { "Unknown artist" },
-            style = MaterialTheme.typography.bodyLarge,
-            color = Zinc400,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        IconButton(onClick = { model.toggleFavorite(track) }) {
-            Icon(
-                if (track.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                contentDescription = if (track.isFavorite) "Remove from favorites" else "Add to favorites",
-                tint = if (track.isFavorite) Emerald else Zinc500,
-            )
+                .padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    track.artist.ifBlank { "Unknown artist" } +
+                        (track.album.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Zinc400,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(onClick = { model.toggleFavorite(track) }) {
+                Icon(
+                    if (track.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (track.isFavorite) "Remove from favorites" else "Add to favorites",
+                    tint = if (track.isFavorite) Emerald else Zinc500,
+                )
+            }
         }
 
         Spacer(Modifier.height(8.dp))
 
         // ---- seek ----
-        // The server's waveform when it has one (drawn behind the slider,
-        // which stays the thing you drag), a plain slider otherwise.
-        LaunchedEffect(track.id, track.hasWaveform) { model.loadWaveform(track) }
-        val waveform = model.currentWaveform?.takeIf { it.first == track.id }?.second
-        if (waveform != null) {
-            WaveformBar(
-                peaks = waveform,
-                fraction = if (duration > 0.0) (shownPosition / duration).toFloat().coerceIn(0f, 1f) else 0f,
-                modifier = Modifier.fillMaxWidth().height(44.dp),
-            )
-        }
-        Slider(
-            value = sliderValue,
-            onValueChange = {
-                dragValue = it
-                dragging = true
+        SeekBar(
+            waveform = waveform,
+            position = shownPosition,
+            duration = duration,
+            onPreview = { dragValue = it },
+            onSeek = {
+                model.seekTo(it)
+                dragValue = null
             },
-            onValueChangeFinished = {
-                model.seekTo(dragValue.toDouble())
-                dragging = false
-            },
-            valueRange = 0f..(if (duration > 0.0) duration.toFloat() else 1f),
-            enabled = duration > 0.0,
-            modifier = Modifier.fillMaxWidth(),
         )
         Row(Modifier.fillMaxWidth()) {
-            Text(
-                formatDuration(shownPosition),
-                style = MaterialTheme.typography.bodySmall,
-                color = Zinc400,
-            )
+            Text(formatDuration(shownPosition), style = MaterialTheme.typography.labelSmall, color = Zinc400)
             Spacer(Modifier.weight(1f))
-            Text(
-                formatDuration(duration),
-                style = MaterialTheme.typography.bodySmall,
-                color = Zinc400,
-                textAlign = TextAlign.Right,
-            )
+            Text(formatDuration(duration), style = MaterialTheme.typography.labelSmall, color = Zinc400)
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(8.dp))
 
-        // ---- transport controls ----
+        // ---- one row of controls: shuffle · prev · play · next · repeat ----
         Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
+            IconButton(onClick = { model.shuffle = !model.shuffle }) {
+                Icon(
+                    Icons.Filled.Shuffle,
+                    contentDescription = "Shuffle",
+                    tint = if (model.shuffle) Emerald else Zinc500,
+                )
+            }
             IconButton(onClick = { model.previous() }) {
                 Icon(
                     Icons.Filled.SkipPrevious,
                     contentDescription = "Previous track",
-                    modifier = Modifier.size(36.dp),
+                    modifier = Modifier.size(34.dp),
                 )
             }
-            Spacer(Modifier.width(28.dp))
             Box(
                 Modifier
-                    .size(72.dp)
+                    .size(64.dp)
                     .clip(CircleShape)
                     .background(Emerald)
                     .clickable { model.togglePlayPause() },
@@ -229,31 +276,14 @@ private fun NowPlayingContent(track: Track) {
                     if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = OnEmerald,
-                    modifier = Modifier.size(34.dp),
+                    modifier = Modifier.size(32.dp),
                 )
             }
-            Spacer(Modifier.width(28.dp))
             IconButton(onClick = { model.next() }) {
                 Icon(
                     Icons.Filled.SkipNext,
                     contentDescription = "Next track",
-                    modifier = Modifier.size(36.dp),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ---- shuffle / repeat ----
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(40.dp),
-            modifier = Modifier.padding(top = 4.dp),
-        ) {
-            IconButton(onClick = { model.shuffle = !model.shuffle }) {
-                Icon(
-                    Icons.Filled.Shuffle,
-                    contentDescription = "Shuffle",
-                    tint = if (model.shuffle) Emerald else Zinc500,
+                    modifier = Modifier.size(34.dp),
                 )
             }
             IconButton(onClick = {
@@ -274,7 +304,68 @@ private fun NowPlayingContent(track: Track) {
                 )
             }
         }
+    }
+}
 
-        Spacer(Modifier.height(32.dp))
+/**
+ * The waveform as a seek bar: tap anywhere to jump, drag to scrub. Without a
+ * waveform, a standard slider does the same job at the same height so the
+ * layout doesn't jump when the analysis arrives.
+ */
+@Composable
+private fun SeekBar(
+    waveform: List<Int>?,
+    position: Double,
+    duration: Double,
+    onPreview: (Double) -> Unit,
+    onSeek: (Double) -> Unit,
+) {
+    val enabled = duration > 0.0
+    if (waveform != null) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .pointerInput(enabled, duration) {
+                    if (!enabled) return@pointerInput
+                    detectTapGestures { offset ->
+                        onSeek((offset.x / size.width).coerceIn(0f, 1f) * duration)
+                    }
+                }
+                .pointerInput(enabled, duration) {
+                    if (!enabled) return@pointerInput
+                    var x = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            x = offset.x
+                            onPreview((x / size.width).coerceIn(0f, 1f) * duration)
+                        },
+                        onDragEnd = { onSeek((x / size.width).coerceIn(0f, 1f) * duration) },
+                        onDragCancel = { onSeek((x / size.width).coerceIn(0f, 1f) * duration) },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            x = (x + dragAmount).coerceIn(0f, size.width.toFloat())
+                            onPreview((x / size.width) * duration)
+                        },
+                    )
+                },
+        ) {
+            WaveformBar(
+                peaks = waveform,
+                fraction = if (enabled) (position / duration).toFloat().coerceIn(0f, 1f) else 0f,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    } else {
+        Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+            Slider(
+                value = if (enabled) position.toFloat().coerceIn(0f, duration.toFloat()) else 0f,
+                onValueChange = { onPreview(it.toDouble()) },
+                onValueChangeFinished = { onSeek(position) },
+                valueRange = 0f..(if (enabled) duration.toFloat() else 1f),
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }

@@ -278,6 +278,19 @@ data class AuthConfig(
     val minPasswordLength: Int = 10,
 )
 
+/** POST /api/auth/password */
+@Serializable
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val newPassword: String,
+)
+
+/** A bare replacement token, as returned after a password change. */
+@Serializable
+data class TokenResponse(
+    val token: String = "",
+)
+
 @Serializable
 data class PlaylistRequest(
     val name: String,

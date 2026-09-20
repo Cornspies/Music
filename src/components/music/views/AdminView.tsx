@@ -225,7 +225,7 @@ function InvitesSection() {
             <div
               key={inv.code}
               role="listitem"
-              className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/30 px-3 py-2.5 last:border-b-0"
+              className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/30 px-3 py-2.5"
             >
               <span
                 className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", statusStyle[inv.status])}
@@ -447,7 +447,7 @@ export function AdminView() {
                 <div
                   key={u.id}
                   role="listitem"
-                  className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/30 px-3 py-2.5 last:border-b-0"
+                  className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/30 px-3 py-2.5"
                 >
                   <UserAvatar userId={u.id} username={u.username} hasAvatar={u.hasAvatar} size={32} />
                   <div className="min-w-0 flex-1">
@@ -493,7 +493,7 @@ export function AdminView() {
                       <DropdownMenuItem
                         disabled={isMe}
                         onClick={() => setPendingDelete(u)}
-                        className="text-red-400 focus:text-red-300"
+                        className="text-red-400"
                       >
                         <Trash2 className="size-4" /> Delete account…
                       </DropdownMenuItem>

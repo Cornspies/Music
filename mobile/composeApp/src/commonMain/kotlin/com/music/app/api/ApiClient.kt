@@ -193,6 +193,23 @@ class ApiClient(private val store: TokenStore) {
 
     suspend fun me(): User = getJson("/api/auth/me")
 
+    /**
+     * Changes the password. Every other session is revoked by the server,
+     * which hands back a replacement token for this one; it's stored here so
+     * the app stays signed in.
+     */
+    suspend fun changePassword(current: String, new: String) {
+        val response = client.post(url("/api/auth/password")) {
+            auth()
+            headers.append(HttpHeaders.ContentType, "application/json")
+            setBody(ChangePasswordRequest(current, new))
+        }
+        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (response.status == HttpStatusCode.NoContent) return // older server
+        val fresh = runCatching { response.body<TokenResponse>().token }.getOrNull()
+        if (!fresh.isNullOrBlank()) store.saveToken(fresh)
+    }
+
     /** Invalidates every session this account has, on every device. */
     suspend fun logoutEverywhere() {
         expectNoContent(client.post(url("/api/auth/logout-all")) { auth() })

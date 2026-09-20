@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -40,6 +41,7 @@ import com.music.app.ui.screens.LoginScreen
 import com.music.app.ui.screens.NowPlayingScreen
 import com.music.app.ui.screens.PlaylistDetailScreen
 import com.music.app.ui.screens.PlaylistsScreen
+import com.music.app.ui.screens.ProfileScreen
 import com.music.app.ui.screens.SearchScreen
 import com.music.app.ui.screens.UploadScreen
 import com.music.app.ui.theme.MusicTheme
@@ -56,6 +58,7 @@ sealed interface Screen {
     data object Favorites : Screen
     data object Upload : Screen
     data object Downloads : Screen
+    data object Profile : Screen
     data object NowPlaying : Screen
     data class PlaylistDetail(val id: String) : Screen
 }
@@ -116,52 +119,70 @@ private fun MainScreen() {
 
     BackHandler(enabled = model.backStack.size > 1) { model.pop() }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            Column {
-                if (model.currentTrack != null && current != Screen.NowPlaying) {
-                    NowPlayingBar()
+    // The full-screen player is an overlay, not a destination of its own:
+    // the screen it was opened from stays composed underneath (bars and all),
+    // so swiping the player down reveals it rather than a black void.
+    val playerOpen = current == Screen.NowPlaying
+    val shown = if (playerOpen) {
+        model.backStack.getOrNull(model.backStack.size - 2) ?: Screen.Home
+    } else {
+        current
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            bottomBar = {
+                Column {
+                    if (model.currentTrack != null) {
+                        NowPlayingBar()
+                    }
+                    // Tabs stay put on pushed screens like a playlist: they are
+                    // normal browsing destinations, and selectTab resets the
+                    // stack so "back" still never crosses tabs.
+                    BottomTabs(selected = shown)
                 }
-                // Tabs stay put on pushed screens like a playlist: they are
-                // normal browsing destinations, and selectTab resets the stack
-                // so "back" still never crosses tabs. Only the full-screen
-                // player hides them.
-                if (current != Screen.NowPlaying) {
-                    BottomTabs()
+            },
+        ) { padding ->
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) {
+                // Mounted once for the whole app: every screen keeps its normal
+                // layout offline and just gains this strip at the top.
+                OfflineBanner()
+                Box(Modifier.fillMaxSize()) {
+                    when (shown) {
+                        Screen.Home -> HomeScreen()
+                        Screen.Library -> LibraryScreen()
+                        Screen.Search -> SearchScreen()
+                        Screen.Playlists -> PlaylistsScreen()
+                        Screen.Favorites -> FavoritesScreen()
+                        Screen.Upload -> UploadScreen()
+                        Screen.Downloads -> DownloadsScreen()
+                        Screen.Profile -> ProfileScreen()
+                        Screen.NowPlaying -> HomeScreen() // never: the player is always the overlay
+                        is Screen.PlaylistDetail -> PlaylistDetailScreen(shown)
+                    }
                 }
             }
-        },
-    ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            // Mounted once for the whole app: every screen keeps its normal
-            // layout offline and just gains this strip at the top.
-            OfflineBanner()
-            Box(Modifier.fillMaxSize()) {
-            when (current) {
-                Screen.Home -> HomeScreen()
-                Screen.Library -> LibraryScreen()
-                Screen.Search -> SearchScreen()
-                Screen.Playlists -> PlaylistsScreen()
-                Screen.Favorites -> FavoritesScreen()
-                Screen.Upload -> UploadScreen()
-                Screen.Downloads -> DownloadsScreen()
-                Screen.NowPlaying -> NowPlayingScreen()
-                is Screen.PlaylistDetail -> PlaylistDetailScreen(current)
-            }
+        }
+
+        if (playerOpen) {
+            // Outside the Scaffold, so the on-background content colour that
+            // Text and Icon default to has to be provided by hand.
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+                NowPlayingScreen()
             }
         }
     }
 }
 
 @Composable
-private fun BottomTabs() {
+private fun BottomTabs(selected: Screen) {
     val model = LocalAppModel.current
-    val current = model.backStack.last()
+    val current = selected
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
         NavigationBarItem(
             selected = current == Screen.Home,

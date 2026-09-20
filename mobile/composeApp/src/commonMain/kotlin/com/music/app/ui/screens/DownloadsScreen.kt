@@ -17,18 +17,15 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,11 +34,9 @@ import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.TrackRow
-import com.music.app.offline.DownloadQuality
 import com.music.app.ui.formatBytes
 import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.Emerald
-import kotlinx.coroutines.launch
 
 /**
  * Tracks saved to this device. Everything here plays with no connection, so
@@ -110,10 +105,16 @@ fun DownloadsScreen() {
             )
         }
 
-        // Above the branch on purpose: these settings govern downloads you are
-        // about to make, so they have to be reachable before there are any.
-        DownloadQualitySetting()
-        SyncSettings()
+        // Quality, Wi-Fi-only and sync live on the profile screen with the
+        // other preferences; this screen is the list itself.
+        if (downloads.waitingForWifi) {
+            Text(
+                "Downloads are paused until you're on Wi-Fi (change this in your profile).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
 
         if (tracks.isEmpty()) {
             EmptyState(
@@ -162,88 +163,5 @@ fun DownloadsScreen() {
                 TextButton(onClick = { confirmClear = false }) { Text("Cancel") }
             },
         )
-    }
-}
-
-
-/**
- * Wi-Fi-only downloads and the "keep offline" sync status. Playlists marked
- * "keep offline" on their own screen are re-synced on every launch; this is
- * where that can be triggered by hand and where the last run is reported.
- */
-@Composable
-private fun SyncSettings() {
-    val model = LocalAppModel.current
-    val downloads = model.downloads
-    val scope = rememberCoroutineScope()
-
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "Download on Wi-Fi only",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    if (downloads.waitingForWifi) "On mobile data now — downloads are paused." else "Playlists kept offline still sync their track list on any connection.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(checked = downloads.wifiOnly, onCheckedChange = { downloads.updateWifiOnly(it) })
-        }
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                when {
-                    downloads.syncing -> "Syncing kept playlists…"
-                    downloads.lastSyncedAt != null -> "Last synced ${downloads.lastSyncedAt}"
-                    else -> "Mark a playlist “Keep offline” to sync it here automatically."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(
-                enabled = !downloads.syncing && !model.offlineMode,
-                onClick = { scope.launch { downloads.syncAll() } },
-            ) { Text("Sync now") }
-        }
-    }
-}
-
-/**
- * Which version to keep for the handful of tracks stored twice.
- *
- * Shown here rather than on a settings screen of its own: it affects nothing
- * but downloads, and this is where downloads live. Tracks with only one stored
- * version — most of the library — ignore it entirely, which the caption says
- * plainly so the setting doesn't look broken.
- */
-@Composable
-private fun DownloadQualitySetting() {
-    val model = LocalAppModel.current
-    val current = model.downloads.downloadQuality
-
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-        Text(
-            "Download preference",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FilterChip(
-                selected = current == DownloadQuality.ORIGINAL,
-                onClick = { model.downloads.updateDownloadQuality(DownloadQuality.ORIGINAL) },
-                label = { Text("Original quality") },
-            )
-            Spacer(Modifier.padding(start = 8.dp))
-            FilterChip(
-                selected = current == DownloadQuality.SMALLER,
-                onClick = { model.downloads.updateDownloadQuality(DownloadQuality.SMALLER) },
-                label = { Text("Smaller file") },
-            )
-        }
     }
 }
