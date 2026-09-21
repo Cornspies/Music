@@ -833,6 +833,12 @@ class AppModel(
 
     private fun startCurrent() {
         val track = loadCurrent(autoplay = true) ?: return
+        countPlay(track)
+        savePlayback()
+    }
+
+    /** One more play of [track]: in the server's history and on the local counter. */
+    private fun countPlay(track: Track) {
         scope.launch {
             try {
                 api.reportPlay(track.id)
@@ -841,7 +847,6 @@ class AppModel(
                 // Play counter is best-effort.
             }
         }
-        savePlayback()
     }
 
     /** Puts queue[queueIndex] into the player; returns it, or null if the queue is empty. */
@@ -1061,8 +1066,12 @@ class AppModel(
     private fun onTrackEnded() {
         when (repeatMode) {
             RepeatMode.ONE -> {
+                // Starting over is another play, as it would be from the
+                // queue; what was heard so far belongs to the previous one.
+                flushListening()
                 player.seekTo(0.0)
                 player.play()
+                currentTrack?.let(::countPlay)
             }
             RepeatMode.OFF, RepeatMode.ALL -> advance(auto = true)
         }

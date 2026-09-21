@@ -114,6 +114,8 @@ function getEngine(): AudioEngine | null {
         if (s.repeat === "one" && s.currentTrack) {
           engine?.seek(0)
           engine?.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
+          // Starting over is another play, as it would be from the queue.
+          reportPlay(s.currentTrack)
         } else {
           s.next()
         }
@@ -472,6 +474,8 @@ export const usePlayerStore = create<PlayerState>()(
             e.seek(0)
             if (repeat !== "off" || usePlayerStore.getState().isPlaying) {
               e.play().catch(() => set({ isPlaying: false }))
+              // Playing it again counts, like any other track start.
+              reportPlay(queue[0])
             }
           }
           return
