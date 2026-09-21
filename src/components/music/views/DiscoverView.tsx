@@ -1,14 +1,15 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Check, Compass, ExternalLink, Loader2, Play, Plus, Search } from "lucide-react"
+import { Check, Compass, ExternalLink, ListPlus, Loader2, Play, Plus, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { discover } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
-import type { DiscoverResult, DiscoverSource, Track } from "@/lib/types"
+import type { DiscoverPlaylist, DiscoverResult, DiscoverSource, PlaylistImport, Track } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { usePlayerStore } from "@/stores/player"
+import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/music/EmptyState"
@@ -20,6 +21,14 @@ interface SearchState {
   hasMore: boolean
   error: string | null
   loadingMore: boolean
+  /** The playlist behind a pasted link; the results are its tracks. */
+  playlist: DiscoverPlaylist | null
+}
+
+const IMPORT_POLL_MS = 2000
+
+function importActive(j: PlaylistImport): boolean {
+  return j.state === "queued" || j.state === "listing" || j.state === "running"
 }
 
 /**
@@ -30,10 +39,17 @@ interface SearchState {
 export function DiscoverView() {
   const [sources, setSources] = useState<DiscoverSource[] | null>(null)
   const [sourceKey, setSourceKey] = useState<string>("")
+  const [pollKey, setPollKey] = useState(0)
+  const [starting, setStarting] = useState(false)
   const [query, setQuery] = useState("")
   const [submitted, setSubmitted] = useState("")
   const [state, setState] = useState<SearchState | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // Playlist imports running on the server (and recently finished ones),
+  // polled while any is active; a finished one can be dismissed here.
+  const [imports, setImports] = useState<PlaylistImport[]>([])
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set())
+  const finishedSeen = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     discover
@@ -48,6 +64,34 @@ export function DiscoverView() {
       })
   }, [])
 
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let alive = true
+    const poll = async () => {
+      try {
+        const list = await discover.imports()
+        if (!alive) return
+        setImports(list)
+        // A playlist that just got created or filled: show it in the sidebar.
+        for (const j of list) {
+          if (!importActive(j) && !finishedSeen.current.has(j.id)) {
+            finishedSeen.current.add(j.id)
+            useLibraryStore.getState().fetchAll().catch(() => {})
+          }
+        }
+        if (list.some(importActive)) timer = setTimeout(poll, IMPORT_POLL_MS)
+      } catch {
+        if (alive) timer = setTimeout(poll, IMPORT_POLL_MS * 5)
+      }
+    }
+    poll()
+    return () => {
+      alive = false
+      if (timer) clearTimeout(timer)
+    }
+    // `pollKey` bumps when an import is started here, so polling resumes.
+  }, [pollKey])
+
   const key = `${sourceKey}\n${submitted}`
   const shown = state?.key === key ? state : null
   const searching = submitted !== "" && sourceKey !== "" && !shown
@@ -61,11 +105,19 @@ export function DiscoverView() {
       .search(sourceKey, submitted, 1, ctl.signal)
       .then((r) => {
         if (!ctl.signal.aborted)
-          setState({ key, results: r.results, page: r.page, hasMore: r.hasMore, error: null, loadingMore: false })
+          setState({
+            key,
+            results: r.results,
+            page: r.page,
+            hasMore: r.hasMore,
+            error: null,
+            loadingMore: false,
+            playlist: r.playlist ?? null,
+          })
       })
       .catch((e: Error) => {
         if (e.name === "AbortError" || ctl.signal.aborted) return
-        setState({ key, results: [], page: 1, hasMore: false, error: e.message, loadingMore: false })
+        setState({ key, results: [], page: 1, hasMore: false, error: e.message, loadingMore: false, playlist: null })
       })
     return () => ctl.abort()
   }, [key, submitted, sourceKey])
@@ -94,6 +146,39 @@ export function DiscoverView() {
     )
 
   const source = sources?.find((s) => s.key === sourceKey) ?? null
+
+  const startImport = async () => {
+    setStarting(true)
+    try {
+      const job = await discover.startImport(sourceKey, submitted)
+      setImports((list) => (list.some((j) => j.id === job.id) ? list : [job, ...list]))
+      setDismissed((d) => {
+        if (!d.has(job.id)) return d
+        const next = new Set(d)
+        next.delete(job.id)
+        return next
+      })
+      setPollKey((k) => k + 1)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  const cancelImport = async (id: string) => {
+    try {
+      await discover.cancelImport(id)
+      setPollKey((k) => k + 1)
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+
+  const shownImports = imports.filter((j) => !dismissed.has(j.id))
+  const importingShown = shown?.playlist
+    ? imports.find((j) => importActive(j) && j.source === sourceKey && j.listId === shown.playlist?.id)
+    : undefined
 
   return (
     <div className="p-4 pb-16 md:p-6 md:pb-12">
@@ -141,7 +226,7 @@ export function DiscoverView() {
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={source ? `Search ${source.name}` : "Search"}
+                placeholder={source ? (source.playlists ? `Search ${source.name}, or paste a link` : `Search ${source.name}`) : "Search"}
                 aria-label="Search the catalogue"
                 autoFocus
                 className="border-zinc-800 bg-zinc-900/60 pl-9"
@@ -151,6 +236,40 @@ export function DiscoverView() {
               Search
             </Button>
           </form>
+
+          {shownImports.length > 0 ? (
+            <div className="mt-5 flex flex-col gap-2">
+              {shownImports.map((j) => (
+                <ImportCard
+                  key={j.id}
+                  job={j}
+                  onCancel={() => cancelImport(j.id)}
+                  onDismiss={() => setDismissed((d) => new Set(d).add(j.id))}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {shown?.playlist ? (
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-zinc-100">{shown.playlist.title}</p>
+                <p className="text-xs text-zinc-400">
+                  {shown.playlist.count} tracks
+                  {shown.playlist.total ? ` · the first ${shown.playlist.count} of ${shown.playlist.total}` : ""}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                disabled={starting || !!importingShown}
+                onClick={startImport}
+                className="bg-emerald-500 text-zinc-950 hover:bg-emerald-400"
+              >
+                {starting ? <Loader2 className="size-4 animate-spin" /> : <ListPlus className="size-4" />}
+                {importingShown ? "Importing…" : "Import all"}
+              </Button>
+            </div>
+          ) : null}
 
           <div className="mt-6">
             {!submitted ? null : searching ? (
@@ -186,6 +305,102 @@ export function DiscoverView() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** One playlist import: progress while it runs, the tally when it's done. */
+function ImportCard({ job, onCancel, onDismiss }: { job: PlaylistImport; onCancel: () => void; onDismiss: () => void }) {
+  const [showFailures, setShowFailures] = useState(false)
+  const active = importActive(job)
+  const pct = job.total > 0 ? Math.round((job.done / job.total) * 100) : 0
+  const title = job.title || "Reading the playlist…"
+  const parts: string[] = []
+  if (job.added) parts.push(`${job.added} added`)
+  if (job.existing) parts.push(`${job.existing} already in the library`)
+  if (job.failed) parts.push(`${job.failed} failed`)
+
+  let status: string
+  switch (job.state) {
+    case "queued":
+      status = "Waiting for another import to finish"
+      break
+    case "listing":
+      status = "Reading the playlist…"
+      break
+    case "running":
+      status = job.current ? `Fetching “${job.current}”` : "Fetching…"
+      break
+    case "done":
+      status = parts.length ? parts.join(" · ") : "Nothing to add"
+      break
+    case "cancelled":
+      status = `Stopped${parts.length ? " · " + parts.join(" · ") : ""}`
+      break
+    default:
+      status = job.error || "Failed"
+  }
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-zinc-100">{title}</p>
+          <p className={cn("truncate text-xs", job.state === "failed" ? "text-red-400" : "text-zinc-400")}>
+            {job.total > 0 ? `${job.done} of ${job.total} · ` : ""}
+            {status}
+          </p>
+        </div>
+        {job.playlistId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => useUIStore.getState().navigate("playlist", job.playlistId)}
+            className="text-emerald-300 hover:text-emerald-200"
+          >
+            Open playlist
+          </Button>
+        ) : null}
+        {active ? (
+          <Button variant="ghost" size="sm" onClick={onCancel} className="text-zinc-400 hover:text-zinc-100">
+            Cancel
+          </Button>
+        ) : (
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss"
+            className="rounded p-1 text-zinc-500 hover:text-zinc-200"
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
+      {active && job.total > 0 ? (
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+          <div className="h-full bg-emerald-500 transition-[width]" style={{ width: `${pct}%` }} />
+        </div>
+      ) : null}
+      {job.failures.length > 0 ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowFailures((v) => !v)}
+            className="text-xs text-zinc-400 hover:text-zinc-200"
+          >
+            {showFailures ? "Hide" : "Show"} what couldn't be added ({job.failures.length})
+          </button>
+          {showFailures ? (
+            <ul className="mt-1 flex flex-col gap-0.5 text-xs text-zinc-500">
+              {job.failures.map((f, i) => (
+                <li key={i} className="truncate">
+                  <span className="text-zinc-300">{f.title}</span> — {f.reason}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -15,6 +15,7 @@ import com.music.app.api.DiscoverSearch
 import com.music.app.api.DiscoverSource
 import com.music.app.api.Lyrics
 import com.music.app.api.PlaybackState
+import com.music.app.api.PlaylistImport
 import com.music.app.api.Playlist
 import com.music.app.api.PlaylistDetail
 import com.music.app.api.SearchResults
@@ -39,6 +40,7 @@ import kotlin.math.abs
 import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
 /** Repeat modes for the player (off / repeat queue / repeat current track). */
@@ -768,6 +770,63 @@ class AppModel(
         }
         loadLibrary()
         return track
+    }
+
+    // ---- playlist imports: server-side jobs, polled while one runs ----
+
+    var playlistImports by mutableStateOf<List<PlaylistImport>>(emptyList())
+        private set
+    private var dismissedImports by mutableStateOf<Set<String>>(emptySet())
+    private var importsFinishedSeen = mutableSetOf<String>()
+    private var importPolling = false
+
+    /** Imports worth showing: running ones, and finished ones not dismissed. */
+    val shownImports: List<PlaylistImport> get() = playlistImports.filter { it.id !in dismissedImports }
+
+    fun loadImports() {
+        if (importPolling) return
+        importPolling = true
+        scope.launch {
+            try {
+                while (true) {
+                    val list = try {
+                        api.discoverImports()
+                    } catch (_: Exception) {
+                        delay(10.seconds)
+                        continue
+                    }
+                    playlistImports = list
+                    // A playlist that just got created or filled: show it.
+                    for (job in list) {
+                        if (!job.active && importsFinishedSeen.add(job.id)) loadPlaylists()
+                    }
+                    if (list.none { it.active }) break
+                    delay(2.seconds)
+                }
+            } finally {
+                importPolling = false
+            }
+        }
+    }
+
+    /** @throws Exception with the server's message. */
+    suspend fun startImport(source: String, url: String): PlaylistImport {
+        val job = api.discoverImport(source, url)
+        if (playlistImports.none { it.id == job.id }) playlistImports = listOf(job) + playlistImports
+        dismissedImports = dismissedImports - job.id
+        loadImports()
+        return job
+    }
+
+    fun cancelImport(id: String) {
+        scope.launch {
+            runCatching { api.cancelImport(id) }
+            loadImports()
+        }
+    }
+
+    fun dismissImport(id: String) {
+        dismissedImports = dismissedImports + id
     }
 
     // ------------------------------------------------------------ playlist mutations

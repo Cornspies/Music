@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -25,6 +26,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -47,7 +49,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.music.app.LocalAppModel
+import com.music.app.Screen
+import com.music.app.api.DiscoverPlaylist
 import com.music.app.api.DiscoverResult
+import com.music.app.api.PlaylistImport
 import com.music.app.api.friendlyError
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.components.CoverImage
@@ -212,56 +217,244 @@ fun SearchScreen() {
     }
 }
 
-/** Catalogue results: thumbnail, title, and an Add button that turns into "In library". */
+/**
+ * Catalogue results: thumbnail, title, and an Add button that turns into
+ * "In library". A pasted playlist link lists the playlist with an "Import
+ * all" banner; imports in progress sit at the top, whatever the query.
+ */
 @Composable
 private fun DiscoverResults(source: String, query: String) {
     val model = LocalAppModel.current
     val results = model.discoverResults
     val error = model.discoverError
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { model.loadImports() }
+    val imports = model.shownImports
+    val hasPlaylists = model.discoverSources.orEmpty().firstOrNull { it.key == source }?.playlists == true
+    var starting by remember { mutableStateOf(false) }
+    var importError by remember { mutableStateOf<String?>(null) }
 
-    when {
-        query.isBlank() -> {
-            Text(
-                "Search the catalogue; tracks you add are downloaded into the library.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 32.dp, start = 8.dp),
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
+    ) {
+        items(imports, key = { "import-${it.id}" }) { job ->
+            ImportCard(
+                job,
+                onOpen = { model.push(Screen.PlaylistDetail(it)) },
+                onCancel = { model.cancelImport(job.id) },
+                onDismiss = { model.dismissImport(job.id) },
             )
         }
-        error != null && results == null -> Text(
-            error,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(top = 32.dp, start = 8.dp),
-        )
-        results == null -> if (model.discoverLoading) {
-            Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+        when {
+            query.isBlank() -> item {
+                Text(
+                    if (hasPlaylists) {
+                        "Search the catalogue, or paste a playlist link to import all of it; tracks you add are downloaded into the library."
+                    } else {
+                        "Search the catalogue; tracks you add are downloaded into the library."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 32.dp, start = 8.dp),
+                )
             }
-        }
-        results.results.isEmpty() -> Text(
-            "No results",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(top = 32.dp, start = 8.dp),
-        )
-        else -> LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
-        ) {
-            items(results.results, key = { "${it.source}-${it.id}" }) { result ->
-                DiscoverRow(source, result)
+            error != null && results == null -> item {
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 32.dp, start = 8.dp),
+                )
             }
-            if (results.hasMore) {
+            results == null -> if (model.discoverLoading) {
                 item {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                        if (model.discoverLoading) {
-                            CircularProgressIndicator(Modifier.size(24.dp))
-                        } else {
-                            TextButton(onClick = { model.discoverLoadMore() }) { Text("Load more") }
+                    Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+            }
+            else -> {
+                results.playlist?.let { pl ->
+                    item(key = "playlist-${pl.id}") {
+                        PlaylistBanner(
+                            pl,
+                            importing = imports.any { it.active && it.listId == pl.id },
+                            starting = starting,
+                            error = importError,
+                            onImport = {
+                                scope.launch {
+                                    starting = true
+                                    importError = null
+                                    try {
+                                        model.startImport(source, query.trim())
+                                    } catch (e: Exception) {
+                                        importError = friendlyError(e)
+                                    } finally {
+                                        starting = false
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+                if (results.results.isEmpty()) {
+                    item {
+                        Text(
+                            "No results",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 32.dp, start = 8.dp),
+                        )
+                    }
+                }
+                items(results.results, key = { "${it.source}-${it.id}" }) { result ->
+                    DiscoverRow(source, result)
+                }
+                if (results.hasMore) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                            if (model.discoverLoading) {
+                                CircularProgressIndicator(Modifier.size(24.dp))
+                            } else {
+                                TextButton(onClick = { model.discoverLoadMore() }) { Text("Load more") }
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** The playlist behind a pasted link, with the button that imports the lot. */
+@Composable
+private fun PlaylistBanner(
+    playlist: DiscoverPlaylist,
+    importing: Boolean,
+    starting: Boolean,
+    error: String?,
+    onImport: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Emerald.copy(alpha = 0.12f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    playlist.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                Text(
+                    buildString {
+                        append("${playlist.count} tracks")
+                        playlist.total?.let { append(" · the first ${playlist.count} of $it") }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = onImport, enabled = !starting && !importing) {
+                if (starting) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(if (importing) "Importing…" else "Import all")
+                }
+            }
+        }
+        error?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, maxLines = 2)
+        }
+    }
+}
+
+/** One playlist import: progress while it runs, the tally when it's done. */
+@Composable
+private fun ImportCard(job: PlaylistImport, onOpen: (String) -> Unit, onCancel: () -> Unit, onDismiss: () -> Unit) {
+    var showFailures by remember(job.id) { mutableStateOf(false) }
+    val parts = buildList {
+        if (job.added > 0) add("${job.added} added")
+        if (job.existing > 0) add("${job.existing} already in the library")
+        if (job.failed > 0) add("${job.failed} failed")
+    }
+    val status = when (job.state) {
+        "queued" -> "Waiting for another import to finish"
+        "listing" -> "Reading the playlist…"
+        "running" -> job.current?.let { "Fetching “$it”" } ?: "Fetching…"
+        "done" -> parts.ifEmpty { listOf("Nothing to add") }.joinToString(" · ")
+        "cancelled" -> (listOf("Stopped") + parts).joinToString(" · ")
+        else -> job.error ?: "Failed"
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Zinc800.copy(alpha = 0.6f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    job.title.ifBlank { "Reading the playlist…" },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                Text(
+                    (if (job.total > 0) "${job.done} of ${job.total} · " else "") + status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (job.state == "failed") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
+            if (job.active) {
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            } else {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, contentDescription = "Dismiss")
+                }
+            }
+        }
+        if (job.active && job.total > 0) {
+            LinearProgressIndicator(
+                progress = { job.done.toFloat() / job.total },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                color = Emerald,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            job.playlistId?.let { id ->
+                TextButton(onClick = { onOpen(id) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Text("Open playlist", color = Emerald)
+                }
+                Spacer(Modifier.width(12.dp))
+            }
+            if (job.failures.isNotEmpty()) {
+                TextButton(onClick = { showFailures = !showFailures }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Text(if (showFailures) "Hide what couldn't be added" else "Show what couldn't be added (${job.failures.size})")
+                }
+            }
+        }
+        if (showFailures) {
+            job.failures.forEach { f ->
+                Text(
+                    "${f.title} — ${f.reason}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                )
             }
         }
     }

@@ -92,6 +92,8 @@ data class Track(
 data class DiscoverSource(
     val key: String,
     val name: String,
+    /** A pasted playlist link can be imported as a whole. */
+    val playlists: Boolean = false,
 )
 
 /** One Discover search hit. */
@@ -117,10 +119,55 @@ data class DiscoverSearch(
     val results: List<DiscoverResult> = emptyList(),
     val page: Int = 1,
     val hasMore: Boolean = false,
+    /** Set when the query was a playlist link: the results are its tracks. */
+    val playlist: DiscoverPlaylist? = null,
+)
+
+/** A catalogue playlist behind a pasted link. [total] is its full size when a long one was cut short. */
+@Serializable
+data class DiscoverPlaylist(
+    val id: String,
+    val title: String = "",
+    val count: Int = 0,
+    val total: Int? = null,
 )
 
 @Serializable
 data class DiscoverAddRequest(val source: String, val id: String)
+
+@Serializable
+data class ImportRequest(val source: String, val url: String)
+
+/** A playlist import running on the server. */
+@Serializable
+data class PlaylistImport(
+    val id: String,
+    val source: String = "",
+    /** The catalogue's id for the playlist. */
+    val listId: String = "",
+    val title: String = "",
+    /** queued, listing, running, done, cancelled or failed. */
+    val state: String = "",
+    val total: Int = 0,
+    val done: Int = 0,
+    val added: Int = 0,
+    val existing: Int = 0,
+    val failed: Int = 0,
+    /** The title being fetched right now. */
+    val current: String? = null,
+    /** The library playlist the tracks go into, once it exists. */
+    val playlistId: String? = null,
+    /** Why the whole import stopped. */
+    val error: String? = null,
+    val failures: List<ImportFailure> = emptyList(),
+    val startedAt: String = "",
+    val finishedAt: String? = null,
+) {
+    val active: Boolean get() = state == "queued" || state == "listing" || state == "running"
+}
+
+@Serializable
+data class ImportFailure(val title: String = "", val reason: String = "")
 
 @Serializable
 data class ListenedRequest(val seconds: Double)

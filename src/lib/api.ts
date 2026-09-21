@@ -20,6 +20,7 @@ import type {
   Lyrics,
   DiscoverSource,
   DiscoverSearch,
+  PlaylistImport,
   MetadataQueueStatus,
   SilenceInfo,
   MetadataCandidate,
@@ -319,6 +320,15 @@ export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?:
 
 export const discover = {
   sources: () => api<DiscoverSource[]>("/api/discover/sources"),
+  /** Starts importing a playlist link; answers the job (an already running one for the same link is returned instead). */
+  startImport: (source: string, url: string) =>
+    api<PlaylistImport>("/api/discover/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, url }),
+    }),
+  imports: () => api<PlaylistImport[]>("/api/discover/imports"),
+  cancelImport: (id: string) => api<void>(`/api/discover/imports/${id}`, { method: "DELETE" }),
   search: (source: string, q: string, page = 1, signal?: AbortSignal) =>
     api<DiscoverSearch>(
       `/api/discover/search?source=${encodeURIComponent(source)}&q=${encodeURIComponent(q)}&page=${page}`,

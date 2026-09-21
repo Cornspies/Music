@@ -91,6 +91,8 @@ type sourceDownload struct {
 type DiscoverSource struct {
 	Key  string `json:"key"`
 	Name string `json:"name"`
+	// Playlists says a pasted playlist link can be imported (import.go).
+	Playlists bool `json:"playlists"`
 }
 
 // DiscoverSearch is what GET /api/discover/search returns.
@@ -98,6 +100,19 @@ type DiscoverSearch struct {
 	Results []discoverResult `json:"results"`
 	Page    int              `json:"page"`
 	HasMore bool             `json:"hasMore"`
+	// Playlist is set when the query was a playlist link: the results are
+	// its tracks, and the whole thing can be imported.
+	Playlist *DiscoverPlaylist `json:"playlist,omitempty"`
+}
+
+// DiscoverPlaylist names a catalogue playlist behind a pasted link. Count
+// is how many of its tracks are listed (and would be imported); Total how
+// many it has, when a long one was cut short.
+type DiscoverPlaylist struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Count int    `json:"count"`
+	Total int    `json:"total,omitempty"`
 }
 
 var discoverSources = []source{ncsSource{}}
@@ -142,7 +157,8 @@ func (s *Server) handleDiscoverSources(w http.ResponseWriter, _ *http.Request) {
 	out := []DiscoverSource{}
 	if !discoverDisabled() {
 		for _, src := range discoverSources {
-			out = append(out, DiscoverSource{Key: src.key(), Name: src.name()})
+			_, playlists := src.(playlistSource)
+			out = append(out, DiscoverSource{Key: src.key(), Name: src.name(), Playlists: playlists})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -168,6 +184,33 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 	if page < 1 {
 		page = 1
 	}
+
+	// A playlist link lists the playlist, so it can be looked over and then
+	// imported as a whole.
+	if ps, ok := src.(playlistSource); ok {
+		if listID := ps.playlistID(q); listID != "" {
+			if page > 1 {
+				writeJSON(w, http.StatusOK, DiscoverSearch{Results: []discoverResult{}, Page: page})
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), importListTime)
+			defer cancel()
+			pl, err := ps.listPlaylist(ctx, listID)
+			if err != nil {
+				logErr("discover playlist", err)
+				writeErr(w, http.StatusBadGateway, friendlyImportError(err, src.name()+" didn't answer; try again in a moment"))
+				return
+			}
+			s.markInLibrary(pl.Entries)
+			info := &DiscoverPlaylist{ID: listID, Title: trimDefault(pl.Title, src.name()+" playlist"), Count: len(pl.Entries)}
+			if pl.Total > len(pl.Entries) {
+				info.Total = pl.Total
+			}
+			writeJSON(w, http.StatusOK, DiscoverSearch{Results: pl.Entries, Page: 1, Playlist: info})
+			return
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	results, more, err := src.search(ctx, q, page)

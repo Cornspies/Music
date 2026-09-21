@@ -535,6 +535,18 @@ class ApiClient(private val store: TokenStore) {
     suspend fun discoverAdd(source: String, id: String): Track =
         postJson("/api/discover/add", DiscoverAddRequest(source, id))
 
+    /** Starts importing a playlist link; an import already running for the same link is returned instead. */
+    suspend fun discoverImport(source: String, url: String): PlaylistImport =
+        postJson("/api/discover/import", ImportRequest(source, url))
+
+    /** The caller's imports: running and recently finished. */
+    suspend fun discoverImports(): List<PlaylistImport> = getJson("/api/discover/imports")
+
+    /** Stops an import after the entry in progress; what came in stays. */
+    suspend fun cancelImport(id: String) {
+        expectNoContent(client.delete(url("/api/discover/imports/$id")) { auth() })
+    }
+
     /** Result thumbnail, proxied by the server (Coil AsyncImage). */
     fun discoverArtworkUrl(source: String, coverUrl: String): String =
         url("/api/discover/artwork") + "?source=" + source.encodeURLParameter() +

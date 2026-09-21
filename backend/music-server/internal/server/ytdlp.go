@@ -10,9 +10,11 @@ import (
 	"image/jpeg"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -34,6 +36,10 @@ import (
 // the video offers: proper artist/album/year on the auto-generated "Topic"
 // uploads, otherwise a guess split out of the video title, which is why the
 // new track then goes on the metadata queue like an upload does.
+//
+// A pasted link is understood too: a video link searches for just that
+// video, a playlist link lists the playlist, which the import (import.go)
+// then fetches track by track into a playlist of the same name.
 
 type ytdlpSource struct {
 	bin   string
@@ -158,6 +164,26 @@ func (y ytdlpSource) search(ctx context.Context, query string, page int) ([]disc
 	if page > ytdlpMaxPages {
 		return nil, false, nil
 	}
+	// A pasted video link: just that video. (Playlist links are the search
+	// handler's business, since the answer carries the playlist's name.)
+	if id := youtubeVideoID(query); id != "" && strings.Contains(query, "/") {
+		if page > 1 {
+			return nil, false, nil
+		}
+		out, err := y.run(ctx, "lookup", "--skip-download", "-j", "https://www.youtube.com/watch?v="+id)
+		if err != nil {
+			return nil, false, err
+		}
+		var e ytdlpEntry
+		if err := json.Unmarshal(out, &e); err != nil {
+			return nil, false, fmt.Errorf("yt-dlp lookup: %w", err)
+		}
+		if r, ok := y.result(e); ok {
+			return []discoverResult{r}, false, nil
+		}
+		return []discoverResult{}, false, nil
+	}
+
 	want := ytdlpPageSize * page
 	out, err := y.run(ctx, "search", "--flat-playlist", "--skip-download", "--dump-single-json",
 		fmt.Sprintf("ytsearch%d:%s", want, query))
@@ -176,25 +202,98 @@ func (y ytdlpSource) search(ctx context.Context, query string, page int) ([]disc
 	}
 	results := []discoverResult{}
 	for _, e := range all[(page-1)*ytdlpPageSize:] {
-		// Streams and premieres have no file to fetch.
-		if !youtubeIDRe.MatchString(e.ID) || e.LiveStatus == "is_live" || e.LiveStatus == "is_upcoming" {
-			continue
+		if r, ok := y.result(e); ok {
+			results = append(results, r)
 		}
-		r := discoverResult{
-			Source:  y.key(),
-			ID:      e.ID,
-			Title:   strings.TrimSpace(e.Title),
-			Artist:  trimDefault(e.Channel, e.Uploader),
-			PageURL: "https://www.youtube.com/watch?v=" + e.ID,
-			// mqdefault is the 16:9 thumbnail without letterbox bars.
-			CoverURL: "https://i.ytimg.com/vi/" + e.ID + "/mqdefault.jpg",
-		}
-		if e.Duration != nil {
-			r.Duration = *e.Duration
-		}
-		results = append(results, r)
 	}
 	return results, len(all) >= want && page < ytdlpMaxPages, nil
+}
+
+// result shapes one listing entry; false for what can't be fetched (streams
+// and premieres, and the private or deleted videos a playlist may hold).
+func (y ytdlpSource) result(e ytdlpEntry) (discoverResult, bool) {
+	title := strings.TrimSpace(e.Title)
+	if !youtubeIDRe.MatchString(e.ID) || e.LiveStatus == "is_live" || e.LiveStatus == "is_upcoming" ||
+		title == "[Private video]" || title == "[Deleted video]" {
+		return discoverResult{}, false
+	}
+	r := discoverResult{
+		Source: y.key(),
+		ID:     e.ID,
+		// Some playlist listings come without titles; the download itself
+		// carries them, so the entry is still worth having.
+		Title:   trimDefault(title, "YouTube video "+e.ID),
+		Artist:  trimDefault(e.Channel, e.Uploader),
+		PageURL: "https://www.youtube.com/watch?v=" + e.ID,
+		// mqdefault is the 16:9 thumbnail without letterbox bars.
+		CoverURL: "https://i.ytimg.com/vi/" + e.ID + "/mqdefault.jpg",
+	}
+	if e.Duration != nil {
+		r.Duration = *e.Duration
+	}
+	return r, true
+}
+
+// ---- playlists ---------------------------------------------------------------
+
+// ytdlpMaxPlaylist caps an import; YouTube playlists can hold 5,000.
+const ytdlpMaxPlaylist = 500
+
+var youtubePlaylistIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{2,}$`)
+
+// youtubePlaylistID extracts the playlist id from a link: playlist?list=…,
+// a watch link carrying list=…, or the same on music.youtube.com. Anything
+// without a list is not a playlist link.
+func youtubePlaylistID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if !strings.Contains(raw, "list=") {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Host), "www.")
+	host = strings.TrimPrefix(host, "m.")
+	host = strings.TrimPrefix(host, "music.")
+	if host != "youtube.com" && host != "youtu.be" {
+		return ""
+	}
+	id := u.Query().Get("list")
+	if !youtubePlaylistIDRe.MatchString(id) {
+		return ""
+	}
+	return id
+}
+
+func (y ytdlpSource) playlistID(raw string) string { return youtubePlaylistID(raw) }
+
+// listPlaylist returns the playlist's title and its playable entries, in
+// order. Mixes (list=RD…) are endless; yt-dlp returns their first stretch.
+func (y ytdlpSource) listPlaylist(ctx context.Context, id string) (catalogPlaylist, error) {
+	if !youtubePlaylistIDRe.MatchString(id) {
+		return catalogPlaylist{}, &statusError{http.StatusBadRequest, "not a YouTube playlist id"}
+	}
+	out, err := y.run(ctx, "playlist", "--yes-playlist", "--flat-playlist", "--skip-download", "--dump-single-json",
+		"--playlist-end", strconv.Itoa(ytdlpMaxPlaylist), "https://www.youtube.com/playlist?list="+id)
+	if err != nil {
+		return catalogPlaylist{}, &statusError{http.StatusBadGateway, ytdlpFriendly(err)}
+	}
+	var parsed struct {
+		Title   string       `json:"title"`
+		Count   int          `json:"playlist_count"`
+		Entries []ytdlpEntry `json:"entries"`
+	}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		return catalogPlaylist{}, fmt.Errorf("yt-dlp playlist: %w", err)
+	}
+	pl := catalogPlaylist{Title: strings.TrimSpace(parsed.Title), Total: parsed.Count, Entries: []discoverResult{}}
+	for _, e := range parsed.Entries {
+		if r, ok := y.result(e); ok {
+			pl.Entries = append(pl.Entries, r)
+		}
+	}
+	return pl, nil
 }
 
 // ---- download ------------------------------------------------------------------
@@ -326,6 +425,8 @@ func ytdlpFriendly(err error) string {
 		return "that video is private"
 	case strings.Contains(low, "age"):
 		return "that video is age-restricted and can't be fetched without signing in"
+	case strings.Contains(low, "playlist does not exist") || strings.Contains(low, "playlist doesn't exist"):
+		return "that playlist doesn't exist or isn't public"
 	case strings.Contains(low, "unavailable") || strings.Contains(low, "removed"):
 		return "that video isn't available"
 	case strings.Contains(low, "requested format is not available"):

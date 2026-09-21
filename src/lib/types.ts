@@ -166,10 +166,12 @@ export interface Lyrics {
   editable: boolean
 }
 
-/** An online catalogue Discover can search ("ncs"). */
+/** An online catalogue Discover can search ("ncs", "youtube"). */
 export interface DiscoverSource {
   key: string
   name: string
+  /** A pasted playlist link can be imported as a whole. */
+  playlists: boolean
 }
 
 /** One Discover search hit. */
@@ -195,6 +197,41 @@ export interface DiscoverSearch {
   results: DiscoverResult[]
   page: number
   hasMore: boolean
+  /** Set when the query was a playlist link: the results are its tracks. */
+  playlist?: DiscoverPlaylist
+}
+
+/** A catalogue playlist behind a pasted link. */
+export interface DiscoverPlaylist {
+  id: string
+  title: string
+  /** Tracks listed (and imported); `total` is the playlist's full size when a long one was cut short. */
+  count: number
+  total?: number
+}
+
+/** A playlist import running on the server. */
+export interface PlaylistImport {
+  id: string
+  source: string
+  /** The catalogue's id for the playlist. */
+  listId: string
+  title: string
+  state: "queued" | "listing" | "running" | "done" | "cancelled" | "failed"
+  total: number
+  done: number
+  added: number
+  existing: number
+  failed: number
+  /** The title being fetched right now. */
+  current?: string
+  /** The library playlist the tracks go into, once it exists. */
+  playlistId?: string
+  /** Why the whole import stopped. */
+  error?: string
+  failures: { title: string; reason: string }[]
+  startedAt: string
+  finishedAt?: string
 }
 
 export interface Waveform {
