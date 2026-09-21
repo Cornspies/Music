@@ -64,6 +64,7 @@ func (s *Server) StartBackgroundWork() {
 	s.purgeStaleLyricsMisses()
 	go s.backfillCoverColors()
 	s.startMetadataWorker()
+	s.loadTrimmedTracks()
 	s.startPendingUploadSweeper()
 	go s.backfillFileHashes()
 	if config.Flag("MUSIC_DISABLE_ANALYSIS") {

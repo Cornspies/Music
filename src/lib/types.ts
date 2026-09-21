@@ -40,6 +40,17 @@ export interface Track {
   coverColor: string
   /** Online lookup state: "queued" | "running" | "done" | "" (never queued). */
   metadataStatus: string
+  /** The audio was cut and the uploaded original is kept for "restore". */
+  trimmed: boolean
+}
+
+/** GET /api/tracks/{id}/silence — suggested cut points. */
+export interface SilenceInfo {
+  duration: number
+  /** Where sound first starts (0 when it starts at once). */
+  leadingEnd: number
+  /** Where sound last stops (== duration when it runs to the end). */
+  trailingStart: number
 }
 
 /** Small public profile shown next to a track. */

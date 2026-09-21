@@ -62,6 +62,9 @@ interface UIState {
   /** tracks open in the metadata review dialog (from a track's menu) */
   metadataReviewTracks: Track[] | null
   setMetadataReviewTracks: (tracks: Track[] | null) => void
+  /** track open in the trim editor */
+  trimTrack: Track | null
+  setTrimTrack: (track: Track | null) => void
   playlistDialog: PlaylistDialogState
   openPlaylistDialog: (dialog: NonNullable<PlaylistDialogState>) => void
   closePlaylistDialog: () => void
@@ -124,6 +127,8 @@ export const useUIStore = create<UIState>()((set) => ({
   editTrackId: null,
   metadataReviewTracks: null,
   setMetadataReviewTracks: (tracks) => set({ metadataReviewTracks: tracks }),
+  trimTrack: null,
+  setTrimTrack: (track) => set({ trimTrack: track }),
   setEditTrackId: (id) => set({ editTrackId: id }),
   playlistDialog: null,
   openPlaylistDialog: (dialog) => set({ playlistDialog: dialog }),

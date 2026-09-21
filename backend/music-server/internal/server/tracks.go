@@ -79,6 +79,9 @@ type Track struct {
         // CoverColor is a "#rrggbb" colour representative of the cover art,
         // "" until computed (or when there is no cover).
         CoverColor string `json:"coverColor"`
+        // Trimmed is true when the audio was cut and the upload is kept for
+        // "restore original".
+        Trimmed bool `json:"trimmed"`
         // MetadataStatus is the online lookup's state for this track:
         // "queued", "running", "done", or "" when none was ever queued.
         MetadataStatus string `json:"metadataStatus"`
@@ -194,6 +197,7 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
         if lastPlayedAt.Valid && lastPlayedAt.String != "" {
                 t.LastPlayedAt = &lastPlayedAt.String
         }
+        t.Trimmed = trimmedTracks.has(t.ID)
         return &t, filePath, fileName, nil
 }
 
@@ -751,6 +755,7 @@ func (s *Server) removeTrack(id string) error {
                 logErr("tombstone", err)
         }
         os.Remove(filepath.Join(s.dataDir, filePath))
+        os.Remove(filepath.Join(s.dataDir, filePath) + ".orig")
         if altPath != "" {
                 os.Remove(filepath.Join(s.dataDir, altPath))
         }

@@ -21,6 +21,7 @@ import type {
   DiscoverSource,
   DiscoverSearch,
   MetadataQueueStatus,
+  SilenceInfo,
   MetadataCandidate,
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
@@ -205,6 +206,25 @@ export function fetchMetadataCandidates(
 /** Queues a fresh online lookup for a track that's already in the library. */
 export function requestMetadataLookup(trackId: string): Promise<{ queued: boolean; position: number }> {
   return api(`/api/tracks/${trackId}/metadata/lookup`, { method: "POST" })
+}
+
+// ---- trimming ---------------------------------------------------------------
+
+export function fetchSilence(trackId: string): Promise<SilenceInfo> {
+  return api<SilenceInfo>(`/api/tracks/${trackId}/silence`)
+}
+
+/** Keeps the audio between start and end (seconds); the original is kept for restore. */
+export function trimTrack(trackId: string, start: number, end: number): Promise<Track> {
+  return api<Track>(`/api/tracks/${trackId}/trim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ start, end }),
+  })
+}
+
+export function restoreTrack(trackId: string): Promise<Track> {
+  return api<Track>(`/api/tracks/${trackId}/trim/restore`, { method: "POST" })
 }
 
 /** Adds one YouTube video's details as a candidate for the track. */

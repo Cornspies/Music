@@ -15,6 +15,7 @@ import {
   Music4,
   Pencil,
   RefreshCw,
+  Scissors,
   Play,
   Trash2,
 } from "lucide-react"
@@ -416,6 +417,9 @@ function TrackRowMenu({
             }}
           >
             <RefreshCw className="size-4" /> Look up metadata again
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => useUIStore.getState().setTrimTrack(track)}>
+            <Scissors className="size-4" /> Trim silence…
           </DropdownMenuItem>
         </>
       ) : null}
