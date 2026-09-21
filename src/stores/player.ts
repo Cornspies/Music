@@ -81,7 +81,10 @@ function getEngine(): AudioEngine | null {
         noteListening(position)
         usePlayerStore.setState({ position })
         if (position % 5 < 0.3) updatePositionState()
-        positionDirty = true
+        // The seek that puts a restored track at its saved position fires
+        // this too; only a real move is worth writing back (a stale write
+        // would clobber what another device saved since).
+        if (Math.abs(position - lastSavedPosition) >= 1) positionDirty = true
         persistPlayback()
       },
       onDuration: (duration) => {
@@ -315,15 +318,31 @@ function playIndex(index: number) {
 // track change, and with a keepalive request as the page goes away. Only
 // state that actually changed here is written, so a tab left paused for hours
 // never overwrites what another device has been doing since.
+//
+// The other direction: a paused tab that comes back into view (or has sat
+// idle for a minute) asks the server whether another device saved since the
+// state it has — cheap, the answer is usually "no" — and if so shows that
+// track instead, paused, where it was left.
 
 const SAVE_INTERVAL_MS = 10_000
+const SYNC_INTERVAL_MS = 60_000
 let positionDirty = false
 let lastSaveAt = 0
+let lastSavedPosition = 0
 let lastSavedQueueKey = ""
+// The server's stamp on the state this tab has: what it restored, or what
+// its latest save produced.
+let knownUpdatedAt = ""
 let restoring = false
+let syncing = false
 
 function queueKey(queue: Track[]): string {
   return queue.map((t) => t.id).join(",")
+}
+
+function noteUpdatedAt(stamp: string | undefined) {
+  // Responses can come back out of order; the stamps sort as text.
+  if (stamp && stamp > knownUpdatedAt) knownUpdatedAt = stamp
 }
 
 function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
@@ -338,6 +357,7 @@ function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
 
   lastSaveAt = now
   positionDirty = false
+  lastSavedPosition = s.position
   // Marked as saved up front so a second call in the same tick doesn't send
   // the queue twice; a failed request resets both so the next save resends.
   if (queueChanged) lastSavedQueueKey = key
@@ -348,17 +368,62 @@ function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
       ...(queueChanged ? { queue: s.queue.map((t) => t.id) } : {}),
     },
     opts.keepalive
-  ).catch(() => {
-    positionDirty = true
-    if (queueChanged) lastSavedQueueKey = ""
-  })
+  )
+    .then((r) => noteUpdatedAt(r?.updatedAt))
+    .catch(() => {
+      positionDirty = true
+      if (queueChanged) lastSavedQueueKey = ""
+    })
+}
+
+/** True when everything this tab changed has been written to the server. */
+function nothingUnsaved(): boolean {
+  const s = usePlayerStore.getState()
+  return !positionDirty && (!s.currentTrack || queueKey(s.queue) === lastSavedQueueKey)
 }
 
 /**
- * Loads the server-remembered track into the player, paused, at the saved
- * position — never auto-playing: browsers block it, and a tab opened by
- * accident shouldn't start making noise. Skipped when this session already
- * has something loaded.
+ * Puts the server's state into the player, paused, at the saved position —
+ * never auto-playing: browsers block it, and a tab opened by accident
+ * shouldn't start making noise. A state that matches what's loaded only
+ * updates the bookkeeping, so the audio isn't fetched again.
+ */
+function applyServerState(state: PlaybackState) {
+  const s = usePlayerStore.getState()
+  const same =
+    s.currentTrack?.id === state.track.id &&
+    Math.abs(s.position - state.position) < 1 &&
+    queueKey(s.queue) === queueKey(state.queue)
+  if (!same) {
+    restoring = true
+    usePlayerStore.setState({
+      queue: state.queue,
+      queueIndex: state.queueIndex,
+      currentTrack: state.track,
+      position: state.position,
+      duration: state.track.duration || 0,
+      isPlaying: false,
+    })
+    const e = getEngine()
+    if (e) {
+      e.load(state.track, { autoplay: false, startAt: state.position })
+      prepareNext()
+    }
+    updateMediaSession(state.track)
+    restoring = false
+  }
+  // What's loaded is exactly what the server has — nothing to write until
+  // the user actually does something.
+  lastSavedQueueKey = queueKey(state.queue)
+  lastSavedPosition = state.position
+  positionDirty = false
+  lastSaveAt = Date.now()
+  noteUpdatedAt(state.updatedAt)
+}
+
+/**
+ * Loads the server-remembered track when the app starts. Skipped when this
+ * session already has something loaded.
  */
 export async function restorePlayback(): Promise<void> {
   if (usePlayerStore.getState().currentTrack) return
@@ -369,28 +434,29 @@ export async function restorePlayback(): Promise<void> {
     return
   }
   if (!state || usePlayerStore.getState().currentTrack) return
+  applyServerState(state)
+}
 
-  restoring = true
-  usePlayerStore.setState({
-    queue: state.queue,
-    queueIndex: state.queueIndex,
-    currentTrack: state.track,
-    position: state.position,
-    duration: state.track.duration || 0,
-    isPlaying: false,
-  })
-  const e = getEngine()
-  if (e) {
-    e.load(state.track, { autoplay: false, startAt: state.position })
-    prepareNext()
+/**
+ * Catches a paused tab up with what another device did. Nothing happens
+ * while this tab is playing (it is the source of truth then) or still has
+ * changes to write; otherwise the server is asked for anything newer than
+ * the state here, and that is shown.
+ */
+async function syncPlayback(): Promise<void> {
+  if (syncing || restoring) return
+  const s = usePlayerStore.getState()
+  if (s.isPlaying || !useAuthStore.getState().token || !nothingUnsaved()) return
+  syncing = true
+  try {
+    const state = await fetchPlayback(knownUpdatedAt || undefined)
+    const now = usePlayerStore.getState()
+    if (state && !now.isPlaying && nothingUnsaved()) applyServerState(state)
+  } catch {
+    // Best-effort; the next chance to sync comes soon.
+  } finally {
+    syncing = false
   }
-  updateMediaSession(state.track)
-  // What we just loaded is exactly what the server has — nothing to write
-  // until the user actually does something.
-  lastSavedQueueKey = queueKey(state.queue)
-  positionDirty = false
-  lastSaveAt = Date.now()
-  restoring = false
 }
 
 function rewindCurrent() {
@@ -719,8 +785,16 @@ if (typeof window !== "undefined") {
     if (document.visibilityState === "hidden") {
       flushListening(true)
       persistPlayback({ force: true, keepalive: true })
+    } else {
+      syncPlayback()
     }
   })
+  // Coming back to the window after using the phone; and, for a tab that
+  // stays in view on a desk while the phone plays, a look every so often.
+  window.addEventListener("focus", () => syncPlayback())
+  setInterval(() => {
+    if (document.visibilityState === "visible") syncPlayback()
+  }, SYNC_INTERVAL_MS)
   // Queue edits (add / remove / reorder) are rare; write them straight away.
   // Deferred a microtask so that playNow — which sets the queue and then the
   // track in two updates — produces one save carrying both, not two.

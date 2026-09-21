@@ -83,7 +83,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(message)
   }
-  if (res.status === 204) return undefined as T
+  // 204: nothing to return; 304: the caller's If-None-Match still holds.
+  if (res.status === 204 || res.status === 304) return undefined as T
   return (await res.json()) as T
 }
 
@@ -257,20 +258,28 @@ export function fetchMetadataQueue(): Promise<MetadataQueueStatus> {
 // ---- playback position ("continue listening") ------------------------------
 
 /** The saved position, or null when there is nothing to resume (204). */
-export async function fetchPlayback(): Promise<PlaybackState | null> {
-  return (await api<PlaybackState | undefined>("/api/playback")) ?? null
+/**
+ * Where the user left off, or null when there is nothing to resume. With
+ * `knownUpdatedAt` (the stamp of the state this client already has) the
+ * server answers null when nothing changed since, and the state only when
+ * another device saved after it.
+ */
+export async function fetchPlayback(knownUpdatedAt?: string): Promise<PlaybackState | null> {
+  const headers: Record<string, string> = knownUpdatedAt ? { "If-None-Match": `"${knownUpdatedAt}"` } : {}
+  return (await api<PlaybackState | undefined>("/api/playback", { headers })) ?? null
 }
 
 /**
  * Records where the user is. `queue` (track IDs) is optional: leave it out for
  * the frequent position-only saves and the server keeps the one it has.
- * `keepalive` lets the request outlive a page that is being closed.
+ * `keepalive` lets the request outlive a page that is being closed. Resolves
+ * with the stamp the save got, which fetchPlayback compares against.
  */
 export function savePlayback(
   payload: { trackId: string; position: number; queue?: string[] },
   keepalive = false
-): Promise<void> {
-  return api<void>("/api/playback", {
+): Promise<{ updatedAt: string } | undefined> {
+  return api<{ updatedAt: string } | undefined>("/api/playback", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

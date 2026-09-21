@@ -10,6 +10,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -418,11 +419,19 @@ class ApiClient(private val store: TokenStore) {
 
     // ---------------------------------------------------------------- playback position
 
-    /** Where this user left off, or null when there is nothing to resume (204). */
-    suspend fun playbackState(): PlaybackState? {
-        val response = client.get(url("/api/playback")) { auth() }
+    /**
+     * Where this user left off, or null when there is nothing to resume (204).
+     * With [knownUpdatedAt] — the stamp of the state this device already has —
+     * the server also answers null when nothing changed since (304), and the
+     * state only when another device saved after it.
+     */
+    suspend fun playbackState(knownUpdatedAt: String? = null): PlaybackState? {
+        val response = client.get(url("/api/playback")) {
+            auth()
+            if (!knownUpdatedAt.isNullOrBlank()) header(HttpHeaders.IfNoneMatch, "\"$knownUpdatedAt\"")
+        }
         noteRefreshedToken(response)
-        if (response.status == HttpStatusCode.NoContent) return null
+        if (response.status == HttpStatusCode.NoContent || response.status == HttpStatusCode.NotModified) return null
         if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
         return response.body()
     }
@@ -430,15 +439,17 @@ class ApiClient(private val store: TokenStore) {
     /**
      * Records where the user is. Pass [queue] (track IDs) only when it changed;
      * null leaves the server's copy alone, keeping the frequent saves tiny.
+     * Returns the stamp the save got, for [playbackState] to compare against.
      */
-    suspend fun savePlayback(trackId: String, position: Double, queue: List<String>? = null) {
-        expectNoContent(
-            client.put(url("/api/playback")) {
-                auth()
-                headers.append(HttpHeaders.ContentType, "application/json")
-                setBody(PlaybackRequest(trackId, position, queue))
-            },
-        )
+    suspend fun savePlayback(trackId: String, position: Double, queue: List<String>? = null): String {
+        val response = client.put(url("/api/playback")) {
+            auth()
+            headers.append(HttpHeaders.ContentType, "application/json")
+            setBody(PlaybackRequest(trackId, position, queue))
+        }
+        noteRefreshedToken(response)
+        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        return response.body<PlaybackSaved>().updatedAt
     }
 
     // ---------------------------------------------------------------- favorites

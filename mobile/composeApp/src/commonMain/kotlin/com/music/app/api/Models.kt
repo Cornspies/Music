@@ -350,6 +350,10 @@ data class PlaybackState(
 
 // ---- request bodies ----
 
+/** What a playback save answers with. */
+@Serializable
+data class PlaybackSaved(val updatedAt: String = "")
+
 @Serializable
 data class PlaybackRequest(
     val trackId: String,

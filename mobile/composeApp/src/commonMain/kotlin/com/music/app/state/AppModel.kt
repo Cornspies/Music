@@ -14,6 +14,7 @@ import com.music.app.api.DiscoverResult
 import com.music.app.api.DiscoverSearch
 import com.music.app.api.DiscoverSource
 import com.music.app.api.Lyrics
+import com.music.app.api.PlaybackState
 import com.music.app.api.Playlist
 import com.music.app.api.PlaylistDetail
 import com.music.app.api.SearchResults
@@ -34,6 +35,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
@@ -1016,6 +1018,17 @@ class AppModel(
 
     private var lastSavedQueueIds: List<String> = emptyList()
 
+    // The server's stamp on the state this device has: what it restored, or
+    // what its latest save produced. Sent back when asking whether another
+    // device saved since.
+    private var knownPlaybackUpdatedAt = ""
+    private var syncingPlayback = false
+
+    private fun notePlaybackStamp(stamp: String) {
+        // Responses can come back out of order; the stamps sort as text.
+        if (stamp > knownPlaybackUpdatedAt) knownPlaybackUpdatedAt = stamp
+    }
+
     private var listeningTrackId: String? = null
     private var lastListenPosition: Double? = null
     private var unreportedListening = 0.0
@@ -1038,7 +1051,7 @@ class AppModel(
         val position = player.positionSec.value
         scope.launch {
             try {
-                api.savePlayback(track.id, position, if (queueChanged) ids else null)
+                notePlaybackStamp(api.savePlayback(track.id, position, if (queueChanged) ids else null))
                 if (queueChanged) lastSavedQueueIds = ids
             } catch (_: Exception) {
                 // Best-effort: the next save carries the same information.
@@ -1055,10 +1068,41 @@ class AppModel(
         } ?: return
         // The user may have started something while the request was in flight.
         if (currentTrack != null) return
+        applyServerPlayback(state)
+    }
+
+    /**
+     * Catches the app up with what another device did, on coming back to the
+     * foreground. Nothing happens while this device is playing (it is the
+     * source of truth then); otherwise the server is asked for anything newer
+     * than the state here, and that is shown — paused, where it was left.
+     */
+    fun onForeground() {
+        if (user == null || offlineMode || syncingPlayback || player.isPlaying.value) return
+        syncingPlayback = true
+        scope.launch {
+            try {
+                val state = api.playbackState(knownPlaybackUpdatedAt.ifBlank { null })
+                if (state != null && !player.isPlaying.value) applyServerPlayback(state)
+            } catch (_: Exception) {
+                // Best-effort; the next foreground tries again.
+            } finally {
+                syncingPlayback = false
+            }
+        }
+    }
+
+    /** Puts the server's state into the player, paused, at the saved position. */
+    private fun applyServerPlayback(state: PlaybackState) {
+        val same = currentTrack?.id == state.track.id &&
+            abs(player.positionSec.value - state.position) < 1 &&
+            queue.map { it.id } == state.queue.map { it.id }
+        // What's loaded is exactly what the server has.
+        lastSavedQueueIds = state.queue.map { it.id }
+        notePlaybackStamp(state.updatedAt)
+        if (same) return
         queue = state.queue
         queueIndex = state.queueIndex
-        // What we just loaded is exactly what the server has.
-        lastSavedQueueIds = state.queue.map { it.id }
         loadCurrent(autoplay = false) ?: return
         player.seekTo(state.position)
     }

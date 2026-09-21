@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.ktor3.KtorNetworkFetcherFactory
@@ -89,6 +90,12 @@ fun App() {
         if (pendingLink != null && model.user != null) {
             DeepLinks.consume()?.let { model.openSharedPlaylist(it) }
         }
+    }
+
+    // Back in the foreground: pick up what another device played meanwhile.
+    LifecycleResumeEffect(model) {
+        model.onForeground()
+        onPauseOrDispose {}
     }
 
     CompositionLocalProvider(LocalAppModel provides model) {
