@@ -1,0 +1,8 @@
+// Pulls in the framework settings the Compose Multiplatform Gradle plugin
+// writes during embedAndSignAppleFrameworkForXcode (optional: absent until
+// the first build).
+#include? "../../composeApp/xcode/Debug.xcconfig"
+
+// Fill in once you have an Apple Developer account; leave empty for
+// simulator builds, which need no signing at all.
+TEAM_ID =

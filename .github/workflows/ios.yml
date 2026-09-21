@@ -1,0 +1,80 @@
+# Builds the iOS app on a GitHub-hosted Mac — the one platform that can't be
+# compiled anywhere else. Simulator build, so no Apple signing is needed;
+# what it proves is that the Kotlin/Native framework and the Swift shell
+# compile and link. A device/TestFlight build is a later step that needs an
+# Apple Developer account and signing secrets.
+#
+# macOS minutes cost 10x Linux minutes, so this runs only when mobile code
+# changes, or by hand from the Actions tab.
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The Kotlin/Native toolchain is a large download; keep it between runs.
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('mobile/gradle/libs.versions.toml') }}
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        working-directory: mobile/iosApp
+        run: xcodegen generate
+
+      - name: Build for the simulator
+        working-directory: mobile/iosApp
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project iosApp.xcodeproj \
+            -scheme iosApp \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            build | xcbeautify --renderer github-actions
+
+      - name: Upload the simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Music-iOS-simulator
+          path: mobile/iosApp/build/Build/Products/Debug-iphonesimulator/Music.app
+          if-no-files-found: error

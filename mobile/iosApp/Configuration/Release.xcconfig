@@ -1,2 +1,2 @@
-// Release.xcconfig
 #include? "../../composeApp/xcode/Release.xcconfig"
+TEAM_ID =

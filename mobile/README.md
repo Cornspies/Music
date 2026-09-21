@@ -101,24 +101,32 @@ Or simply open the project root in **Android Studio** and press ▶ on the
 
 ### iOS
 
-1. `cd iosApp && open iosApp.xcodeproj`
-2. Select the `iosApp` scheme + an iPhone simulator
-3. Press ⌘R — the `ComposeApp` framework target runs
-   `./gradlew :composeApp:embedAndSignAppleFrameworkForXcode` automatically.
+The Xcode project is generated, not committed: `iosApp/project.yml` is an
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) spec mirroring the official
+Compose Multiplatform template.
 
-One-time setup in Xcode (Signing & Capabilities), once you have a Team ID:
+```bash
+brew install xcodegen
+cd iosApp && xcodegen generate && open iosApp.xcodeproj
+```
+
+Select the `iosApp` scheme + an iPhone simulator and press ⌘R — the "Compile
+Kotlin Framework" phase runs `./gradlew :composeApp:embedAndSignAppleFrameworkForXcode`
+before the Swift sources build.
+
+**No Mac?** `.github/workflows/ios.yml` does the same on a GitHub-hosted macOS
+runner (on pushes touching `mobile/`, or by hand from the Actions tab) and
+uploads the simulator build as an artifact. macOS minutes are billed at 10x,
+so the path filter matters on a private repo.
+
+One-time setup in Xcode (Signing & Capabilities), once you have a Team ID —
+put it in `iosApp/Configuration/*.xcconfig` as `TEAM_ID`:
 
 - **Associated Domains** → `applinks:<musicHost>` so `https://<host>/playlists/…`
   and invite links open the app. The `music://playlist/<id>` scheme used by
   the app's own share button needs nothing — it's registered in `Info.plist`.
 - **App Groups** → `group.com.music.app` on both the app and the widget
   target, then add `MusicWidget/` as a Widget Extension target.
-
-> The pbxproj mirrors the official Compose Multiplatform template. If Xcode
-> complains (versions drift), recreate the shell: new iOS App named `iosApp` in this
-> folder, then (a) add a **framework target** `ComposeApp` whose only build phase is
-> the Run-Script from `project.pbxproj`, (b) link `ComposeApp` into the app target,
-> (c) set `Info.plist` to `iosApp/Info.plist`.
 
 ## Project layout
 
@@ -134,7 +142,7 @@ composeApp/src/                   # everything else, as a Kotlin Multiplatform l
 │   └── ui/                       # theme, components (TrackRow, CoverImage, NowPlayingBar…), screens
 ├── androidMain/                  # MainActivity, PlaybackService (Media3 session), Keystore token store, SAF picker, Glance widget
 └── iosMain/                      # MainViewController, AVPlayer + now-playing/remote commands, Keychain token store, document/photo pickers
-iosApp/                           # Xcode project (SwiftUI app shell) + MusicWidget/ (WidgetKit source, needs a target)
+iosApp/                           # SwiftUI app shell + XcodeGen spec (project.yml); MusicWidget/ (WidgetKit source, needs a target)
 ```
 
 ## API
