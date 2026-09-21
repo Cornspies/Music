@@ -21,6 +21,7 @@ import type {
   DiscoverSource,
   DiscoverSearch,
   MetadataQueueStatus,
+  MetadataCandidate,
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
@@ -194,6 +195,15 @@ export function fetchMetadataCandidates(
 /** Queues a fresh online lookup for a track that's already in the library. */
 export function requestMetadataLookup(trackId: string): Promise<{ queued: boolean; position: number }> {
   return api(`/api/tracks/${trackId}/metadata/lookup`, { method: "POST" })
+}
+
+/** Adds one YouTube video's details as a candidate for the track. */
+export function addYouTubeCandidate(trackId: string, url: string): Promise<MetadataCandidate> {
+  return api<MetadataCandidate>(`/api/tracks/${trackId}/metadata/youtube`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  })
 }
 
 export function fetchMetadataQueue(): Promise<MetadataQueueStatus> {

@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Check, ChevronLeft, ChevronRight, ImageIcon, ImageOff, Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, ImageIcon, ImageOff, Link2, Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { applyMetadataCandidate, candidateArtworkUrl, fetchMetadataCandidates, requestMetadataLookup } from "@/lib/api"
+import { addYouTubeCandidate, applyMetadataCandidate, candidateArtworkUrl, fetchMetadataCandidates, requestMetadataLookup } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
 import type { MetadataCandidate, MetadataCandidatesResponse, Track } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -89,6 +90,9 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
   const [queue, setQueue] = useState<Pick<MetadataCandidatesResponse, "pending" | "queuePosition" | "partial" | "attempts"> | null>(null)
   // Provider tab, keyed by track so a new track starts back on "all".
   const [tab, setTab] = useState<{ id: string; tab: string } | null>(null)
+  // "Paste a YouTube link" row.
+  const [ytUrl, setYtUrl] = useState("")
+  const [ytBusy, setYtBusy] = useState(false)
   // Tracks the user has already resolved, so revisiting shows the outcome.
   const [resolved, setResolved] = useState<Record<string, string>>({})
 
@@ -149,6 +153,21 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
     }
   }
 
+  const addFromYouTube = async () => {
+    if (!track || !ytUrl.trim()) return
+    setYtBusy(true)
+    try {
+      const c = await addYouTubeCandidate(track.id, ytUrl.trim())
+      setCandidates((cs) => [c, ...cs.filter((x) => x.id !== c.id)])
+      setYtUrl("")
+      setSourceTab("all")
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setYtBusy(false)
+    }
+  }
+
   const sources = Array.from(new Set(candidates.map((c) => c.source)))
   const sourceTab = track && tab?.id === track.id ? tab.tab : "all"
   const setSourceTab = (t: string) => track && setTab({ id: track.id, tab: t })
@@ -194,7 +213,10 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
           below the intrinsic width of their content. Combined with `truncate`
           (white-space: nowrap) on the long title/album lines, that made the list
           overflow the dialog panel instead of ellipsising. */}
-      <DialogContent aria-describedby={undefined} className="max-w-xl gap-0 overflow-hidden border-zinc-800 bg-zinc-900 p-0 sm:max-w-xl">
+      <DialogContent
+        aria-describedby={undefined}
+        className="flex max-h-[92vh] max-w-3xl flex-col gap-0 overflow-hidden border-zinc-800 bg-zinc-900 p-0 sm:max-w-3xl"
+      >
         <DialogHeader className="border-b border-zinc-800/80 px-5 py-4">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Sparkles className="size-5 text-emerald-400" aria-hidden="true" />
@@ -207,7 +229,7 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
           ) : null}
         </DialogHeader>
 
-        <div className="min-w-0 px-5 py-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col px-5 py-4">
           <div className="min-w-0 rounded-lg border border-zinc-800/80 bg-zinc-950/50 px-3 py-2.5">
             <p className="text-[11px] uppercase tracking-wide text-zinc-500">Currently saved as</p>
             <p className="mt-0.5 truncate text-sm font-medium text-zinc-100">{track.title}</p>
@@ -297,7 +319,7 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
           )}
 
           {!loading && !error && shown.length > 0 && (
-            <ul className="mt-3 flex max-h-76 min-w-0 flex-col gap-2 overflow-y-auto pr-1">
+            <ul className="mt-3 flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
               {shown.map((c) => {
                 const conf = confidenceLabel(c.confidence)
                 const isApplied = appliedId === c.id
@@ -371,6 +393,35 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
             </ul>
           )}
         </div>
+
+        {!lookupDisabled && (
+          <form
+            className="flex items-center gap-2 border-t border-zinc-800/80 px-5 py-2.5"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void addFromYouTube()
+            }}
+          >
+            <Link2 className="size-4 shrink-0 text-zinc-500" aria-hidden="true" />
+            <Input
+              value={ytUrl}
+              onChange={(e) => setYtUrl(e.target.value)}
+              placeholder="Not listed? Paste a YouTube link to use that video's details"
+              aria-label="YouTube link"
+              disabled={ytBusy}
+              className="h-8 border-zinc-800 bg-zinc-950/60 text-xs"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              disabled={ytBusy || !ytUrl.trim()}
+              className="h-8 shrink-0 border-zinc-700 bg-zinc-800/60 px-3 text-xs text-zinc-200 hover:bg-zinc-800"
+            >
+              {ytBusy ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : "Fetch"}
+            </Button>
+          </form>
+        )}
 
         <DialogFooter className="flex-row items-center justify-between gap-2 border-t border-zinc-800/80 px-5 py-3">
           <Button

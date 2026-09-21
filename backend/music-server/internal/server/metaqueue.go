@@ -6,13 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"music-server/internal/config"
 )
 
 // Metadata lookup queue.
@@ -422,4 +427,182 @@ func (s *Server) jobCandidates(trackID string) ([]scoredCandidate, error) {
 		return nil, err
 	}
 	return j.Candidates, nil
+}
+
+// ---- a YouTube link the user supplies ---------------------------------------
+//
+// Search results sometimes miss the exact upload someone has in mind, so the
+// review dialog accepts a YouTube URL: the video's own details (title,
+// channel, length, thumbnail) become one more candidate on the track's list,
+// scored and applied like any other. Needs MUSIC_YOUTUBE_API_KEY like the
+// search does.
+
+var youtubeIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+
+// youtubeVideoID extracts the 11-character id from the URL shapes YouTube
+// hands out: watch?v=, youtu.be/, shorts/, embed/, live/, music.youtube.com,
+// or a bare id.
+func youtubeVideoID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if youtubeIDRe.MatchString(raw) {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Host), "www.")
+	host = strings.TrimPrefix(host, "m.")
+	host = strings.TrimPrefix(host, "music.")
+	var id string
+	switch host {
+	case "youtu.be":
+		id = strings.Trim(u.Path, "/")
+	case "youtube.com", "youtube-nocookie.com":
+		if v := u.Query().Get("v"); v != "" {
+			id = v
+		} else {
+			parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+			if len(parts) >= 2 {
+				switch parts[0] {
+				case "shorts", "embed", "live", "v":
+					id = parts[1]
+				}
+			}
+		}
+	}
+	if !youtubeIDRe.MatchString(id) {
+		return ""
+	}
+	return id
+}
+
+type youtubeVideoDetails struct {
+	Items []struct {
+		ID      string `json:"id"`
+		Snippet struct {
+			Title        string `json:"title"`
+			ChannelTitle string `json:"channelTitle"`
+			PublishedAt  string `json:"publishedAt"`
+			Thumbnails   struct {
+				Maxres struct{ URL string } `json:"maxres"`
+				High   struct{ URL string } `json:"high"`
+				Medium struct{ URL string } `json:"medium"`
+			} `json:"thumbnails"`
+		} `json:"snippet"`
+		ContentDetails struct {
+			Duration string `json:"duration"`
+		} `json:"contentDetails"`
+	} `json:"items"`
+}
+
+// youtubeVideoCandidate fetches one video and shapes it as a candidate.
+func youtubeVideoCandidate(ctx context.Context, videoID string) (*metadataCandidate, error) {
+	apiKey := config.YouTubeAPIKey()
+	if apiKey == "" {
+		return nil, errors.New("YouTube isn't configured on this server (MUSIC_YOUTUBE_API_KEY)")
+	}
+	q := url.Values{"part": {"snippet,contentDetails"}, "id": {videoID}, "key": {apiKey}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, youtubeVideosURL+"?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := metadataLookupClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("youtube videos: status %d", resp.StatusCode)
+	}
+	var parsed youtubeVideoDetails
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&parsed); err != nil {
+		return nil, err
+	}
+	if len(parsed.Items) == 0 {
+		return nil, errors.New("that video doesn't exist or isn't public")
+	}
+	it := parsed.Items[0]
+	artist, title := parseYouTubeTitle(it.Snippet.Title, it.Snippet.ChannelTitle)
+	if title == "" {
+		title = it.Snippet.Title
+	}
+	thumb := it.Snippet.Thumbnails.Maxres.URL
+	if thumb == "" {
+		thumb = it.Snippet.Thumbnails.High.URL
+	}
+	if thumb == "" {
+		thumb = it.Snippet.Thumbnails.Medium.URL
+	}
+	return &metadataCandidate{
+		title: title, artist: artist,
+		year:        parseReleaseYear(it.Snippet.PublishedAt),
+		durationSec: parseISO8601Duration(it.ContentDetails.Duration),
+		artworkURL:  thumb,
+		source:      "YouTube",
+	}, nil
+}
+
+// handleTrackMetadataFromYouTube: POST /api/tracks/{id}/metadata/youtube
+// {"url": "..."}. Adds the video as a candidate at the top of the track's
+// list and returns it, so the dialog can offer "Use this" right away.
+func (s *Server) handleTrackMetadataFromYouTube(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r)
+	id := r.PathValue("id")
+	t, _, fileName, ok := s.getTrack(w, r, u.ID, id)
+	if !ok {
+		return
+	}
+	if t.UploadedBy.ID != u.ID && !u.IsAdmin() {
+		writeErr(w, http.StatusForbidden, "only the person who uploaded this track can change its details")
+		return
+	}
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := jsonDecodeStrict(r, w, &body); err != nil {
+		return
+	}
+	videoID := youtubeVideoID(body.URL)
+	if videoID == "" {
+		writeErr(w, http.StatusBadRequest, "that doesn't look like a YouTube link")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	c, err := youtubeVideoCandidate(ctx, videoID)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	// Scored against the track like a search hit would be, but placed first
+	// regardless: the person asked for this one specifically.
+	meta := fileMetadata{
+		title:    trackSearchTitle(t.Title, fileName),
+		artist:   strings.TrimSpace(dropPlaceholder(t.Artist, "Unknown Artist")),
+		duration: t.Duration,
+	}
+	query, wantArtist, wantTitle := buildSearchPlan(meta, fileName)
+	sc := scoredCandidate{metadataCandidate: *c, id: candidateID(*c), score: scoreCandidate(*c, wantArtist, wantTitle, query, t.Duration)}
+
+	job, err := s.loadMetadataJob(id)
+	var cands []scoredCandidate
+	if err == nil {
+		for _, x := range job.Candidates {
+			if x.id != sc.id {
+				cands = append(cands, x)
+			}
+		}
+	}
+	cands = append([]scoredCandidate{sc}, cands...)
+	if _, err := s.db.Exec(`
+		INSERT INTO metadata_jobs (track_id, state, reason, requested_by, attempts, not_before, created_at, finished_at, applied_id, candidates_json, partial, last_error)
+		VALUES (?, ?, ?, ?, 1, '', ?, ?, '', ?, 0, '')
+		ON CONFLICT(track_id) DO UPDATE SET candidates_json = excluded.candidates_json`,
+		id, jobDone, reasonManual, u.ID, nowRFC3339(), nowRFC3339(), marshalCandidates(cands)); err != nil {
+		s.internalErr(w, "store candidate", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toJSONCandidates([]scoredCandidate{sc}, "")[0])
 }
