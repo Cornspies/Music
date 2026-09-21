@@ -35,7 +35,6 @@ export function PlaybackSettingsDialog() {
         <div className="flex flex-col gap-5 pt-1">
           <div>
             <p className="text-sm font-medium text-zinc-200">Crossfade</p>
-            <p className="mb-2.5 text-xs text-zinc-500">Off is gapless.</p>
             <div role="radiogroup" aria-label="Crossfade length" className="flex gap-1.5">
               {CROSSFADE_OPTIONS.map((sec) => (
                 <button

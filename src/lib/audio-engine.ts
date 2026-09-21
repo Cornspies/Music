@@ -54,6 +54,9 @@ export class AudioEngine {
   crossfadeSeconds = 0
   normalize = false
 
+  /** prepareNext() asked for during a fade; applied when the fade ends. */
+  private deferredNext: Track | null | undefined = undefined
+
   constructor(private events: EngineEvents) {
     this.slots = [this.makeSlot(0), this.makeSlot(1)]
   }
@@ -83,6 +86,9 @@ export class AudioEngine {
    * otherwise it loads from scratch.
    */
   load(track: Track, opts: { autoplay: boolean; startAt?: number } = { autoplay: true }): void {
+    // A new load supersedes whatever pre-buffer was waiting on the fade; the
+    // store asks again for the right "next" once this track is in.
+    this.deferredNext = undefined
     this.cancelFade()
     const other = this.slots[1 - this.active]
     const cur = this.slots[this.active]
@@ -111,6 +117,13 @@ export class AudioEngine {
 
   /** Buffers the track that should follow the current one, or nothing. */
   prepareNext(track: Track | null): void {
+    // During a crossfade "the other slot" is the track fading out. Loading
+    // the following song into it would cut the fade short — so remember the
+    // request and act on it once the fade has finished.
+    if (this.fading) {
+      this.deferredNext = track
+      return
+    }
     const other = this.slots[1 - this.active]
     if (!track) {
       if (other.track) {
@@ -165,6 +178,7 @@ export class AudioEngine {
   }
 
   stop(): void {
+    this.deferredNext = undefined
     this.cancelFade()
     for (const s of this.slots) {
       s.el.pause()
@@ -334,9 +348,17 @@ export class AudioEngine {
         from.track = null
         from.el.removeAttribute("src")
         this.applyGain(from, 1)
+        this.flushDeferredNext()
       }
     }
     this.fadeRaf = requestAnimationFrame(step)
+  }
+
+  private flushDeferredNext() {
+    if (this.deferredNext === undefined) return
+    const track = this.deferredNext
+    this.deferredNext = undefined
+    this.prepareNext(track)
   }
 
   private cancelFade() {
@@ -351,5 +373,6 @@ export class AudioEngine {
     from.el.removeAttribute("src")
     this.applyGain(from, 1)
     this.applyGain(this.slots[this.active], 1)
+    this.flushDeferredNext()
   }
 }
