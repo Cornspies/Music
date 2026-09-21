@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,9 +27,10 @@ import (
 // the file arrives tagged, with cover art, and goes through the same
 // pipeline as an upload (transcode, analysis, quota).
 //
-// Catalogues implement source; today there is one, NCS (ncs.go). A track
-// remembers where it came from (tracks.source / source_id), which is how
-// results are marked "already in the library" and duplicates are refused.
+// Catalogues implement source: NCS (ncs.go) always, YouTube through yt-dlp
+// (ytdlp.go) when the server is configured for it. A track remembers where
+// it came from (tracks.source / source_id), which is how results are marked
+// "already in the library" and duplicates are refused.
 
 // source is an online catalogue that can be searched and downloaded from.
 type source interface {
@@ -47,13 +49,15 @@ type source interface {
 
 // discoverResult is one search hit, as the clients see it.
 type discoverResult struct {
-	Source   string `json:"source"`
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Artist   string `json:"artist"`
-	Genre    string `json:"genre,omitempty"`
-	Year     int    `json:"year,omitempty"`
-	CoverURL string `json:"coverUrl,omitempty"`
+	Source string `json:"source"`
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+	Genre  string `json:"genre,omitempty"`
+	Year   int    `json:"year,omitempty"`
+	// Duration in seconds, when the catalogue lists it.
+	Duration float64 `json:"duration,omitempty"`
+	CoverURL string  `json:"coverUrl,omitempty"`
 	// PageURL is the track's page on the catalogue's own site.
 	PageURL string `json:"pageUrl,omitempty"`
 	// PreviewURL streams the track from the catalogue for a listen before
@@ -71,7 +75,16 @@ type sourceDownload struct {
 	// Tags for the library entry, since downloads are often untagged files.
 	Title, Artist, Album, Genre string
 	Year                        int
-	CoverURL                    string
+	// Duration in seconds when the catalogue knows it; only MP3s can be
+	// measured without ffprobe.
+	Duration float64
+	CoverURL string
+	// SquareCover crops the middle square out of a wide image (a video
+	// thumbnail) instead of storing it as is.
+	SquareCover bool
+	// LookupMetadata puts the new track on the metadata queue, for sources
+	// whose tags are guesses rather than a catalogue's record.
+	LookupMetadata bool
 }
 
 // DiscoverSource describes a catalogue to the clients.
@@ -88,6 +101,20 @@ type DiscoverSearch struct {
 }
 
 var discoverSources = []source{ncsSource{}}
+
+// initDiscoverSources adds the optional sources once the environment is
+// known (package init runs before .env is read). Called at start-up.
+func initDiscoverSources() {
+	yt, err := newYTDLPSource()
+	if err != nil {
+		logErr("discover", fmt.Errorf("YouTube source is off: %w", err))
+		return
+	}
+	if yt != nil {
+		discoverSources = append(discoverSources, *yt)
+		log.Printf("discover: YouTube via yt-dlp %s (%s)", yt.version(), yt.bin)
+	}
+}
 
 func discoverDisabled() bool { return config.Flag("MUSIC_DISABLE_DISCOVER") }
 
@@ -245,15 +272,19 @@ func (s *Server) handleDiscoverAdd(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
 	dl, err := src.fetch(ctx, body.ID)
+	var status *statusError
 	if err != nil {
 		logErr("discover fetch", err)
+		if errors.As(err, &status) {
+			writeErr(w, status.code, status.msg)
+			return
+		}
 		writeErr(w, http.StatusBadGateway, "couldn't download from "+src.name()+"; try again later")
 		return
 	}
 	defer dl.Body.Close()
 
 	t, err := s.ingestDownload(ctx, u, src.key(), body.ID, dl)
-	var status *statusError
 	if errors.As(err, &status) {
 		writeErr(w, status.code, status.msg)
 		return
@@ -330,11 +361,21 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	if year == 0 {
 		year = meta.year
 	}
+	duration := meta.duration
+	if duration <= 0 {
+		duration = dl.Duration
+	}
+	if duration <= 0 {
+		duration = probeDuration(absPath)
+	}
 
 	hasCover := false
 	cover := shrinkCover(meta.picture)
 	if len(cover) == 0 && dl.CoverURL != "" {
 		if b, err := fetchArtwork(ctx, dl.CoverURL); err == nil {
+			if dl.SquareCover {
+				b = squareCrop(b)
+			}
 			cover = shrinkCover(b)
 		} else {
 			logErr("discover cover", err)
@@ -352,7 +393,7 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 		 file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
 		 alt_path, alt_mime, alt_size, updated_at, source, source_id, file_hash)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)`,
-		id, u.ID, title, artist, album, genre, year, meta.trackNo, meta.duration,
+		id, u.ID, title, artist, album, genre, year, meta.trackNo, duration,
 		sanitizeFilename(dl.FileName), rel, mimeType, n, hasCover, createdAt,
 		"", "", 0, createdAt, sourceKey, sourceID, hash)
 	if err != nil {
@@ -364,6 +405,11 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	s.queueAnalysis(id)
 	if hasCover {
 		go s.updateCoverColor(id)
+	}
+	if dl.LookupMetadata {
+		if err := s.enqueueMetadataLookup(id, reasonUpload, u.ID); err != nil {
+			logErr("queue metadata lookup", err)
+		}
 	}
 	return id, nil
 }

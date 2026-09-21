@@ -132,9 +132,6 @@ export function PlayerBar() {
             className="group/np flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left transition-colors enabled:hover:bg-zinc-800/60 disabled:cursor-default md:w-auto md:flex-none md:gap-3"
           >
             <div className="relative shrink-0">
-              {isPlaying && (
-                <span aria-hidden="true" className="eq-pulse absolute inset-0 rounded-md" />
-              )}
               <div className="size-10 md:size-12">
                 {currentTrack ? (
                   <CoverArt

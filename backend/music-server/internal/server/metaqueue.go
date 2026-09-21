@@ -317,7 +317,11 @@ func (s *Server) runMetadataJob(id string) {
 // match — never overwriting a real tag — and stores the cover if there was
 // none. meta holds the track's current values with placeholders dropped.
 func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMetadata, best scoredCandidate) bool {
-	if t.HasCover {
+	// A YouTube track's cover is a video thumbnail standing in for the
+	// real art, so a confident match may replace it; otherwise the cover
+	// the file had stays.
+	replaceCover := t.Source == "youtube"
+	if t.HasCover && !replaceCover {
 		meta.picture = []byte{1} // non-empty: keep the cover the file had
 	} else {
 		meta.picture = nil
@@ -327,7 +331,7 @@ func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMeta
 		return false
 	}
 	hasCover := t.HasCover
-	if !t.HasCover && len(meta.picture) > 1 {
+	if (!t.HasCover || replaceCover) && len(meta.picture) > 1 {
 		if safeCoverBytes(meta.picture) {
 			if err := os.WriteFile(filepath.Join(s.covDir, t.ID+".img"), meta.picture, 0o644); err == nil {
 				hasCover = true

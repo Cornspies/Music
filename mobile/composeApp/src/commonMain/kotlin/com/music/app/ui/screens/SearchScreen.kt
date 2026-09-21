@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -51,6 +52,7 @@ import com.music.app.api.friendlyError
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.components.CoverImage
 import com.music.app.ui.components.TrackRow
+import com.music.app.ui.formatDuration
 import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.EmeraldDark
 import com.music.app.ui.theme.Zinc500
@@ -289,6 +291,8 @@ private fun DiscoverRow(source: String, result: DiscoverResult) {
                 AsyncImage(
                     model = model.api.discoverArtworkUrl(source, result.coverUrl),
                     contentDescription = null,
+                    // Video thumbnails are 16:9; the middle fills the square.
+                    contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -302,7 +306,12 @@ private fun DiscoverRow(source: String, result: DiscoverResult) {
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
             Text(
-                listOfNotNull(result.artist.ifBlank { null }, result.genre, result.year?.toString()).joinToString(" · "),
+                listOfNotNull(
+                    result.artist.ifBlank { null },
+                    result.genre,
+                    result.year?.toString(),
+                    result.duration?.takeIf { it > 0 }?.let { formatDuration(it) },
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

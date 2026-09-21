@@ -215,16 +215,29 @@ export function fetchSilence(trackId: string): Promise<SilenceInfo> {
 }
 
 /** Keeps the audio between start and end (seconds); the original is kept for restore. */
-export function trimTrack(trackId: string, start: number, end: number): Promise<Track> {
+/** Cuts the audio to [start, end]; shiftLyrics moves synced lyrics along with the start cut. */
+export function trimTrack(trackId: string, start: number, end: number, shiftLyrics = true): Promise<Track> {
   return api<Track>(`/api/tracks/${trackId}/trim`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ start, end }),
+    body: JSON.stringify({ start, end, shiftLyrics }),
+  }).then((t) => {
+    forgetAudioDerived(trackId)
+    return t
   })
 }
 
 export function restoreTrack(trackId: string): Promise<Track> {
-  return api<Track>(`/api/tracks/${trackId}/trim/restore`, { method: "POST" })
+  return api<Track>(`/api/tracks/${trackId}/trim/restore`, { method: "POST" }).then((t) => {
+    forgetAudioDerived(trackId)
+    return t
+  })
+}
+
+/** The waveform and lyrics timing cached for a track are stale once its audio changed. */
+function forgetAudioDerived(trackId: string) {
+  waveformCache.delete(trackId)
+  lyricsCache.delete(trackId)
 }
 
 /** Adds one YouTube video's details as a candidate for the track. */

@@ -180,6 +180,8 @@ export interface DiscoverResult {
   artist: string
   genre?: string
   year?: number
+  /** Seconds, when the catalogue lists it. */
+  duration?: number
   coverUrl?: string
   /** The track's page on the catalogue's site. */
   pageUrl?: string

@@ -109,6 +109,10 @@ func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Start float64 `json:"start"`
 		End   float64 `json:"end"`
+		// ShiftLyrics moves synced lyrics along with a cut at the start;
+		// omitted means yes. Off is for files whose lyrics were timed to the
+		// audio proper rather than to the silence in front of it.
+		ShiftLyrics *bool `json:"shiftLyrics"`
 	}
 	if err := jsonDecodeStrict(r, w, &body); err != nil {
 		return
@@ -169,7 +173,11 @@ func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setTrimmed(id, true)
-	s.afterAudioChanged(id, filePath, body.Start)
+	lyricsShift := body.Start
+	if body.ShiftLyrics != nil && !*body.ShiftLyrics {
+		lyricsShift = 0
+	}
+	s.afterAudioChanged(id, filePath, lyricsShift)
 	out, _, _, ok := s.getTrack(w, r, u.ID, id)
 	if !ok {
 		return
@@ -214,8 +222,9 @@ func (s *Server) handleTrackRestore(w http.ResponseWriter, r *http.Request) {
 
 // afterAudioChanged re-derives everything that depends on the audio bytes:
 // duration and size, the hash, the compatible copy, loudness + waveform,
-// and synced lyrics (shifted by the cut at the start).
-func (s *Server) afterAudioChanged(id, filePath string, cutStart float64) {
+// and synced lyrics, which move earlier by lyricsShift seconds (the cut at
+// the start, or 0 to leave their timing alone).
+func (s *Server) afterAudioChanged(id, filePath string, lyricsShift float64) {
 	abs := filepath.Join(s.dataDir, filePath)
 	var size int64
 	if fi, err := os.Stat(abs); err == nil {
@@ -234,8 +243,8 @@ func (s *Server) afterAudioChanged(id, filePath string, cutStart float64) {
 	s.startCompatibleCopy(id, filePath)
 	s.queueAnalysis(id)
 
-	if cutStart > 0 {
-		s.shiftSyncedLyrics(id, -cutStart)
+	if lyricsShift > 0 {
+		s.shiftSyncedLyrics(id, -lyricsShift)
 	}
 }
 

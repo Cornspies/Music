@@ -5,6 +5,7 @@ import { Check, Compass, ExternalLink, Loader2, Play, Plus, Search } from "lucid
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { discover } from "@/lib/api"
+import { formatDuration } from "@/lib/format"
 import type { DiscoverResult, DiscoverSource, Track } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { usePlayerStore } from "@/stores/player"
@@ -236,6 +237,7 @@ function ResultRow({ result, onAdded }: { result: DiscoverResult; onAdded: (t: T
           {result.artist}
           {result.genre ? ` · ${result.genre}` : ""}
           {result.year ? ` · ${result.year}` : ""}
+          {result.duration ? ` · ${formatDuration(result.duration)}` : ""}
         </p>
       </div>
       {result.pageUrl ? (

@@ -103,6 +103,8 @@ data class DiscoverResult(
     val artist: String = "",
     val genre: String? = null,
     val year: Int? = null,
+    /** Seconds, when the catalogue lists it. */
+    val duration: Double? = null,
     val coverUrl: String? = null,
     val pageUrl: String? = null,
     val previewUrl: String? = null,

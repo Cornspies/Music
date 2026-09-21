@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Loader2, Play, RotateCcw, Scissors, Square, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { fetchSilence, fetchWaveform, restoreTrack, streamUrl, trimTrack } from "@/lib/api"
+import { fetchLyrics, fetchSilence, fetchWaveform, restoreTrack, streamUrl, trimTrack } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
@@ -12,13 +12,16 @@ import { usePlayerStore } from "@/stores/player"
 import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 
 /**
  * Cut the start and end of a track — the seconds of silence a rip tends to
  * carry, or the applause on a live recording. The waveform shows what goes
  * (shaded) and what stays; "Detect silence" fills the cut points from the
  * server's analysis; each end can be previewed. The cut is a stream copy on
- * the server and the original is kept, so it can be undone.
+ * the server and the original is kept, so it can be undone. Synced lyrics
+ * move along with a cut at the start unless the switch says otherwise.
  */
 export function TrimDialog() {
   const track = useUIStore((s) => s.trimTrack)
@@ -40,6 +43,8 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
   const [detecting, setDetecting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [previewing, setPreviewing] = useState<"start" | "end" | null>(null)
+  const [hasSyncedLyrics, setHasSyncedLyrics] = useState(false)
+  const [shiftLyrics, setShiftLyrics] = useState(true)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
@@ -47,6 +52,13 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     fetchWaveform(track.id).then((p) => {
       if (alive) setPeaks(p)
     })
+    // Only synced lyrics care about the cut, so the switch appears only for
+    // tracks that have some.
+    fetchLyrics(track.id)
+      .then((l) => {
+        if (alive) setHasSyncedLyrics(!!l.synced && l.synced.length > 0)
+      })
+      .catch(() => {})
     return () => {
       alive = false
     }
@@ -113,7 +125,7 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     stopPreview()
     setBusy(true)
     try {
-      const updated = await trimTrack(track.id, start, end)
+      const updated = await trimTrack(track.id, start, end, shiftLyrics)
       toast.success(`Cut to ${formatDuration(updated.duration)}`)
       useLibraryStore.getState().fetchAll().catch(() => {})
       onClose()
@@ -210,6 +222,20 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
         Keeps {formatDuration(Math.max(0, end - start))} of {formatDuration(duration)}
         {removed > 0.05 ? ` · removes ${removed.toFixed(1)} s` : ""}
       </p>
+
+      {hasSyncedLyrics && start >= 0.05 ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800/80 bg-zinc-900/50 px-3 py-2">
+          <Label htmlFor="trim-shift-lyrics" className="text-xs text-zinc-300">
+            Shift synced lyrics {start.toFixed(1)} s earlier
+          </Label>
+          <Switch
+            id="trim-shift-lyrics"
+            checked={shiftLyrics}
+            onCheckedChange={setShiftLyrics}
+            className="data-[state=checked]:bg-emerald-500"
+          />
+        </div>
+      ) : null}
 
       <DialogFooter className="gap-2 sm:justify-between">
         <div className="flex gap-2">
