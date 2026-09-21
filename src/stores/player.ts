@@ -78,6 +78,7 @@ function getEngine(): AudioEngine | null {
   if (!engine) {
     engine = new AudioEngine({
       onTime: (position) => {
+        noteListening(position)
         usePlayerStore.setState({ position })
         if (position % 5 < 0.3) updatePositionState()
         positionDirty = true
@@ -90,9 +91,17 @@ function getEngine(): AudioEngine | null {
       onPlay: () => {
         usePlayerStore.setState({ isPlaying: true })
         updatePositionState()
+        // A track restored from the last session resumes without a new play
+        // event; its listening still counts against the play it belongs to.
+        const cur = usePlayerStore.getState().currentTrack
+        if (cur && listening?.trackId !== cur.id) {
+          flushListening()
+          listening = { trackId: cur.id, lastPosition: null, unreported: 0 }
+        }
       },
       onPause: () => {
         usePlayerStore.setState({ isPlaying: false })
+        flushListening()
         persistPlayback({ force: true })
       },
       onEnded: () => {
@@ -146,8 +155,50 @@ function getEngine(): AudioEngine | null {
 }
 
 function reportPlay(track: Track) {
+  // A new play: whatever the previous track still had unreported goes out
+  // first, against that track.
+  flushListening()
+  listening = { trackId: track.id, lastPosition: null, unreported: 0 }
   api(`/api/tracks/${track.id}/play`, { method: "POST" }).catch(() => {
     // play-count reporting is best-effort
+  })
+}
+
+// ---- listening time ---------------------------------------------------------
+//
+// The history's "time listened" counts what was actually heard, not track
+// lengths: playback progress is accumulated here in small steps (a jump of
+// more than a couple of seconds is a seek, not listening) and sent to the
+// server every so often, on pause, on track change and when the page goes
+// away. A lost report costs at most one interval.
+
+const LISTEN_REPORT_INTERVAL_S = 15
+
+let listening: { trackId: string; lastPosition: number | null; unreported: number } | null = null
+
+function noteListening(position: number) {
+  const l = listening
+  if (!l || usePlayerStore.getState().currentTrack?.id !== l.trackId) return
+  if (l.lastPosition !== null) {
+    const delta = position - l.lastPosition
+    if (delta > 0 && delta < 2) l.unreported += delta
+  }
+  l.lastPosition = position
+  if (l.unreported >= LISTEN_REPORT_INTERVAL_S) flushListening()
+}
+
+function flushListening(keepalive = false) {
+  const l = listening
+  if (!l || l.unreported < 0.5 || !useAuthStore.getState().token) return
+  const seconds = Math.round(l.unreported * 10) / 10
+  l.unreported = 0
+  api(`/api/tracks/${l.trackId}/listened`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ seconds }),
+    keepalive,
+  }).catch(() => {
+    // best-effort; the next report carries on from here
   })
 }
 
@@ -656,9 +707,15 @@ export const usePlayerStore = create<PlayerState>()(
 if (typeof window !== "undefined") {
   // pagehide covers tab close, navigation and bfcache; visibilitychange
   // covers switching apps on mobile, where pagehide may never come.
-  window.addEventListener("pagehide", () => persistPlayback({ force: true, keepalive: true }))
+  window.addEventListener("pagehide", () => {
+    flushListening(true)
+    persistPlayback({ force: true, keepalive: true })
+  })
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") persistPlayback({ force: true, keepalive: true })
+    if (document.visibilityState === "hidden") {
+      flushListening(true)
+      persistPlayback({ force: true, keepalive: true })
+    }
   })
   // Queue edits (add / remove / reorder) are rare; write them straight away.
   // Deferred a microtask so that playNow — which sets the queue and then the

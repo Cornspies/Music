@@ -271,6 +271,17 @@ class ApiClient(private val store: TokenStore) {
         expectNoContent(client.post(url("/api/tracks/$id/play")) { auth() })
     }
 
+    /** Adds [seconds] of actual listening to the latest play of the track. */
+    suspend fun reportListened(id: String, seconds: Double) {
+        expectNoContent(
+            client.post(url("/api/tracks/$id/listened")) {
+                auth()
+                headers.append(HttpHeaders.ContentType, "application/json")
+                setBody(ListenedRequest(seconds))
+            },
+        )
+    }
+
     /**
      * Multipart upload: `file` part (filename + content type from the original file) and an
      * optional `duration` field in seconds — the server uses it when it cannot parse the

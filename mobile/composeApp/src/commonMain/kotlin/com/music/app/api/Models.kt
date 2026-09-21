@@ -121,6 +121,9 @@ data class DiscoverSearch(
 data class DiscoverAddRequest(val source: String, val id: String)
 
 @Serializable
+data class ListenedRequest(val seconds: Double)
+
+@Serializable
 data class Playlist(
     val id: String,
     val name: String,

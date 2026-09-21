@@ -263,7 +263,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
         var listenedSeconds float64
         var listenCount int
         if err := s.db.QueryRow(`
-                SELECT COUNT(1), COALESCE(SUM(t.duration), 0)
+                SELECT COUNT(1), COALESCE(SUM(`+listenedExpr+`), 0)
                 FROM play_events pe JOIN tracks t ON t.id = pe.track_id
                 WHERE pe.user_id = ?`, u.ID).Scan(&listenCount, &listenedSeconds); err != nil {
                 s.internalErr(w, "stats listening", err)

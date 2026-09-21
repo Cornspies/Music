@@ -116,6 +116,7 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("PUT /api/tracks/{id}/lyrics", s.requireAuth(s.handleSetLyrics))
         mux.HandleFunc("GET /api/tracks/changes", s.requireAuth(s.handleTrackChanges))
         mux.HandleFunc("POST /api/tracks/{id}/play", s.requireAuth(s.handleTrackPlay))
+        mux.HandleFunc("POST /api/tracks/{id}/listened", s.requireAuth(s.handleTrackListened))
         mux.HandleFunc("POST /api/auth/avatar", s.requireAuth(s.handleUploadAvatar))
         mux.HandleFunc("DELETE /api/auth/avatar", s.requireAuth(s.handleDeleteAvatar))
         mux.HandleFunc("GET /api/users/{id}/avatar", s.requireMediaAuth(s.handleUserAvatar))

@@ -43,6 +43,7 @@ import kotlin.time.ExperimentalTime
 enum class RepeatMode { OFF, ALL, ONE }
 
 /** How often the playback position is written to the server while playing. */
+private const val LISTEN_REPORT_INTERVAL_S = 15.0
 private const val PLAYBACK_SAVE_INTERVAL_MS = 10_000L
 
 /** How often to check whether the media token wants renewing. */
@@ -212,6 +213,30 @@ class AppModel(
         }
         scope.launch {
             player.isPlaying.collect { playing -> if (!playing) savePlayback() }
+        }
+
+        // Listening time: the history counts what was actually heard, not
+        // track lengths. Progress is accumulated in small steps (a jump of
+        // more than a couple of seconds is a seek) and sent every so often
+        // and whenever playback stops. A lost report costs one interval.
+        scope.launch {
+            player.positionSec.collect { position ->
+                val track = currentTrack ?: return@collect
+                if (listeningTrackId != track.id) {
+                    flushListening()
+                    listeningTrackId = track.id
+                    lastListenPosition = null
+                }
+                lastListenPosition?.let { last ->
+                    val delta = position - last
+                    if (delta > 0 && delta < 2) unreportedListening += delta
+                }
+                lastListenPosition = position
+                if (unreportedListening >= LISTEN_REPORT_INTERVAL_S) flushListening()
+            }
+        }
+        scope.launch {
+            player.isPlaying.collect { playing -> if (!playing) flushListening() }
         }
 
         // Restore a previous session (the JWT may have expired — verify it).
@@ -985,6 +1010,20 @@ class AppModel(
     // accident shouldn't start making noise.
 
     private var lastSavedQueueIds: List<String> = emptyList()
+
+    private var listeningTrackId: String? = null
+    private var lastListenPosition: Double? = null
+    private var unreportedListening = 0.0
+
+    private fun flushListening() {
+        val id = listeningTrackId ?: return
+        if (unreportedListening < 0.5 || user == null) return
+        val seconds = unreportedListening
+        unreportedListening = 0.0
+        scope.launch {
+            runCatching { api.reportListened(id, seconds) }
+        }
+    }
 
     private fun savePlayback() {
         val track = currentTrack ?: return

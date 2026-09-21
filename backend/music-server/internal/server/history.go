@@ -20,8 +20,8 @@ type PlayEvent struct {
 // HistoryResponse is what GET /api/history returns.
 type HistoryResponse struct {
 	Events []PlayEvent `json:"events"`
-	// ListenedSeconds is the sum of durations of every play in the window
-	// (approximate: a skipped track still counts in full).
+	// ListenedSeconds is the time actually spent listening in the window, as
+	// reported by the clients (plays older than that reporting count in full).
 	ListenedSeconds float64 `json:"listenedSeconds"`
 	PlayCount       int     `json:"playCount"`
 	// Distinct tracks played in the window.
@@ -35,6 +35,40 @@ func (s *Server) recordPlay(userID, trackID string) {
 		userID, trackID, nowRFC3339()); err != nil {
 		logErr("record play", err)
 	}
+}
+
+// listenedExpr is the seconds a play row counts for. Rows written before
+// clients reported progress (reported = 0) fall back to the track's length,
+// so old history doesn't collapse to zero; new rows count what was heard.
+const listenedExpr = `CASE WHEN pe.reported = 1 THEN pe.listened_seconds ELSE t.duration END`
+
+// handleTrackListened: POST /api/tracks/{id}/listened {"seconds": n}. Adds n
+// seconds of actual listening to the caller's latest play of the track.
+// Clients send this every so often and when playback stops, so a track
+// skipped after ten seconds counts ten seconds, not its full length.
+func (s *Server) handleTrackListened(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r)
+	id := r.PathValue("id")
+	var body struct {
+		Seconds float64 `json:"seconds"`
+	}
+	if err := jsonDecodeStrict(r, w, &body); err != nil {
+		return
+	}
+	// One report covers at most a couple of minutes of real time; anything
+	// larger is a bug or a fabrication, not listening.
+	if body.Seconds <= 0 || body.Seconds > 180 {
+		writeNoContent(w)
+		return
+	}
+	if _, err := s.db.Exec(`
+		UPDATE play_events SET listened_seconds = listened_seconds + ?, reported = 1
+		WHERE id = (SELECT id FROM play_events WHERE user_id = ? AND track_id = ? ORDER BY played_at DESC, id DESC LIMIT 1)`,
+		body.Seconds, u.ID, id); err != nil {
+		s.internalErr(w, "record listening", err)
+		return
+	}
+	writeNoContent(w)
 }
 
 // handleHistory returns the caller's recent listens, newest first.
@@ -60,7 +94,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		seconds float64
 	}
 	if err := s.db.QueryRow(`
-		SELECT COUNT(1), COUNT(DISTINCT pe.track_id), COALESCE(SUM(t.duration), 0)
+		SELECT COUNT(1), COUNT(DISTINCT pe.track_id), COALESCE(SUM(`+listenedExpr+`), 0)
 		FROM play_events pe JOIN tracks t ON t.id = pe.track_id
 		WHERE pe.user_id = ? AND pe.played_at > ?`, u.ID, since).
 		Scan(&totals.count, &totals.tracks, &totals.seconds); err != nil {

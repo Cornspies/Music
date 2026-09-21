@@ -160,8 +160,15 @@ func migrate(db *sql.DB) error {
                         id        INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                         track_id  TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-                        played_at TEXT NOT NULL
+                        played_at TEXT NOT NULL,
+                        -- how much of the play was actually heard, reported by
+                        -- the client as it goes; reported = 0 marks rows from
+                        -- before that existed (counted as the whole track)
+                        listened_seconds REAL NOT NULL DEFAULT 0,
+                        reported         INTEGER NOT NULL DEFAULT 0
                 )`,
+                `ALTER TABLE play_events ADD COLUMN listened_seconds REAL NOT NULL DEFAULT 0`,
+                `ALTER TABLE play_events ADD COLUMN reported INTEGER NOT NULL DEFAULT 0`,
                 `CREATE INDEX IF NOT EXISTS idx_play_events_user ON play_events(user_id, played_at DESC)`,
                 // Tombstones for delta sync: a client asking "what changed since
                 // X" needs to learn about deletions too.
@@ -221,6 +228,11 @@ func migrate(db *sql.DB) error {
         }
         for _, s := range later {
                 if _, err := db.Exec(s); err != nil {
+                        // ALTERs here add columns to tables created above; on a
+                        // database that already has them the duplicate is expected.
+                        if strings.HasPrefix(s, "ALTER TABLE") && strings.Contains(err.Error(), "duplicate column name") {
+                                continue
+                        }
                         return fmt.Errorf("%q: %w", s[:40], err)
                 }
         }
