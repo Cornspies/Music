@@ -31,7 +31,10 @@ type HistoryResponse struct {
 // recordPlay appends to the history. Errors are logged, not returned: a
 // missed history row must never fail a play.
 func (s *Server) recordPlay(userID, trackID string) {
-	if _, err := s.db.Exec(`INSERT INTO play_events (user_id, track_id, played_at) VALUES (?, ?, ?)`,
+	// reported = 1 from the start: this play counts only what the client
+	// goes on to report, which is nothing at all if it's skipped straight
+	// away. Only rows from before listening reports existed have 0.
+	if _, err := s.db.Exec(`INSERT INTO play_events (user_id, track_id, played_at, listened_seconds, reported) VALUES (?, ?, ?, 0, 1)`,
 		userID, trackID, nowRFC3339()); err != nil {
 		logErr("record play", err)
 	}
@@ -39,7 +42,8 @@ func (s *Server) recordPlay(userID, trackID string) {
 
 // listenedExpr is the seconds a play row counts for. Rows written before
 // clients reported progress (reported = 0) fall back to the track's length,
-// so old history doesn't collapse to zero; new rows count what was heard.
+// so old history doesn't collapse to zero; every newer row counts exactly
+// what was heard, which may be nothing.
 const listenedExpr = `CASE WHEN pe.reported = 1 THEN pe.listened_seconds ELSE t.duration END`
 
 // handleTrackListened: POST /api/tracks/{id}/listened {"seconds": n}. Adds n
@@ -62,7 +66,7 @@ func (s *Server) handleTrackListened(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.db.Exec(`
-		UPDATE play_events SET listened_seconds = listened_seconds + ?, reported = 1
+		UPDATE play_events SET listened_seconds = listened_seconds + ?
 		WHERE id = (SELECT id FROM play_events WHERE user_id = ? AND track_id = ? ORDER BY played_at DESC, id DESC LIMIT 1)`,
 		body.Seconds, u.ID, id); err != nil {
 		s.internalErr(w, "record listening", err)
