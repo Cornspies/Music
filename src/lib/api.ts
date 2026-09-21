@@ -145,6 +145,16 @@ export function uploadUrl(): string {
   return gw("/api/tracks")
 }
 
+/** Adds a held upload (one that looked like a duplicate) after all. */
+export function confirmPendingUpload(pendingId: string): Promise<Track> {
+  return api<Track>(`/api/uploads/pending/${pendingId}`, { method: "POST" })
+}
+
+/** Drops a held upload the person decided not to add. */
+export function discardPendingUpload(pendingId: string): Promise<void> {
+  return api<void>(`/api/uploads/pending/${pendingId}`, { method: "DELETE" })
+}
+
 /** Avatar URL for <img> (404 when the user has none — handle with onError). */
 export function avatarUrl(userId: string): string {
   return gw(`/api/users/${userId}/avatar`) + tokenQuery()

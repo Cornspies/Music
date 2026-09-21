@@ -9,11 +9,12 @@ import {
   Loader2,
   Sparkles,
   XCircle,
+  Copy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { currentToken, uploadUrl } from "@/lib/api"
+import { confirmPendingUpload, currentToken, discardPendingUpload, uploadUrl } from "@/lib/api"
 import { formatFileSize } from "@/lib/format"
-import type { Track } from "@/lib/types"
+import type { DuplicateResponse, Track } from "@/lib/types"
 import { useUIStore } from "@/stores/ui"
 import { useLibraryStore } from "@/stores/library"
 import { Button } from "@/components/ui/button"
@@ -27,8 +28,10 @@ import {
 import { Progress } from "@/components/ui/progress"
 import { MetadataReviewDialog } from "@/components/music/MetadataReviewDialog"
 import { MetadataQueueStatus } from "@/components/music/MetadataQueueStatus"
+import { CoverArt } from "@/components/music/CoverArt"
+import { formatDuration } from "@/lib/format"
 
-type TaskStatus = "measuring" | "uploading" | "done" | "error"
+type TaskStatus = "measuring" | "uploading" | "done" | "error" | "duplicate" | "skipped"
 
 interface UploadTask {
   key: string
@@ -37,6 +40,15 @@ interface UploadTask {
   progress: number
   status: TaskStatus
   message?: string
+  /** Set while the server holds the file because it looks like a duplicate. */
+  duplicate?: DuplicateResponse
+}
+
+/** Thrown by uploadTrack when the server parks the file as a likely duplicate. */
+class DuplicateError extends Error {
+  constructor(readonly response: DuplicateResponse) {
+    super(response.error)
+  }
 }
 
 const AUDIO_EXT = /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|weba|webm)$/i
@@ -85,6 +97,13 @@ function uploadTrack(
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText) as Track)
+        } catch {
+          reject(new Error("Invalid server response"))
+        }
+      } else if (xhr.status === 409) {
+        // Held on the server: the person decides with the matches in view.
+        try {
+          reject(new DuplicateError(JSON.parse(xhr.responseText) as DuplicateResponse))
         } catch {
           reject(new Error("Invalid server response"))
         }
@@ -159,7 +178,11 @@ export function UploadDialog() {
         patchTask(task.key, { status: "done", progress: 100 })
         uploaded.push(track)
       } catch (e) {
-        patchTask(task.key, { status: "error", message: (e as Error).message })
+        if (e instanceof DuplicateError) {
+          patchTask(task.key, { status: "duplicate", progress: 100, duplicate: e.response })
+        } else {
+          patchTask(task.key, { status: "error", message: (e as Error).message })
+        }
       }
     }
 
@@ -173,8 +196,28 @@ export function UploadDialog() {
     }
   }
 
+  /** "Add anyway" for a held duplicate: finishes the upload server-side. */
+  const addAnyway = async (task: UploadTask) => {
+    if (!task.duplicate) return
+    patchTask(task.key, { status: "uploading", progress: 100 })
+    try {
+      const track = await confirmPendingUpload(task.duplicate.pendingId)
+      patchTask(task.key, { status: "done", duplicate: undefined })
+      setUploadedTracks((ts) => [...ts, track])
+      useLibraryStore.getState().fetchAll().catch(() => {})
+    } catch (e) {
+      patchTask(task.key, { status: "error", message: (e as Error).message, duplicate: undefined })
+    }
+  }
+
+  const skip = (task: UploadTask) => {
+    if (task.duplicate) discardPendingUpload(task.duplicate.pendingId).catch(() => {})
+    patchTask(task.key, { status: "skipped", duplicate: undefined })
+  }
+
   const doneCount = tasks.filter((t) => t.status === "done").length
   const errorCount = tasks.filter((t) => t.status === "error").length
+  const duplicateCount = tasks.filter((t) => t.status === "duplicate").length
 
   return (
     <>
@@ -286,6 +329,8 @@ export function UploadDialog() {
                         {task.status === "measuring" && " · reading duration…"}
                         {task.status === "uploading" && ` · uploading… ${task.progress}%`}
                         {task.status === "done" && " · done"}
+                        {task.status === "duplicate" && " · already in the library?"}
+                        {task.status === "skipped" && " · skipped"}
                         {task.status === "error" && task.message ? ` · ${task.message}` : ""}
                       </p>
                     </div>
@@ -303,9 +348,59 @@ export function UploadDialog() {
                     {task.status === "error" && (
                       <XCircle className="size-4 shrink-0 text-red-400" aria-hidden="true" />
                     )}
+                    {task.status === "duplicate" && (
+                      <Copy className="size-4 shrink-0 text-amber-400" aria-hidden="true" />
+                    )}
+                    {task.status === "skipped" && (
+                      <XCircle className="size-4 shrink-0 text-zinc-600" aria-hidden="true" />
+                    )}
                   </div>
                   {task.status === "uploading" && (
                     <Progress value={task.progress} className="mt-2 h-1.5 bg-zinc-800" />
+                  )}
+                  {task.status === "duplicate" && task.duplicate && (
+                    <div className="mt-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-2">
+                      <p className="text-[11px] text-amber-200/90">
+                        Looks like {task.duplicate.matches.length === 1 ? "a track" : `${task.duplicate.matches.length} tracks`} already in the library:
+                      </p>
+                      <ul className="mt-1.5 flex flex-col gap-1.5">
+                        {task.duplicate.matches.map((m) => (
+                          <li key={m.track.id} className="flex items-center gap-2">
+                            <span className="w-8 shrink-0">
+                              <CoverArt trackId={m.track.id} title={m.track.title} hasCover={m.track.hasCover} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-xs text-zinc-100">{m.track.title}</span>
+                              <span className="block truncate text-[11px] text-zinc-500">
+                                {m.track.artist || "Unknown artist"}
+                                {m.track.album ? ` · ${m.track.album}` : ""}
+                                {m.track.duration > 0 ? ` · ${formatDuration(m.track.duration)}` : ""}
+                                {` · uploaded by ${m.track.uploadedBy.username || "someone"}`}
+                                {` · ${m.reason}`}
+                              </span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-2 flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-100"
+                          onClick={() => skip(task)}
+                        >
+                          Skip
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 border-zinc-700 bg-zinc-800/60 px-2.5 text-xs text-zinc-200 hover:bg-zinc-800"
+                          onClick={() => addAnyway(task)}
+                        >
+                          Add anyway
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </li>
               ))}
@@ -317,7 +412,18 @@ export function UploadDialog() {
               <span>
                 {doneCount}/{tasks.length} uploaded
                 {errorCount > 0 ? ` · ${errorCount} failed` : ""}
+                {duplicateCount > 0 ? ` · ${duplicateCount} waiting for a decision` : ""}
               </span>
+              {duplicateCount > 1 && (
+                <span className="flex gap-2">
+                  <button type="button" className="hover:text-zinc-200" onClick={() => tasks.filter((t) => t.status === "duplicate").forEach(skip)}>
+                    Skip all
+                  </button>
+                  <button type="button" className="text-emerald-400 hover:text-emerald-300" onClick={() => tasks.filter((t) => t.status === "duplicate").forEach((t) => void addAnyway(t))}>
+                    Add all anyway
+                  </button>
+                </span>
+              )}
               {!busy && (
                 <Button
                   variant="ghost"

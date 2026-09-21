@@ -426,7 +426,44 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
                         return
                 }
         }
-        meta := readMetadata(absPath)
+
+        up := &pendingUpload{savedPath: savedPath, fileName: fileName, mimeType: mimeType, clientDur: clientDur, userID: u.ID}
+        up.hash, _ = fileSHA256(absPath)
+        up.meta = readMetadata(absPath)
+
+        // The same song may already be in the library — the identical file,
+        // or another rip of it. Unless the client said "add anyway", hold the
+        // file and let the person decide with the existing tracks in front
+        // of them; nothing needs to be uploaded twice.
+        if r.URL.Query().Get("force") == "" {
+                if dup := s.findDuplicates(u.ID, up); len(dup.Matches) > 0 {
+                        dup.PendingID = s.holdUpload(up)
+                        writeJSON(w, http.StatusConflict, dup)
+                        return
+                }
+        }
+        s.finalizeUpload(w, r, up)
+}
+
+// pendingUpload is a stored file that hasn't become a track yet: either
+// about to (the normal path) or waiting for the uploader to confirm that a
+// duplicate is wanted.
+type pendingUpload struct {
+        savedPath, fileName, mimeType string
+        clientDur                     float64
+        userID                        string
+        hash                          string
+        meta                          fileMetadata
+        heldAt                        time.Time
+}
+
+// finalizeUpload turns a stored file into a library track and answers the
+// request with it.
+func (s *Server) finalizeUpload(w http.ResponseWriter, r *http.Request, up *pendingUpload) {
+        u := userFrom(r)
+        absPath := filepath.Join(s.dataDir, up.savedPath)
+        meta := up.meta
+        savedPath, fileName, mimeType, clientDur := up.savedPath, up.fileName, up.mimeType, up.clientDur
         id := strings.TrimSuffix(filepath.Base(savedPath), filepath.Ext(savedPath))
         hasCover := false
         if len(meta.picture) > 0 {
@@ -458,11 +495,11 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
         res, err := s.db.Exec(`INSERT INTO tracks
                 (id, user_id, title, artist, album, genre, year, track_no, duration,
                  file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
-                 alt_path, alt_mime, alt_size, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)`,
+                 alt_path, alt_mime, alt_size, updated_at, file_hash)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)`,
                 id, u.ID, title, artist, album, meta.genre, meta.year, meta.trackNo, duration,
                 fileName, savedPath, mimeType, size, hasCover, createdAt,
-                "", "", 0, createdAt)
+                "", "", 0, createdAt, up.hash)
         if err != nil {
                 os.Remove(absPath)
                 os.Remove(filepath.Join(s.covDir, id+".img"))

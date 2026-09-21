@@ -32,6 +32,9 @@ import kotlin.time.Instant
 /** Thrown when the server responds with a non-2xx status; message comes from `{"error": "..."}`. */
 class ApiException(message: String) : Exception(message)
 
+/** The server held the upload because it looks like a duplicate; the person decides. */
+class DuplicateException(val response: DuplicateResponse) : Exception(response.error)
+
 /** Human-readable message for arbitrary failures (network down, bad URL, …). */
 fun friendlyError(e: Throwable): String = when (e) {
     is ApiException -> e.message ?: "Request failed"
@@ -312,7 +315,20 @@ class ApiClient(private val store: TokenStore) {
         ) {
             auth()
         }
+        if (response.status == HttpStatusCode.Conflict) {
+            noteRefreshedToken(response)
+            throw DuplicateException(response.body<DuplicateResponse>())
+        }
         return bodyOrError(response)
+    }
+
+    /** Adds a held upload (one that looked like a duplicate) after all. */
+    suspend fun confirmPendingUpload(pendingId: String): Track =
+        bodyOrError(client.post(url("/api/uploads/pending/$pendingId")) { auth() })
+
+    /** Drops a held upload the person decided not to add. */
+    suspend fun discardPendingUpload(pendingId: String) {
+        expectNoContent(client.delete(url("/api/uploads/pending/$pendingId")) { auth() })
     }
 
     // ---------------------------------------------------------------- avatar

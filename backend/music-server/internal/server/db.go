@@ -135,6 +135,9 @@ func migrate(db *sql.DB) error {
                 // "#rrggbb" representative colour of the cover, for the
                 // lyrics view's background; computed in the background.
                 {"tracks.cover_color", `ALTER TABLE tracks ADD COLUMN cover_color TEXT NOT NULL DEFAULT ''`},
+                // SHA-256 of the stored file, for spotting re-uploads of the
+                // same rip; backfilled in the background for older tracks.
+                {"tracks.file_hash", `ALTER TABLE tracks ADD COLUMN file_hash TEXT NOT NULL DEFAULT ''`},
                 // Loudness analysis (integrated LUFS, EBU R128) for volume
                 // normalisation, and a coarse peaks array for waveform seek
                 // bars. NULL loudness means "not analysed yet".
@@ -265,6 +268,7 @@ func migrate(db *sql.DB) error {
                 `CREATE INDEX IF NOT EXISTS idx_play_events_track ON play_events(track_id)`,
                 `CREATE INDEX IF NOT EXISTS idx_favorites_track ON favorites(track_id)`,
                 `CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks(source, source_id)`,
+                `CREATE INDEX IF NOT EXISTS idx_tracks_hash ON tracks(file_hash)`,
         } {
                 if _, err := db.Exec(stmt); err != nil {
                         return fmt.Errorf("create track fk index: %w", err)

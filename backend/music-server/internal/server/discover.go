@@ -317,6 +317,7 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 		}
 	}
 
+	hash, _ := fileSHA256(absPath)
 	// The catalogue's listing is the curated record; the file's own tags,
 	// when there are any, tend to be sloppier ("Artist - Title [NCS
 	// Release]" as the title) and only fill what the listing lacks.
@@ -349,11 +350,11 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	_, err = s.db.Exec(`INSERT INTO tracks
 		(id, user_id, title, artist, album, genre, year, track_no, duration,
 		 file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
-		 alt_path, alt_mime, alt_size, updated_at, source, source_id)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?)`,
+		 alt_path, alt_mime, alt_size, updated_at, source, source_id, file_hash)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)`,
 		id, u.ID, title, artist, album, genre, year, meta.trackNo, meta.duration,
 		sanitizeFilename(dl.FileName), rel, mimeType, n, hasCover, createdAt,
-		"", "", 0, createdAt, sourceKey, sourceID)
+		"", "", 0, createdAt, sourceKey, sourceID, hash)
 	if err != nil {
 		os.Remove(absPath)
 		os.Remove(filepath.Join(s.covDir, id+".img"))

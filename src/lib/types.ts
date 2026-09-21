@@ -257,6 +257,21 @@ export interface MetadataCandidatesResponse {
   attempts: number
 }
 
+/** One existing track that looks like an upload (409 from POST /api/tracks). */
+export interface DuplicateMatch {
+  track: Track
+  /** "same file" | "same song" */
+  reason: string
+}
+
+export interface DuplicateResponse {
+  error: string
+  /** Confirms (POST) or discards (DELETE) the held file: /api/uploads/pending/{id}. */
+  pendingId: string
+  matches: DuplicateMatch[]
+  upload: { title: string; artist: string; album: string; duration: number; fileName: string }
+}
+
 /** GET /api/metadata/queue */
 export interface MetadataQueueStatus {
   queued: number

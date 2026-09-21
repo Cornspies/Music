@@ -1,6 +1,13 @@
 package com.music.app.ui.screens
 
 import androidx.compose.foundation.layout.Column
+import com.music.app.ui.components.CoverImage
+import com.music.app.api.friendlyError
+import com.music.app.api.DuplicateResponse
+import com.music.app.api.DuplicateException
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,12 +56,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** One queued upload and its progress. */
-private enum class UploadStatus { PENDING, UPLOADING, DONE, FAILED }
+private enum class UploadStatus { PENDING, UPLOADING, DONE, FAILED, DUPLICATE, SKIPPED }
 
 private data class UploadEntry(
     val file: PickedAudio,
     val status: UploadStatus,
     val error: String? = null,
+    /** Set while the server holds the file because it looks like a duplicate. */
+    val duplicate: DuplicateResponse? = null,
 )
 
 /** Upload screen — pick audio files on Android and push them to the server. */
@@ -108,7 +117,29 @@ fun UploadScreen() {
                 Spacer(Modifier.height(16.dp))
 
                 entries.forEachIndexed { index, entry ->
-                    UploadRow(entry)
+                    UploadRow(
+                        entry,
+                        onAddAnyway = {
+                            val pending = entry.duplicate?.pendingId ?: return@UploadRow
+                            entries = entries.toMutableList().also { it[index] = entry.copy(status = UploadStatus.UPLOADING) }
+                            scope.launch {
+                                try {
+                                    val track = model.api.confirmPendingUpload(pending)
+                                    entries = entries.toMutableList().also { it[index] = entry.copy(status = UploadStatus.DONE, duplicate = null) }
+                                    uploadedTracks = uploadedTracks + track
+                                    model.loadLibrary()
+                                } catch (e: Exception) {
+                                    entries = entries.toMutableList().also {
+                                        it[index] = entry.copy(status = UploadStatus.FAILED, error = friendlyError(e), duplicate = null)
+                                    }
+                                }
+                            }
+                        },
+                        onSkip = {
+                            entry.duplicate?.pendingId?.let { id -> scope.launch { runCatching { model.api.discardPendingUpload(id) } } }
+                            entries = entries.toMutableList().also { it[index] = entry.copy(status = UploadStatus.SKIPPED, duplicate = null) }
+                        },
+                    )
                     if (index != entries.lastIndex) Spacer(Modifier.height(8.dp))
                 }
 
@@ -135,6 +166,10 @@ fun UploadScreen() {
                                             succeeded.add(track)
                                             entries = entries.toMutableList().also {
                                                 it[i] = entry.copy(status = UploadStatus.DONE)
+                                            }
+                                        } catch (e: DuplicateException) {
+                                            entries = entries.toMutableList().also {
+                                                it[i] = entry.copy(status = UploadStatus.DUPLICATE, duplicate = e.response)
                                             }
                                         } catch (e: Exception) {
                                             entries = entries.toMutableList().also {
@@ -195,7 +230,8 @@ fun UploadScreen() {
 }
 
 @Composable
-private fun UploadRow(entry: UploadEntry) {
+private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: () -> Unit = {}) {
+    Column(Modifier.fillMaxWidth()) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -211,6 +247,8 @@ private fun UploadRow(entry: UploadEntry) {
                     UploadStatus.UPLOADING -> append(" • uploading…")
                     UploadStatus.DONE -> append(" • done")
                     UploadStatus.FAILED -> append(" • failed")
+                    UploadStatus.DUPLICATE -> append(" • already in the library?")
+                    UploadStatus.SKIPPED -> append(" • skipped")
                     UploadStatus.PENDING -> {}
                 }
             }
@@ -220,6 +258,7 @@ private fun UploadRow(entry: UploadEntry) {
                 color = when (entry.status) {
                     UploadStatus.DONE -> Emerald
                     UploadStatus.FAILED -> MaterialTheme.colorScheme.error
+                    UploadStatus.DUPLICATE -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 maxLines = 1,
@@ -244,7 +283,43 @@ private fun UploadRow(entry: UploadEntry) {
                 contentDescription = null,
                 tint = Emerald,
             )
-            UploadStatus.FAILED -> {}
+            UploadStatus.FAILED, UploadStatus.DUPLICATE, UploadStatus.SKIPPED -> {}
         }
+    }
+    // The existing track(s) this file looks like, and the decision.
+    entry.duplicate?.let { dup ->
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, bottom = 4.dp),
+        ) {
+            dup.matches.forEach { m ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CoverImage(m.track, 36.dp)
+                    Spacer(Modifier.padding(start = 10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(m.track.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            listOfNotNull(
+                                m.track.artist.ifBlank { "Unknown artist" },
+                                m.track.album.takeIf { it.isNotBlank() },
+                                formatDuration(m.track.duration),
+                                "by ${m.track.uploadedBy.username.ifBlank { "someone" }}",
+                                m.reason,
+                            ).joinToString(" • "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onSkip) { Text("Skip") }
+                OutlinedButton(onClick = onAddAnyway) { Text("Add anyway") }
+            }
+        }
+    }
     }
 }

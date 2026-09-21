@@ -123,6 +123,18 @@ data class DiscoverAddRequest(val source: String, val id: String)
 @Serializable
 data class ListenedRequest(val seconds: Double)
 
+/** One existing track that looks like an upload (409 from POST /api/tracks). */
+@Serializable
+data class DuplicateMatch(val track: Track, val reason: String = "")
+
+@Serializable
+data class DuplicateResponse(
+    val error: String = "",
+    /** Confirms (POST) or discards (DELETE) the held file: /api/uploads/pending/{id}. */
+    val pendingId: String = "",
+    val matches: List<DuplicateMatch> = emptyList(),
+)
+
 @Serializable
 data class Playlist(
     val id: String,
