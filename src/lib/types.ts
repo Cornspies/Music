@@ -189,6 +189,8 @@ export interface DiscoverResult {
   pageUrl?: string
   /** Streams the track from the catalogue, for a listen before adding. */
   previewUrl?: string
+  /** The track's licence, where the catalogue states one ("cc-by", "cc-by-nc-sa", "no-rights-reserved"…). */
+  license?: string
   /** Set when this result is already in the library. */
   trackId?: string
 }

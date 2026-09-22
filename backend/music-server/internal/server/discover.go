@@ -27,7 +27,8 @@ import (
 // the file arrives tagged, with cover art, and goes through the same
 // pipeline as an upload (transcode, analysis, quota).
 //
-// Catalogues implement source: NCS (ncs.go) always, YouTube through yt-dlp
+// Catalogues implement source: NCS (ncs.go) always, SoundCloud's Creative
+// Commons tracks (soundcloud.go) unless switched off, YouTube through yt-dlp
 // (ytdlp.go) when the server is configured for it. A track remembers where
 // it came from (tracks.source / source_id), which is how results are marked
 // "already in the library" and duplicates are refused.
@@ -63,6 +64,9 @@ type discoverResult struct {
 	// PreviewURL streams the track from the catalogue for a listen before
 	// adding; empty when the catalogue offers none.
 	PreviewURL string `json:"previewUrl,omitempty"`
+	// License is the track's licence where the catalogue states one
+	// (SoundCloud: "cc-by", "cc-by-nc-sa", "no-rights-reserved", …).
+	License string `json:"license,omitempty"`
 	// TrackID is set when this result is already in the library.
 	TrackID string `json:"trackId,omitempty"`
 }
@@ -120,15 +124,24 @@ var discoverSources = []source{ncsSource{}}
 // initDiscoverSources adds the optional sources once the environment is
 // known (package init runs before .env is read). Called at start-up.
 func (s *Server) initDiscoverSources() {
+	// The order is the order of the tabs, and the first is the one Discover
+	// opens on: YouTube (when yt-dlp is set up), NCS, SoundCloud.
+	var list []source
 	yt, err := newYTDLPSource(s.dataDir)
-	if err != nil {
+	switch {
+	case err != nil:
 		logErr("discover", fmt.Errorf("YouTube source is off: %w", err))
-		return
-	}
-	if yt != nil {
-		discoverSources = append(discoverSources, yt)
+	case yt != nil:
+		list = append(list, yt)
 		log.Printf("discover: %s", yt.describe())
 	}
+	list = append(list, ncsSource{})
+	// SoundCloud's Creative Commons tracks: legal to keep and needing no
+	// extra software, so on unless switched off.
+	if !config.Flag("MUSIC_DISABLE_SOUNDCLOUD") {
+		list = append(list, soundcloudSource{})
+	}
+	discoverSources = list
 }
 
 func discoverDisabled() bool { return config.Flag("MUSIC_DISABLE_DISCOVER") }

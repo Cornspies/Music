@@ -508,7 +508,17 @@ function ResultRow({ result, onAdded }: { result: DiscoverResult; onAdded: (t: T
         ) : null}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-zinc-100">{result.title}</p>
+        <p className="flex items-center gap-2 truncate text-sm font-medium text-zinc-100">
+          <span className="truncate">{result.title}</span>
+          {result.license ? (
+            <span
+              title="Creative Commons licence"
+              className="shrink-0 rounded border border-emerald-500/30 px-1 py-px text-[10px] font-semibold text-emerald-300"
+            >
+              {licenseLabel(result.license)}
+            </span>
+          ) : null}
+        </p>
         <p className="truncate text-xs text-zinc-500">
           {result.artist}
           {result.genre ? ` · ${result.genre}` : ""}
@@ -544,4 +554,11 @@ function ResultRow({ result, onAdded }: { result: DiscoverResult; onAdded: (t: T
       )}
     </li>
   )
+}
+
+/** "cc-by-nc-sa" → "CC BY-NC-SA"; the public-domain dedication by name. */
+function licenseLabel(license: string): string {
+  if (license === "no-rights-reserved") return "Public domain"
+  if (license.startsWith("cc-")) return "CC " + license.slice(3).toUpperCase()
+  return license
 }

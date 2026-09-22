@@ -34,8 +34,11 @@ import { Slider } from "@/components/ui/slider"
 const SEEK_SLIDER_CLASS =
   "[&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:bg-zinc-700/70 [&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-range]]:shadow-[0_0_10px_rgba(16,185,129,0.45)] [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:shadow-md [&_[data-slot=slider-thumb]]:opacity-0 group-hover/seek:[&_[data-slot=slider-thumb]]:opacity-100 [&_[data-slot=slider-thumb]]:transition-opacity"
 
+// The whole 32px-tall root takes clicks and drags (Radix reads the pointer
+// anywhere on it), while the visible track stays a thin line: an easy
+// target without a chunky look. Hovering thickens the track and fills it.
 const VOLUME_SLIDER_CLASS =
-  "[&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-range]]:bg-zinc-400 [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-zinc-300"
+  "h-8 cursor-pointer [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:transition-[height] hover:[&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-range]]:bg-zinc-400 hover:[&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-zinc-300 [&_[data-slot=slider-thumb]]:cursor-grab"
 
 /** Shows/hides the lyrics panel docked beside the main area. */
 function LyricsToggle() {
@@ -359,7 +362,7 @@ export function PlayerBar() {
               max={100}
               step={1}
               onValueChange={([v]) => usePlayerStore.getState().setVolume(v / 100)}
-              className={cn(VOLUME_SLIDER_CLASS, "w-24")}
+              className={cn(VOLUME_SLIDER_CLASS, "w-28")}
             />
           </div>
         </div>

@@ -110,6 +110,8 @@ data class DiscoverResult(
     val coverUrl: String? = null,
     val pageUrl: String? = null,
     val previewUrl: String? = null,
+    /** The track's licence, where the catalogue states one ("cc-by", "cc-by-nc-sa", "no-rights-reserved"…). */
+    val license: String? = null,
     /** Set when this result is already in the library. */
     val trackId: String? = null,
 )

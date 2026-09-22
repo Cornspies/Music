@@ -545,6 +545,7 @@ private fun DiscoverRow(source: String, result: DiscoverResult) {
             Text(
                 listOfNotNull(
                     result.artist.ifBlank { null },
+                    result.license?.let { licenseLabel(it) },
                     result.genre,
                     result.year?.toString(),
                     result.duration?.takeIf { it > 0 }?.let { formatDuration(it) },
@@ -640,4 +641,11 @@ private fun ResultRow(
             )
         }
     }
+}
+
+/** "cc-by-nc-sa" → "CC BY-NC-SA"; the public-domain dedication by name. */
+private fun licenseLabel(license: String): String = when {
+    license == "no-rights-reserved" -> "Public domain"
+    license.startsWith("cc-") -> "CC " + license.removePrefix("cc-").uppercase()
+    else -> license
 }
