@@ -137,6 +137,19 @@ abstract class PackageReleaseApk : DefaultTask() {
 
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
+        // Name the APK the build itself produces, not a copy of it: that way
+        // every route to a release build comes out as Music-<version>.apk —
+        // `releaseApk` below, a plain `assembleRelease`, and Android Studio's
+        // "Generate Signed Bundle or APK", which copies this file to the
+        // folder chosen in its wizard.
+        variant.outputs.forEach { output ->
+            output.outputFileName.set(
+                output.versionName
+                    .orElse(android.defaultConfig.versionName ?: "0.0.0")
+                    .map { version -> "Music-$version.apk" },
+            )
+        }
+
         val packageTask = tasks.register<PackageReleaseApk>("releaseApk") {
             group = "distribution"
             description = "Builds the release APK as mobile/dist/Music-<version>.apk"
