@@ -127,7 +127,7 @@ func (s *Server) registrationOpen() bool {
 		return true
 	}
 	var n int
-	if err := s.db.QueryRow(`SELECT COUNT(1) FROM users`).Scan(&n); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM users WHERE id <> ?`, deletedUserID).Scan(&n); err != nil {
 		logErr("count users", err)
 		return false
 	}
@@ -492,7 +492,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// The first account on a server is its admin.
 	role := roleUser
 	var total int
-	if err := s.db.QueryRow(`SELECT COUNT(1) FROM users`).Scan(&total); err == nil && total == 0 {
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM users WHERE id <> ?`, deletedUserID).Scan(&total); err == nil && total == 0 {
 		role = roleAdmin
 	}
 	if _, err := s.db.Exec(`INSERT INTO users (id, username, password_hash, created_at, role) VALUES (?,?,?,?,?)`,
@@ -553,7 +553,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		hasAvatar int
 		role      string
 	)
-	err := s.db.QueryRow(`SELECT id, password_hash, created_at, has_avatar, role FROM users WHERE username = ?`, username).
+	err := s.db.QueryRow(`SELECT id, password_hash, created_at, has_avatar, role FROM users WHERE username = ? AND id <> ?`,
+		username, deletedUserID).
 		Scan(&id, &hash, &created, &hasAvatar, &role)
 	if errors.Is(err, sql.ErrNoRows) {
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(req.Password))
@@ -583,10 +584,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	u := userFrom(r)
-	var created string
-	var hasAvatar int
-	err := s.db.QueryRow(`SELECT created_at, has_avatar FROM users WHERE id = ?`, u.ID).Scan(&created, &hasAvatar)
+	// From the database rather than the token: the name may have been
+	// changed on another device since this token was issued.
+	user, err := s.publicUserByID(userFrom(r).ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusUnauthorized, "user no longer exists")
 		return
@@ -594,7 +594,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "lookup user", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, publicUser{ID: u.ID, Username: u.Username, CreatedAt: created, HasAvatar: hasAvatar == 1, Role: u.Role})
+	writeJSON(w, http.StatusOK, user)
 }
 
 // MediaToken is what GET /api/auth/media-token returns.

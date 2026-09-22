@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -19,6 +20,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -93,6 +95,12 @@ fun App() {
             DeepLinks.consume()?.let { model.openSharedPlaylist(it) }
         }
     }
+    val pendingShare = DeepLinks.pendingShareToken
+    LaunchedEffect(pendingShare, model.user) {
+        if (pendingShare != null && model.user != null) {
+            DeepLinks.consumeShareToken()?.let { model.openSharedTrack(it) }
+        }
+    }
 
     // Back in the foreground: pick up what another device played meanwhile.
     LifecycleResumeEffect(model) {
@@ -120,6 +128,15 @@ private fun Root() {
         LoginScreen()
     } else {
         MainScreen()
+    }
+    // A share link that no longer works (revoked, or sharing switched off).
+    model.shareLinkError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { model.shareLinkError = null },
+            title = { Text("Couldn't open the link") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { model.shareLinkError = null }) { Text("OK") } },
+        )
     }
 }
 

@@ -27,7 +27,7 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(1) FROM tracks t WHERE t.user_id = u.id),
 		       (SELECT COALESCE(SUM(t.file_size + COALESCE(t.alt_size, 0)), 0) FROM tracks t WHERE t.user_id = u.id),
 		       (SELECT MAX(played_at) FROM play_events pe WHERE pe.user_id = u.id)
-		FROM users u ORDER BY u.created_at ASC`)
+		FROM users u WHERE u.id <> ? ORDER BY u.created_at ASC`, deletedUserID)
 	if err != nil {
 		s.internalErr(w, "list users", err)
 		return
@@ -62,6 +62,10 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == me.ID {
 		writeErr(w, http.StatusBadRequest, "you can't delete your own account from here")
+		return
+	}
+	if id == deletedUserID {
+		writeErr(w, http.StatusNotFound, "user not found")
 		return
 	}
 	var role string
@@ -121,7 +125,7 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var exists int
-	if err := s.db.QueryRow(`SELECT COUNT(1) FROM users WHERE id = ?`, id).Scan(&exists); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM users WHERE id = ? AND id <> ?`, id, deletedUserID).Scan(&exists); err != nil {
 		s.internalErr(w, "lookup user", err)
 		return
 	}

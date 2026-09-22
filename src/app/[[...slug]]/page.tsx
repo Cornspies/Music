@@ -63,9 +63,9 @@ export default function Home() {
   }, [mounted, token])
 
   if (!mounted) return <Splash />
-  // A share link is for someone without an account, so it is answered
-  // before the sign-in gate — and for a signed-in visitor too, who would
-  // otherwise land on their library instead of the track they followed.
-  if (view === "share" && viewArg) return <SharePage token={viewArg} />
+  // A share link answers visitors without a session before the sign-in gate:
+  // they get the stand-alone player. Someone signed in gets the app instead,
+  // which starts the track in its own player (see useSharedTrackLink).
+  if (view === "share" && viewArg && !token) return <SharePage token={viewArg} />
   return token ? <AppShell /> : <AuthView />
 }

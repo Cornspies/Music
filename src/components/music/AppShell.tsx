@@ -3,15 +3,19 @@
 import { useEffect, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { AudioLines, Home, Library, Menu, Search, Upload } from "lucide-react"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { fetchSharedTrackForMember } from "@/lib/api"
 import { useUIStore, type View } from "@/stores/ui"
+import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
-import { restorePlayback } from "@/stores/player"
+import { restorePlayback, usePlayerStore } from "@/stores/player"
 import { SidebarContent } from "@/components/music/Sidebar"
 import { PlayerBar } from "@/components/music/PlayerBar"
 import { QueuePanel } from "@/components/music/QueuePanel"
 import { LyricsSidebar } from "@/components/music/LyricsSidebar"
 import { NowPlayingView } from "@/components/music/NowPlayingView"
+import { AccountDialog } from "@/components/music/AccountDialog"
 import { AndroidAppDialog } from "@/components/music/AndroidAppDialog"
 import { ShortcutsDialog } from "@/components/music/ShortcutsDialog"
 import { PasswordDialog } from "@/components/music/PasswordDialog"
@@ -117,6 +121,7 @@ function MobileTabBar() {
 function renderView(view: View) {
   switch (view) {
     case "home":
+    case "share": // a share link: home, while the track starts in the player
       return <HomeView />
     case "search":
       return <SearchView />
@@ -178,6 +183,7 @@ export function AppShell() {
   const mainRef = useRef<HTMLElement>(null)
 
   useKeyboardShortcuts()
+  useSharedTrackLink(view, viewArg, initialized)
 
   // Load the library, then put the last-played track back in the player bar
   // (paused, at the saved position) so an accidentally closed tab, or another
@@ -254,6 +260,7 @@ export function AppShell() {
       <NowPlayingView />
       <ShortcutsDialog />
       <AndroidAppDialog />
+      <AccountDialog />
       <PasswordDialog />
       <PlaybackSettingsDialog />
       <UploadDialog />
@@ -278,4 +285,46 @@ function GlobalMetadataReview() {
       }}
     />
   )
+}
+
+/**
+ * A share link followed by someone signed in: the track is fetched as a
+ * member, starts in the player, and the address becomes the home page (a
+ * replace, not a push, so Back doesn't start it again). Browsers may refuse
+ * to start audio on a page nobody has interacted with yet; the track is then
+ * loaded and paused, and the toast's button — a real click — starts it.
+ */
+function useSharedTrackLink(view: View, token: string | null, ready: boolean) {
+  useEffect(() => {
+    if (view !== "share" || !token || !ready) return
+    let alive = true
+    const leaveLink = () => {
+      window.history.replaceState({ view: "home", viewArg: null }, "", "/")
+      useUIStore.getState().applyRoute("home", null)
+    }
+    fetchSharedTrackForMember(token)
+      .then((track) => {
+        if (!alive) return
+        leaveLink()
+        usePlayerStore.getState().playNow(track, [track])
+        setTimeout(() => {
+          const player = usePlayerStore.getState()
+          if (player.currentTrack?.id === track.id && !player.isPlaying) {
+            toast(`“${track.title}” is ready`, {
+              action: { label: "Play", onClick: () => usePlayerStore.getState().togglePlay() },
+            })
+          }
+        }, 1200)
+      })
+      .catch((e: Error) => {
+        // A 401 has just signed this browser out: the address still holds
+        // the link, so the stand-alone player takes over from here.
+        if (!alive || !useAuthStore.getState().token) return
+        leaveLink()
+        toast.error(e.message)
+      })
+    return () => {
+      alive = false
+    }
+  }, [view, token, ready])
 }

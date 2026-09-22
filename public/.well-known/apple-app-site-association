@@ -3,9 +3,18 @@
     "apps": [],
     "details": [
       {
-        "appIDs": ["REPLACE_WITH_TEAMID.com.music.app"],
+        "appIDs": [
+          "REPLACE_WITH_TEAMID.com.music.app"
+        ],
         "components": [
-          { "/": "/playlists/*", "comment": "Shared playlist links open in the app" }
+          {
+            "/": "/playlists/*",
+            "comment": "Shared playlist links open in the app"
+          },
+          {
+            "/": "/s/*",
+            "comment": "Shared track links start playing in the app"
+          }
         ]
       }
     ]

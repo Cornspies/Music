@@ -20,6 +20,7 @@ import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackList } from "@/components/music/TrackList"
+import { TrackMenu } from "@/components/music/TrackMenu"
 import { Button } from "@/components/ui/button"
 
 function StatChip({
@@ -39,8 +40,8 @@ function StatChip({
 
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
-    <div className="mb-3.5 mt-9 flex items-center justify-between gap-4">
-      <h2 className="text-xl font-bold tracking-tight text-zinc-50">{title}</h2>
+    <div className="mb-2.5 mt-6 flex items-center justify-between gap-4">
+      <h2 className="text-lg font-bold tracking-tight text-zinc-50">{title}</h2>
       {action}
     </div>
   )
@@ -58,7 +59,7 @@ function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
           usePlayerStore.getState().playNow(track, queue)
         }
       }}
-      className="group w-36 shrink-0 cursor-pointer rounded-xl p-2 transition-all hover:bg-zinc-800/70 hover:shadow-lg hover:shadow-black/30 md:w-44"
+      className="group w-32 shrink-0 cursor-pointer rounded-xl p-2 transition-all hover:bg-zinc-800/70 hover:shadow-lg hover:shadow-black/30 md:w-40"
     >
       <div className="relative">
         <div className="overflow-hidden rounded-lg">
@@ -78,10 +79,16 @@ function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
           <Play className="size-4 translate-x-px fill-current" />
         </button>
       </div>
-      <p className="mt-2.5 truncate text-sm font-semibold text-zinc-100">{track.title}</p>
-      <p className="mt-0.5 truncate text-xs text-zinc-400">
-        {track.artist || "Unknown artist"}
-      </p>
+      <div className="mt-2 flex items-start gap-1">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-zinc-100">{track.title}</p>
+          <p className="mt-0.5 truncate text-xs text-zinc-400">{track.artist || "Unknown artist"}</p>
+        </div>
+        <TrackMenu
+          track={track}
+          triggerClassName="-mr-1 size-7 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
+        />
+      </div>
     </div>
   )
 }
@@ -101,10 +108,10 @@ function ShortcutCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3 rounded-xl border border-zinc-800/80 bg-linear-to-br from-zinc-900/90 to-zinc-950/40 p-3 text-left shadow-sm transition-all hover:border-zinc-700 hover:from-zinc-800/90 hover:shadow-md hover:shadow-black/30 active:scale-[0.98]"
+      className="group flex items-center gap-3 rounded-xl border border-zinc-800/80 bg-linear-to-br from-zinc-900/90 to-zinc-950/40 p-2 text-left shadow-sm transition-all hover:border-zinc-700 hover:from-zinc-800/90 hover:shadow-md hover:shadow-black/30 active:scale-[0.98]"
     >
-      <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-emerald-400 transition-all group-hover:bg-emerald-500 group-hover:text-zinc-950 group-hover:shadow-lg group-hover:shadow-emerald-950/60">
-        <Icon className="size-5" aria-hidden="true" />
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-emerald-400 transition-all group-hover:bg-emerald-500 group-hover:text-zinc-950 group-hover:shadow-lg group-hover:shadow-emerald-950/60">
+        <Icon className="size-4" aria-hidden="true" />
       </div>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-zinc-100">{label}</p>
@@ -168,10 +175,9 @@ export function HomeView() {
   }
 
   return (
-    <div className="p-4 pb-16 md:p-6 md:pb-12">
-
+    <div className="p-4 pb-16 md:px-6 md:pt-5 md:pb-12">
       {stats && (
-        <div className="mt-4 -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
           <StatChip icon={Music2}>
             {stats.trackCount} track{stats.trackCount === 1 ? "" : "s"}
           </StatChip>
@@ -195,7 +201,7 @@ export function HomeView() {
 
       {/* quick shortcuts */}
       <SectionHeader title="Jump back in" />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <ShortcutCard
           icon={Heart}
           label="Favorites"
@@ -269,7 +275,7 @@ export function HomeView() {
         </>
       )}
 
-      <footer className="mt-12 flex items-center justify-center gap-2 border-t border-zinc-800/60 pt-5 text-[11px] text-zinc-600">
+      <footer className="mt-8 flex items-center justify-center gap-2 border-t border-zinc-800/60 pt-4 text-[11px] text-zinc-600">
         <History className="size-3" aria-hidden="true" />
         Music · self-hosted · press
         <kbd className="rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5 font-mono text-[10px] text-zinc-400">

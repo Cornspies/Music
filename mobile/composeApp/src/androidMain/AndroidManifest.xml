@@ -27,7 +27,7 @@
             </intent-filter>
 
             <!--
-              Shared playlist links. The host is a build setting because the
+              Shared playlist and track links. The host is a build setting because the
               server is self-hosted: set musicHost in gradle.properties (or
               -PmusicHost=...) to your domain, e.g. music.example.com.
 
@@ -42,10 +42,12 @@
                 <data android:scheme="https" />
                 <data android:host="${musicHost}" />
                 <data android:pathPrefix="/playlists/" />
+                <data android:pathPrefix="/s/" />
                 <data android:path="/register" />
                 <data android:scheme="http" />
                 <data android:host="${musicHost}" />
                 <data android:pathPrefix="/playlists/" />
+                <data android:pathPrefix="/s/" />
                 <data android:path="/register" />
             </intent-filter>
 

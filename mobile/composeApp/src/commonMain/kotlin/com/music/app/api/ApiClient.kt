@@ -214,6 +214,33 @@ class ApiClient(private val store: TokenStore) {
         if (!fresh.isNullOrBlank()) store.saveToken(fresh)
     }
 
+    /**
+     * Changes the sign-in name (the password confirms it). The server answers
+     * a fresh token carrying the new name, which replaces the stored one.
+     */
+    suspend fun renameAccount(username: String, password: String): User {
+        val response = client.post(url("/api/auth/username")) {
+            auth()
+            headers.append(HttpHeaders.ContentType, "application/json")
+            setBody(RenameAccountRequest(username, password))
+        }
+        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        val body = response.body<AuthResponse>()
+        store.saveToken(body.token)
+        return body.user
+    }
+
+    /** Deletes the account (the password confirms it). Uploaded tracks stay in the library. */
+    suspend fun deleteAccount(password: String) {
+        expectNoContent(
+            client.post(url("/api/auth/delete-account")) {
+                auth()
+                headers.append(HttpHeaders.ContentType, "application/json")
+                setBody(DeleteAccountRequest(password))
+            },
+        )
+    }
+
     /** Invalidates every session this account has, on every device. */
     suspend fun logoutEverywhere() {
         expectNoContent(client.post(url("/api/auth/logout-all")) { auth() })
@@ -548,6 +575,9 @@ class ApiClient(private val store: TokenStore) {
     /** Creates the link (or returns the existing one). */
     suspend fun createTrackShare(trackId: String): TrackShare =
         postJson("/api/tracks/$trackId/share", ShareRequest())
+
+    /** The track behind someone's share link, for playing it here. */
+    suspend fun sharedTrack(token: String): Track = getJson("/api/share/$token/track")
 
     /** Revokes the link; it stops working at once. */
     suspend fun deleteTrackShare(trackId: String) {

@@ -366,6 +366,17 @@ class AppModel(
         logout()
     }
 
+    /** @throws Exception with the server's message (wrong password, name taken…). */
+    suspend fun renameAccount(username: String, password: String) {
+        user = api.renameAccount(username, password)
+    }
+
+    /** Deletes the account, then signs out here; the tracks stay on the server. */
+    suspend fun deleteAccount(password: String) {
+        api.deleteAccount(password)
+        logout()
+    }
+
     fun logout() {
         store.saveToken(null)
         api.clearMediaToken()
@@ -687,6 +698,21 @@ class AppModel(
     /** Turns the link off; it stops working at once. */
     suspend fun stopSharing(track: Track) {
         api.deleteTrackShare(track.id)
+    }
+
+    /** Error from the last shared-track link, for the UI to show once. */
+    var shareLinkError by mutableStateOf<String?>(null)
+
+    /** Plays the track behind a share link someone sent. */
+    fun openSharedTrack(token: String) {
+        scope.launch {
+            try {
+                val track = api.sharedTrack(token)
+                playTrack(track, listOf(track))
+            } catch (e: Exception) {
+                shareLinkError = friendlyError(e)
+            }
+        }
     }
 
     fun openSharedPlaylist(id: String) {

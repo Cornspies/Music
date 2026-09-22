@@ -10,7 +10,7 @@ import {
   History,
   Home,
   Keyboard,
-  KeyRound,
+  UserRound,
   ListMusic,
   LogOut,
   Mic2,
@@ -266,10 +266,10 @@ export function SidebarContent() {
           </button>
           <button
             type="button"
-            onClick={() => useUIStore.getState().setPasswordOpen(true)}
+            onClick={() => useUIStore.getState().setAccountOpen(true)}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-900/40 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
           >
-            <KeyRound className="size-3" aria-hidden="true" /> Password
+            <UserRound className="size-3" aria-hidden="true" /> Account
           </button>
         </div>
         <button

@@ -148,16 +148,12 @@ func (s *Server) handleUserAvatar(w http.ResponseWriter, r *http.Request) {
 // writeCurrentUser re-reads and returns the signed-in user so the client can
 // refresh its cached profile after an avatar change.
 func (s *Server) writeCurrentUser(w http.ResponseWriter, u *User) {
-        var created string
-        var hasAvatar int
-        err := s.db.QueryRow(`SELECT created_at, has_avatar FROM users WHERE id = ?`, u.ID).Scan(&created, &hasAvatar)
+        user, err := s.publicUserByID(u.ID)
         if err != nil {
                 s.internalErr(w, "lookup user", err)
                 return
         }
-        writeJSON(w, http.StatusOK, publicUser{
-                ID: u.ID, Username: u.Username, CreatedAt: created, HasAvatar: hasAvatar == 1,
-        })
+        writeJSON(w, http.StatusOK, user)
 }
 
 // decodeSquareJPEG centre-crops to a square, scales to avatarSize and encodes

@@ -258,7 +258,7 @@ func migrate(db *sql.DB) error {
         if _, err := db.Exec(`
                 UPDATE users SET role = 'admin'
                 WHERE NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')
-                  AND id = (SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1)`); err != nil {
+                  AND id = (SELECT id FROM users WHERE id <> 'deleted-user' ORDER BY created_at ASC, id ASC LIMIT 1)`); err != nil {
                 return fmt.Errorf("seed admin: %w", err)
         }
 

@@ -36,13 +36,13 @@ export function ArtistsView() {
     <div className="p-4 md:p-6">
       <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Artists</h1>
 
-      <div className="mt-5">
+      <div className="mt-4">
         {artists === null ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <div key={i} className="flex flex-col items-center gap-2 p-2">
-                <Skeleton className="size-full aspect-square rounded-full" />
-                <Skeleton className="h-4 w-2/3 rounded-md" />
+          <div className="grid grid-cols-3 gap-1 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
+            {Array.from({ length: 16 }).map((_, i) => (
+              <div key={i} className="flex flex-col items-center gap-1.5 p-2">
+                <Skeleton className="size-16 rounded-full md:size-20" />
+                <Skeleton className="h-3.5 w-2/3 rounded-md" />
               </div>
             ))}
           </div>
@@ -52,7 +52,7 @@ export function ArtistsView() {
             title="No artists yet"
           />
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+          <div className="grid grid-cols-3 gap-1 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
             {artists.map((artist) => {
               const name = artist.name || "Unknown artist"
               return (
@@ -60,19 +60,19 @@ export function ArtistsView() {
                   key={artist.name}
                   type="button"
                   onClick={() => navigate("artist", artist.name)}
-                  className="group flex flex-col items-center gap-2 rounded-xl p-3 text-center transition-colors hover:bg-zinc-800/60"
+                  className="group flex flex-col items-center gap-1.5 rounded-xl p-2 text-center transition-colors hover:bg-zinc-800/60"
                   aria-label={`Open artist ${name}`}
                 >
                   <span
                     aria-hidden="true"
-                    className={`flex size-24 items-center justify-center rounded-full bg-linear-to-br text-2xl font-bold text-zinc-300/85 shadow-lg transition-transform group-hover:scale-105 md:size-28 ${hashGradient(name)}`}
+                    className={`flex size-16 items-center justify-center rounded-full bg-linear-to-br text-lg font-bold text-zinc-300/85 shadow-md transition-transform group-hover:scale-105 md:size-20 md:text-xl ${hashGradient(name)}`}
                   >
-                    {initialsOf(name) || <Mic2 className="size-8 text-zinc-400/70" />}
+                    {initialsOf(name) || <Mic2 className="size-6 text-zinc-400/70" />}
                   </span>
-                  <span className="mt-1 max-w-full truncate text-sm font-medium text-zinc-200">
+                  <span className="max-w-full truncate text-xs font-medium text-zinc-200 sm:text-sm">
                     {name}
                   </span>
-                  <span className="text-xs text-zinc-500">
+                  <span className="-mt-1 text-[11px] text-zinc-500">
                     {artist.trackCount} track{artist.trackCount === 1 ? "" : "s"} ·{" "}
                     {formatTotal(artist.totalDuration)}
                   </span>

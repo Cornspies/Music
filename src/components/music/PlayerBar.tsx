@@ -26,6 +26,7 @@ import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { AddToPlaylistButton } from "@/components/music/AddToPlaylistButton"
 import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
+import { TrackMenu } from "@/components/music/TrackMenu"
 import { WaveformSeek } from "@/components/music/WaveformSeek"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
@@ -185,6 +186,7 @@ export function PlayerBar() {
               <Heart className={cn("size-4", currentTrack.isFavorite && "fill-current")} />
             </button>
           )}
+          {currentTrack && <TrackMenu track={currentTrack} side="top" showPlay={false} />}
         </div>
 
         {/* center — controls + seek (desktop) */}

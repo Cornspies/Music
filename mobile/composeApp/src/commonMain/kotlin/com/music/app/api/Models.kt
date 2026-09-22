@@ -481,6 +481,12 @@ data class ChangePasswordRequest(
 
 /** A bare replacement token, as returned after a password change. */
 @Serializable
+data class RenameAccountRequest(val username: String, val password: String)
+
+@Serializable
+data class DeleteAccountRequest(val password: String)
+
+@Serializable
 data class TokenResponse(
     val token: String = "",
 )

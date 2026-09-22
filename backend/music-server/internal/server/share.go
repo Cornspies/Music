@@ -219,6 +219,26 @@ func (s *Server) handleSharedTrack(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleSharedTrackForMember: GET /api/share/{token}/track — for someone
+// signed in to this server. They can play anything in the library anyway,
+// so a link sent to them resolves to the track itself, and the app plays it
+// in its own player rather than showing the stand-alone share page.
+func (s *Server) handleSharedTrackForMember(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
+	trackID, _, ok := s.shareFor(token)
+	if !ok || sharingDisabled() {
+		writeErr(w, http.StatusNotFound, "this link has expired or been turned off")
+		return
+	}
+	t, _, _, ok := s.getTrack(w, r, userFrom(r).ID, trackID)
+	if !ok {
+		return
+	}
+	_, _ = s.db.Exec(`UPDATE track_shares SET plays = plays + 1 WHERE token = ?`, token)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, t)
+}
+
 // handleSharedStream: GET /api/share/{token}/stream — the audio, with Range
 // support, for the page's player and for anything else that follows a link.
 func (s *Server) handleSharedStream(w http.ResponseWriter, r *http.Request) {

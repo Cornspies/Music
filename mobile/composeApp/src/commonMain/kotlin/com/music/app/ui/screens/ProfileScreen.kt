@@ -20,7 +20,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Shield
@@ -71,6 +73,8 @@ fun ProfileScreen() {
 
     var passwordOpen by remember { mutableStateOf(false) }
     var logoutOpen by remember { mutableStateOf(false) }
+    var renameOpen by remember { mutableStateOf(false) }
+    var deleteOpen by remember { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -152,6 +156,12 @@ fun ProfileScreen() {
         // ---- account ----
         SectionCard("Account") {
             SettingRow(
+                icon = Icons.Filled.Badge,
+                title = "Change username",
+                onClick = { renameOpen = true },
+            )
+            HorizontalDivider()
+            SettingRow(
                 icon = Icons.Filled.Key,
                 title = "Change password",
                 onClick = { passwordOpen = true },
@@ -161,6 +171,12 @@ fun ProfileScreen() {
                 icon = Icons.AutoMirrored.Filled.ExitToApp,
                 title = "Sign out",
                 onClick = { logoutOpen = true },
+            )
+            HorizontalDivider()
+            SettingRow(
+                icon = Icons.Filled.DeleteForever,
+                title = "Delete account",
+                onClick = { deleteOpen = true },
             )
         }
 
@@ -175,6 +191,14 @@ fun ProfileScreen() {
 
     if (passwordOpen) {
         ChangePasswordDialog(onDismiss = { passwordOpen = false })
+    }
+
+    if (renameOpen) {
+        RenameAccountDialog(onDismiss = { renameOpen = false })
+    }
+
+    if (deleteOpen) {
+        DeleteAccountDialog(onDismiss = { deleteOpen = false })
     }
 
     if (logoutOpen) {
@@ -369,6 +393,152 @@ private fun ChangePasswordDialog(onDismiss: () -> Unit) {
         },
         dismissButton = {
             if (!done) TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/** New sign-in name; the current password confirms it. */
+@Composable
+private fun RenameAccountDialog(onDismiss: () -> Unit) {
+    val model = LocalAppModel.current
+    val scope = rememberCoroutineScope()
+    val currentName = model.user?.username.orEmpty()
+    var name by remember { mutableStateOf(currentName) }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var done by remember { mutableStateOf(false) }
+    val changed = name.trim().isNotEmpty() && name.trim().lowercase() != currentName
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(if (done) "Username changed" else "Change username") },
+        text = {
+            if (done) {
+                Text("Sign in as “${model.user?.username.orEmpty()}” from now on.")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Username") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Current password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "This is also the name you sign in with.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    error?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (done) {
+                TextButton(onClick = onDismiss) { Text("Done") }
+            } else {
+                TextButton(
+                    enabled = !busy && changed && password.isNotBlank(),
+                    onClick = {
+                        scope.launch {
+                            busy = true
+                            error = null
+                            try {
+                                model.renameAccount(name.trim(), password)
+                                done = true
+                            } catch (e: Exception) {
+                                error = friendlyError(e)
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) {
+                    if (busy) {
+                        Box(Modifier.size(18.dp)) { CircularProgressIndicator(strokeWidth = 2.dp) }
+                    } else {
+                        Text("Save")
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            if (!done) TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/** Deletes the account after the password; the uploaded music stays on the server. */
+@Composable
+private fun DeleteAccountDialog(onDismiss: () -> Unit) {
+    val model = LocalAppModel.current
+    val scope = rememberCoroutineScope()
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Delete your account?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "The music you uploaded stays in the library. Your playlists, favorites, history and share links " +
+                        "are removed, and you are signed out everywhere. This cannot be undone.",
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Current password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && password.isNotBlank(),
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        error = null
+                        try {
+                            // Signs out on success, which takes this screen away.
+                            model.deleteAccount(password)
+                        } catch (e: Exception) {
+                            error = friendlyError(e)
+                            busy = false
+                        }
+                    }
+                },
+            ) {
+                if (busy) {
+                    Box(Modifier.size(18.dp)) { CircularProgressIndicator(strokeWidth = 2.dp) }
+                } else {
+                    Text("Delete account", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(enabled = !busy, onClick = onDismiss) { Text("Cancel") }
         },
     )
 }

@@ -40,10 +40,35 @@ object DeepLinks {
         return code
     }
 
+    /**
+     * Share-link token (`/s/<token>`) of a track waiting to be played, or
+     * null. Played once there is a session, like a pending playlist.
+     */
+    var pendingShareToken by mutableStateOf<String?>(null)
+        private set
+
+    fun consumeShareToken(): String? {
+        val token = pendingShareToken
+        pendingShareToken = null
+        return token
+    }
+
     /** Routes any incoming URL to the right pending slot. */
     fun handle(url: String?) {
         inviteCodeFrom(url)?.let { pendingInviteCode = it }
         playlistIdFrom(url)?.let { pendingPlaylistId = it }
+        shareTokenFrom(url)?.let { pendingShareToken = it }
+    }
+
+    /** The token in a track share link — `https://host/s/<token>` — or null. */
+    fun shareTokenFrom(url: String?): String? {
+        val raw = url?.trim().orEmpty()
+        val path = raw.substringAfter("://", raw).substringBefore('?').substringBefore('#')
+        val segments = path.split('/').filter { it.isNotBlank() }
+        // [host, "s", token]: the host is the first segment once the scheme is gone.
+        val marker = segments.indexOf("s")
+        if (marker < 1 || marker != segments.lastIndex - 1) return null
+        return segments[marker + 1].takeIf { token -> token.all { it.isLetterOrDigit() || it == '-' || it == '_' } }
     }
 
     /** The invite code in a `/register?invite=CODE` link, or null. */

@@ -95,6 +95,8 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("POST /api/auth/password", s.requireAuth(s.handleChangePassword))
         mux.HandleFunc("GET /api/auth/media-token", s.requireAuth(s.handleMediaToken))
         mux.HandleFunc("POST /api/auth/logout-all", s.requireAuth(s.handleLogoutAll))
+        mux.HandleFunc("POST /api/auth/username", s.requireAuth(s.handleRenameAccount))
+        mux.HandleFunc("POST /api/auth/delete-account", s.requireAuth(s.handleDeleteAccount))
 
         // Tracks
         mux.HandleFunc("GET /api/tracks", s.requireAuth(s.handleListTracks))
@@ -121,6 +123,7 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("GET /api/share/{token}", s.handleSharedTrack)
         mux.HandleFunc("GET /api/share/{token}/stream", s.handleSharedStream)
         mux.HandleFunc("GET /api/share/{token}/cover", s.handleSharedCover)
+        mux.HandleFunc("GET /api/share/{token}/track", s.requireAuth(s.handleSharedTrackForMember))
         mux.HandleFunc("GET /api/tracks/{id}/share", s.requireAuth(s.handleGetTrackShare))
         mux.HandleFunc("POST /api/tracks/{id}/share", s.requireAuth(s.handleCreateTrackShare))
         mux.HandleFunc("DELETE /api/tracks/{id}/share", s.requireAuth(s.handleDeleteTrackShare))

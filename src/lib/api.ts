@@ -303,6 +303,50 @@ export function applyMetadataCandidate(trackId: string, candidateId: string): Pr
   })
 }
 
+// ---- account ----------------------------------------------------------------
+
+/**
+ * POST for actions confirmed with the current password. Unlike api(), a 401
+ * here means "wrong password" rather than "session expired", so it must not
+ * sign anyone out — it is just an error to show next to the field.
+ */
+async function postConfirmed<T>(path: string, body: unknown): Promise<T | undefined> {
+  let res: Response
+  try {
+    res = await fetch(gw(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentToken() ?? ""}` },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    throw new Error("Network error — could not reach the server.")
+  }
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data.error) message = data.error
+    } catch {
+      // not JSON
+    }
+    throw new Error(message)
+  }
+  if (res.status === 204) return undefined
+  return (await res.json()) as T
+}
+
+/** Changes the sign-in name; answers a fresh token carrying it. */
+export async function renameAccount(username: string, password: string): Promise<{ token: string; user: User }> {
+  const out = await postConfirmed<{ token: string; user: User }>("/api/auth/username", { username, password })
+  if (!out) throw new Error("The server didn't answer with the new name.")
+  return out
+}
+
+/** Deletes the account. Uploaded tracks stay in the library. */
+export async function deleteAccount(password: string): Promise<void> {
+  await postConfirmed<void>("/api/auth/delete-account", { password })
+}
+
 // ---- sessions ---------------------------------------------------------------
 
 /** Invalidates every session this account has, on every device. */
@@ -368,6 +412,11 @@ export function deleteTrackShare(trackId: string): Promise<void> {
 /** The track behind a share token — no session needed. */
 export function fetchSharedTrack(token: string): Promise<SharedTrack> {
   return api<SharedTrack>(`/api/share/${encodeURIComponent(token)}`)
+}
+
+/** For someone signed in: the track behind a share link, to play in the app. */
+export function fetchSharedTrackForMember(token: string): Promise<Track> {
+  return api<Track>(`/api/share/${encodeURIComponent(token)}/track`)
 }
 
 /** Audio and artwork for a shared track; the token is the only credential. */

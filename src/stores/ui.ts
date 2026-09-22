@@ -54,6 +54,9 @@ interface UIState {
   /** change password dialog */
   passwordOpen: boolean
   setPasswordOpen: (open: boolean) => void
+  /** account settings: name, password, deleting the account */
+  accountOpen: boolean
+  setAccountOpen: (open: boolean) => void
   /** playback settings (crossfade, normalisation) popover */
   playbackSettingsOpen: boolean
   setPlaybackSettingsOpen: (open: boolean) => void
@@ -121,6 +124,8 @@ export const useUIStore = create<UIState>()((set) => ({
   setAndroidAppOpen: (open) => set({ androidAppOpen: open }),
   passwordOpen: false,
   setPasswordOpen: (open) => set({ passwordOpen: open }),
+  accountOpen: false,
+  setAccountOpen: (open) => set({ accountOpen: open }),
   playbackSettingsOpen: false,
   setPlaybackSettingsOpen: (open) => set({ playbackSettingsOpen: open }),
   sidebarOpen: false,
