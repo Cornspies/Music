@@ -32,6 +32,7 @@ import { FavoritesView } from "@/components/music/views/FavoritesView"
 import { OfflineView } from "@/components/music/views/OfflineView"
 import { HistoryView } from "@/components/music/views/HistoryView"
 import { DiscoverView } from "@/components/music/views/DiscoverView"
+import { DuplicatesView } from "@/components/music/views/DuplicatesView"
 import { AdminView } from "@/components/music/views/AdminView"
 import { OfflineBanner } from "@/components/music/OfflineBanner"
 import { PlaybackSettingsDialog } from "@/components/music/PlaybackSettingsDialog"
@@ -139,6 +140,8 @@ function renderView(view: View) {
       return <HistoryView />
     case "discover":
       return <DiscoverView />
+    case "duplicates":
+      return <DuplicatesView />
     case "admin":
       return <AdminView />
   }

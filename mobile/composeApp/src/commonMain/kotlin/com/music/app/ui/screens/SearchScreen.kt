@@ -1,6 +1,7 @@
 package com.music.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -381,8 +382,12 @@ private fun PlaylistBanner(
 @Composable
 private fun ImportCard(job: PlaylistImport, onOpen: (String) -> Unit, onCancel: () -> Unit, onDismiss: () -> Unit) {
     var showFailures by remember(job.id) { mutableStateOf(false) }
+    var showExisting by remember(job.id) { mutableStateOf(false) }
+    var showDuplicates by remember(job.id) { mutableStateOf(false) }
+    val model = LocalAppModel.current
     val parts = buildList {
         if (job.added > 0) add("${job.added} added")
+        if (job.possibleDuplicates.isNotEmpty()) add("${job.possibleDuplicates.size} possible duplicates")
         if (job.existing > 0) add("${job.existing} already in the library")
         if (job.failed > 0) add("${job.failed} failed")
     }
@@ -444,6 +449,50 @@ private fun ImportCard(job: PlaylistImport, onOpen: (String) -> Unit, onCancel: 
             if (job.failures.isNotEmpty()) {
                 TextButton(onClick = { showFailures = !showFailures }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
                     Text(if (showFailures) "Hide what couldn't be added" else "Show what couldn't be added (${job.failures.size})")
+                }
+            }
+        }
+        if (job.possibleDuplicates.isNotEmpty()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { showDuplicates = !showDuplicates }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Text(if (showDuplicates) "Hide the ${job.possibleDuplicates.size} possible duplicates" else "Show the ${job.possibleDuplicates.size} possible duplicates")
+                }
+                Spacer(Modifier.width(12.dp))
+                TextButton(onClick = { model.push(Screen.Duplicates) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Text("Review", color = Emerald)
+                }
+            }
+            if (showDuplicates) {
+                job.possibleDuplicates.forEach { d ->
+                    Text(
+                        "${d.title} — looks like “${d.existingTitle}”" + (if (d.existingArtist.isNotBlank()) " by ${d.existingArtist}" else ""),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        if (job.existingTracks.isNotEmpty()) {
+            TextButton(onClick = { showExisting = !showExisting }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                Text(if (showExisting) "Hide the ${job.existingTracks.size} already in the library" else "Show the ${job.existingTracks.size} already in the library")
+            }
+            if (showExisting) {
+                job.existingTracks.forEach { t ->
+                    Text(
+                        if (t.reason.isBlank()) t.title else "${t.title} — ${t.reason}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                model.tracks?.firstOrNull { it.id == t.trackId }?.let { model.playTrack(it, listOf(it)) }
+                            }
+                            .padding(vertical = 2.dp),
+                    )
                 }
             }
         }

@@ -535,6 +535,9 @@ class ApiClient(private val store: TokenStore) {
     suspend fun discoverAdd(source: String, id: String): Track =
         postJson("/api/discover/add", DiscoverAddRequest(source, id))
 
+    /** Groups of library tracks that look like the same song. */
+    suspend fun libraryDuplicates(): List<DuplicateGroup> = getJson("/api/library/duplicates")
+
     /** Starts importing a playlist link; an import already running for the same link is returned instead. */
     suspend fun discoverImport(source: String, url: String): PlaylistImport =
         postJson("/api/discover/import", ImportRequest(source, url))

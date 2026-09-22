@@ -59,6 +59,8 @@ export function routeToPath(view: View, arg: string | null): string {
       return "/history"
     case "discover":
       return "/discover"
+    case "duplicates":
+      return "/duplicates"
     case "admin":
       return "/admin"
     default:
@@ -93,6 +95,8 @@ export function pathToRoute(pathname: string): Route {
       return { view: "history", arg: null }
     case "discover":
       return { view: "discover", arg: null }
+    case "duplicates":
+      return { view: "duplicates", arg: null }
     case "admin":
       return { view: "admin", arg: null }
     case "login":

@@ -312,11 +312,14 @@ export function DiscoverView() {
 /** One playlist import: progress while it runs, the tally when it's done. */
 function ImportCard({ job, onCancel, onDismiss }: { job: PlaylistImport; onCancel: () => void; onDismiss: () => void }) {
   const [showFailures, setShowFailures] = useState(false)
+  const [showExisting, setShowExisting] = useState(false)
+  const [showDuplicates, setShowDuplicates] = useState(false)
   const active = importActive(job)
   const pct = job.total > 0 ? Math.round((job.done / job.total) * 100) : 0
   const title = job.title || "Reading the playlist…"
   const parts: string[] = []
   if (job.added) parts.push(`${job.added} added`)
+  if (job.possibleDuplicates.length) parts.push(`${job.possibleDuplicates.length} possible duplicates`)
   if (job.existing) parts.push(`${job.existing} already in the library`)
   if (job.failed) parts.push(`${job.failed} failed`)
 
@@ -379,6 +382,65 @@ function ImportCard({ job, onCancel, onDismiss }: { job: PlaylistImport; onCance
       {active && job.total > 0 ? (
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
           <div className="h-full bg-emerald-500 transition-[width]" style={{ width: `${pct}%` }} />
+        </div>
+      ) : null}
+      {job.possibleDuplicates.length > 0 ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowDuplicates((v) => !v)}
+            className="text-xs text-amber-300 hover:text-amber-200"
+          >
+            {showDuplicates ? "Hide" : "Show"} the {job.possibleDuplicates.length} possible duplicates
+          </button>
+          <button
+            type="button"
+            onClick={() => useUIStore.getState().navigate("duplicates")}
+            className="ml-3 text-xs text-zinc-400 hover:text-zinc-200"
+          >
+            Review in Duplicates
+          </button>
+          {showDuplicates ? (
+            <ul className="mt-1 flex flex-col gap-0.5 text-xs text-zinc-500">
+              {job.possibleDuplicates.map((d) => (
+                <li key={d.trackId} className="truncate">
+                  <span className="text-zinc-300">{d.title}</span> — looks like “{d.existingTitle}”
+                  {d.existingArtist ? ` by ${d.existingArtist}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      {job.existingTracks.length > 0 ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowExisting((v) => !v)}
+            className="text-xs text-zinc-400 hover:text-zinc-200"
+          >
+            {showExisting ? "Hide" : "Show"} the {job.existingTracks.length} already in the library
+          </button>
+          {showExisting ? (
+            <ul className="mt-1 flex flex-col gap-0.5 text-xs text-zinc-500">
+              {job.existingTracks.map((t) => (
+                <li key={t.trackId} className="truncate">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const track = useLibraryStore.getState().tracks.find((x) => x.id === t.trackId)
+                      if (track) usePlayerStore.getState().playNow(track, [track])
+                    }}
+                    className="truncate text-left text-zinc-300 hover:text-emerald-300"
+                    title="Play"
+                  >
+                    {t.title}
+                  </button>
+                  {t.reason ? <span> — {t.reason}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
       {job.failures.length > 0 ? (

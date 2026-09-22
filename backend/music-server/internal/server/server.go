@@ -113,6 +113,7 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("GET /api/discover/search", s.requireAuth(s.handleDiscoverSearch))
         mux.HandleFunc("POST /api/discover/add", s.requireAuth(s.handleDiscoverAdd))
         mux.HandleFunc("GET /api/discover/artwork", s.requireMediaAuth(s.handleDiscoverArtwork))
+        mux.HandleFunc("GET /api/library/duplicates", s.requireAuth(s.handleLibraryDuplicates))
         mux.HandleFunc("POST /api/discover/import", s.requireAuth(s.handleStartImport))
         mux.HandleFunc("GET /api/discover/imports", s.requireAuth(s.handleListImports))
         mux.HandleFunc("DELETE /api/discover/imports/{id}", s.requireAuth(s.handleCancelImport))

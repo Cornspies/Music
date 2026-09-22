@@ -20,6 +20,7 @@ import type {
   Lyrics,
   DiscoverSource,
   DiscoverSearch,
+  DuplicateGroup,
   PlaylistImport,
   MetadataQueueStatus,
   SilenceInfo,
@@ -315,6 +316,11 @@ export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?:
 }
 
 // ---- delta sync -------------------------------------------------------------
+
+/** Groups of library tracks that look like the same song. */
+export function fetchDuplicates(): Promise<DuplicateGroup[]> {
+  return api<DuplicateGroup[]>("/api/library/duplicates")
+}
 
 // ---- discover ---------------------------------------------------------------
 

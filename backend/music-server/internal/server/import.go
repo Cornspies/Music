@@ -63,16 +63,38 @@ type PlaylistImport struct {
 	// PlaylistID is the library playlist the tracks go into.
 	PlaylistID string `json:"playlistId,omitempty"`
 	// Error is why the whole import stopped, when it did.
-	Error      string          `json:"error,omitempty"`
-	Failures   []ImportFailure `json:"failures"`
-	StartedAt  string          `json:"startedAt"`
-	FinishedAt string          `json:"finishedAt,omitempty"`
+	Error    string          `json:"error,omitempty"`
+	Failures []ImportFailure `json:"failures"`
+	// ExistingTracks are the entries that were in the library already (the
+	// same video, added before) and were only linked into the playlist.
+	ExistingTracks []ImportExisting `json:"existingTracks"`
+	// PossibleDuplicates are entries that were added although a track in
+	// the library looks like the same song — for someone to go through.
+	PossibleDuplicates []ImportDuplicate `json:"possibleDuplicates"`
+	StartedAt          string            `json:"startedAt"`
+	FinishedAt         string            `json:"finishedAt,omitempty"`
+}
+
+// ImportDuplicate pairs an added track with the one it may duplicate.
+type ImportDuplicate struct {
+	Title          string `json:"title"`
+	TrackID        string `json:"trackId"`
+	ExistingID     string `json:"existingId"`
+	ExistingTitle  string `json:"existingTitle"`
+	ExistingArtist string `json:"existingArtist"`
 }
 
 // ImportFailure is one entry that couldn't be added.
 type ImportFailure struct {
 	Title  string `json:"title"`
 	Reason string `json:"reason"`
+}
+
+// ImportExisting is one entry whose video was in the library already.
+type ImportExisting struct {
+	Title   string `json:"title"`
+	TrackID string `json:"trackId"`
+	Reason  string `json:"reason"`
 }
 
 const (
@@ -104,6 +126,8 @@ func (j *importJob) snapshot() PlaylistImport {
 	defer j.mu.Unlock()
 	out := j.PlaylistImport
 	out.Failures = append([]ImportFailure{}, j.Failures...)
+	out.ExistingTracks = append([]ImportExisting{}, j.ExistingTracks...)
+	out.PossibleDuplicates = append([]ImportDuplicate{}, j.PossibleDuplicates...)
 	return out
 }
 
@@ -203,7 +227,8 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 	job := &importJob{
 		PlaylistImport: PlaylistImport{
 			ID: uuid.NewString(), Source: src.key(), ListID: listID, State: importQueued,
-			Failures: []ImportFailure{}, StartedAt: nowRFC3339(),
+			Failures: []ImportFailure{}, ExistingTracks: []ImportExisting{}, PossibleDuplicates: []ImportDuplicate{},
+			StartedAt: nowRFC3339(),
 		},
 		user: u, src: src, listID: listID,
 	}
@@ -295,7 +320,7 @@ func (s *Server) runImport(job *importJob) {
 			return
 		}
 		job.update(func(p *PlaylistImport) { p.Current = e.Title })
-		trackID, added, err := s.importEntry(ctx, job, e)
+		trackID, added, why, lookalike, err := s.importEntry(ctx, job, e)
 		if err != nil {
 			if ctx.Err() != nil {
 				job.finish(importCancelled, "")
@@ -322,35 +347,64 @@ func (s *Server) runImport(job *importJob) {
 			p.Done++
 			if added {
 				p.Added++
+				if lookalike != nil {
+					p.PossibleDuplicates = append(p.PossibleDuplicates, ImportDuplicate{
+						Title: e.Title, TrackID: trackID,
+						ExistingID: lookalike.ID, ExistingTitle: lookalike.Title, ExistingArtist: lookalike.Artist,
+					})
+				}
 			} else {
 				p.Existing++
+				p.ExistingTracks = append(p.ExistingTracks, ImportExisting{Title: e.Title, TrackID: trackID, Reason: why})
 			}
 		})
 	}
 	job.finish(importDone, "")
 	snap := job.snapshot()
-	log.Printf("import: %q done — %d added, %d already there, %d failed", snap.Title, snap.Added, snap.Existing, snap.Failed)
+	log.Printf("import: %q done — %d added (%d possible duplicates), %d already there, %d failed",
+		snap.Title, snap.Added, len(snap.PossibleDuplicates), snap.Existing, snap.Failed)
 }
 
-// importEntry makes sure one entry is in the library: the existing track,
-// or a fresh download. added says which.
-func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResult) (string, bool, error) {
+// importEntry makes sure one entry is in the library: the existing track
+// when the very same video was added before (why says so), or a fresh
+// download. A download that looks like a song already in the library still
+// goes ahead — a wrong guess would lose someone a song — but the lookalike
+// is returned so the import can point it out.
+func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResult) (id string, added bool, why string, lookalike *Track, err error) {
 	var existing string
 	if err := s.db.QueryRow(`SELECT id FROM tracks WHERE source = ? AND source_id = ?`, job.src.key(), e.ID).Scan(&existing); err == nil {
-		return existing, false, nil
+		return existing, false, "the same video was added before", nil, nil
 	}
+	lookalike = s.sameSongInLibrary(job.user.ID, e)
 	fetchCtx, cancel := context.WithTimeout(ctx, importFetchTime)
 	defer cancel()
 	dl, err := job.src.fetch(fetchCtx, e.ID)
 	if err != nil {
-		return "", false, err
+		return "", false, "", nil, err
 	}
 	defer dl.Body.Close()
-	id, err := s.ingestDownload(fetchCtx, job.user, job.src.key(), e.ID, dl)
+	id, err = s.ingestDownload(fetchCtx, job.user, job.src.key(), e.ID, dl)
 	if err != nil {
-		return "", false, err
+		return "", false, "", nil, err
 	}
-	return id, true, nil
+	return id, true, "", lookalike, nil
+}
+
+// sameSongInLibrary looks for a track that is the same song as a listing
+// entry — an upload of it, or another video of it — the way the upload
+// duplicate check does, but forgiving the noise of a video title. The
+// artist is trusted only when the title itself names one ("Artist - Title");
+// a channel name is a hint, never a veto.
+func (s *Server) sameSongInLibrary(userID string, e discoverResult) *Track {
+	artist, title := parseYouTubeTitle(e.Title, "")
+	title = trimDefault(title, e.Title)
+	veto := artist != ""
+	artist = trimDefault(artist, e.Artist)
+	matches := s.findSameSong(userID, title, artist, e.Duration, true, veto)
+	if len(matches) == 0 {
+		return nil
+	}
+	return &matches[0].Track
 }
 
 // playlistForImport returns the user's playlist of that name, creating it

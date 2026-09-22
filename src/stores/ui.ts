@@ -22,6 +22,7 @@ export type View =
   | "offline"
   | "history"
   | "discover"
+  | "duplicates"
   | "admin"
 
 export type PlaylistDialogState =

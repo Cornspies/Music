@@ -210,6 +210,14 @@ export interface DiscoverPlaylist {
   total?: number
 }
 
+/** Library tracks that look like one song (GET /api/library/duplicates). */
+export interface DuplicateGroup {
+  /** "same title and artist" or "same title and length". */
+  reason: string
+  /** Oldest first. */
+  tracks: Track[]
+}
+
 /** A playlist import running on the server. */
 export interface PlaylistImport {
   id: string
@@ -230,6 +238,10 @@ export interface PlaylistImport {
   /** Why the whole import stopped. */
   error?: string
   failures: { title: string; reason: string }[]
+  /** Entries whose video was in the library already; they were only linked. */
+  existingTracks: { title: string; trackId: string; reason: string }[]
+  /** Entries added although a library track looks like the same song — worth a look. */
+  possibleDuplicates: { title: string; trackId: string; existingId: string; existingTitle: string; existingArtist: string }[]
   startedAt: string
   finishedAt?: string
 }

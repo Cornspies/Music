@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Shield
@@ -136,6 +137,15 @@ fun ProfileScreen() {
                 icon = Icons.Filled.History,
                 title = "History",
                 onClick = { model.push(Screen.History) },
+            )
+        }
+
+        // ---- library ----
+        SectionCard("Library") {
+            SettingRow(
+                icon = Icons.Filled.ContentCopy,
+                title = "Find duplicates",
+                onClick = { model.push(Screen.Duplicates) },
             )
         }
 

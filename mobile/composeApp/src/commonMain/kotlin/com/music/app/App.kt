@@ -35,6 +35,7 @@ import com.music.app.ui.components.BackHandler
 import com.music.app.ui.components.NowPlayingBar
 import com.music.app.ui.components.OfflineBanner
 import com.music.app.ui.screens.DownloadsScreen
+import com.music.app.ui.screens.DuplicatesScreen
 import com.music.app.ui.screens.FavoritesScreen
 import com.music.app.ui.screens.HistoryScreen
 import com.music.app.ui.screens.HomeScreen
@@ -62,6 +63,7 @@ sealed interface Screen {
     data object Downloads : Screen
     data object Profile : Screen
     data object History : Screen
+    data object Duplicates : Screen
     data object NowPlaying : Screen
     data class PlaylistDetail(val id: String) : Screen
 }
@@ -172,6 +174,7 @@ private fun MainScreen() {
                         Screen.Downloads -> DownloadsScreen()
                         Screen.Profile -> ProfileScreen()
                         Screen.History -> HistoryScreen()
+                        Screen.Duplicates -> DuplicatesScreen()
                         Screen.NowPlaying -> HomeScreen() // never: the player is always the overlay
                         is Screen.PlaylistDetail -> PlaylistDetailScreen(shown)
                     }

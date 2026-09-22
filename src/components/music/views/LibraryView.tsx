@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Music2, Search, Upload } from "lucide-react"
+import { CopyCheck, Music2, Search, Upload } from "lucide-react"
 import { useLibraryStore, type TrackSort } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { TrackList } from "@/components/music/TrackList"
@@ -60,12 +60,21 @@ export function LibraryView() {
     <div className="p-4 md:p-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Your library</h1>
-        <Button
-          onClick={() => setUploadOpen(true)}
-          className="h-9 bg-emerald-500 text-zinc-950 font-semibold hover:bg-emerald-400"
-        >
-          <Upload className="size-4" /> Upload
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => useUIStore.getState().navigate("duplicates")}
+            className="h-9 border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-800"
+          >
+            <CopyCheck className="size-4" /> Find duplicates
+          </Button>
+          <Button
+            onClick={() => setUploadOpen(true)}
+            className="h-9 bg-emerald-500 text-zinc-950 font-semibold hover:bg-emerald-400"
+          >
+            <Upload className="size-4" /> Upload
+          </Button>
+        </div>
       </header>
 
       {/* toolbar */}

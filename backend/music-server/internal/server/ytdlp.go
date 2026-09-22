@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"music-server/internal/config"
@@ -118,7 +119,70 @@ func (y *ytdlpSource) describe() string {
 	default:
 		fmt.Fprintf(&b, "; cookies: %s (copied to %s)", y.cookies, y.jar)
 	}
+	fmt.Fprintf(&b, "; JS runtime: %s", y.probeJSRuntime())
 	return b.String()
+}
+
+// probeJSRuntime runs the JavaScript runtime yt-dlp will use — Deno unless
+// MUSIC_YTDLP_ARGS picks another — as a child of this process, so it meets
+// the same sandbox yt-dlp's children will. A runtime that works from a
+// shell but dies here is the usual reason YouTube fetches fail under
+// systemd: V8 needs a few syscalls (pkey_alloc & co.) and writable
+// executable memory that a hardened unit denies, and yt-dlp only reports
+// the symptom ("The page needs to be reloaded").
+func (y *ytdlpSource) probeJSRuntime() string {
+	name, bin := "deno", ""
+	for i, a := range y.extra {
+		spec := ""
+		switch {
+		case a == "--js-runtimes" && i+1 < len(y.extra):
+			spec = y.extra[i+1]
+		case strings.HasPrefix(a, "--js-runtimes="):
+			spec = strings.TrimPrefix(a, "--js-runtimes=")
+		}
+		if spec != "" {
+			// "node", "node:/usr/bin/node", or several separated by commas.
+			first, _, _ := strings.Cut(spec, ",")
+			name, bin, _ = strings.Cut(first, ":")
+			break
+		}
+	}
+	if bin == "" {
+		found, err := exec.LookPath(name)
+		if err != nil {
+			return fmt.Sprintf("none — %s is not on the server's PATH; yt-dlp needs Deno (or Node, via MUSIC_YTDLP_ARGS=--js-runtimes node) for YouTube", name)
+		}
+		bin = found
+	}
+	var args []string
+	switch name {
+	case "deno":
+		args = []string{"eval", "1"}
+	case "node", "bun":
+		args = []string{"-e", "1"}
+	default:
+		args = []string{"--version"}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, bin, args...).Run(); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			if ws, ok := exit.ProcessState.Sys().(interface {
+				Signaled() bool
+				Signal() syscall.Signal
+			}); ok && ws.Signaled() {
+				return fmt.Sprintf("%s CRASHES here with %s (works from a shell?) — when the server is a systemd service, its SystemCallFilter= is most likely blocking pkey_alloc/pkey_free/pkey_mprotect, which V8 needs; add them to the filter and make sure MemoryDenyWriteExecute= is off. YouTube fetches will fail until then",
+					bin, ws.Signal())
+			}
+		}
+		return fmt.Sprintf("%s fails to run: %v", bin, err)
+	}
+	version := ""
+	if out, err := exec.CommandContext(ctx, bin, "--version").Output(); err == nil {
+		version, _, _ = strings.Cut(strings.TrimSpace(string(out)), "\n")
+	}
+	return fmt.Sprintf("%s (%s) works", trimDefault(version, name), bin)
 }
 
 // syncCookies copies the exported cookies file into the server's jar when
@@ -568,6 +632,8 @@ func ytdlpFriendly(err error, withCookies bool) string {
 		return "yt-dlp couldn't read YouTube's page — it probably needs updating (yt-dlp -U); the server log has the exact message"
 	case strings.Contains(low, "javascript runtime") || strings.Contains(low, "js runtime"):
 		return "yt-dlp needs a JavaScript runtime on the server (install Deno or Node and set MUSIC_YTDLP_ARGS=--js-runtimes node)"
+	case strings.Contains(low, "page needs to be reloaded") || strings.Contains(low, "challenge"):
+		return "YouTube's player check failed — the JavaScript runtime isn't working on the server (the start-up log's \"JS runtime\" entry says why) or yt-dlp needs updating"
 	}
 	if i := strings.LastIndex(msg, ": "); i >= 0 && i+2 < len(msg) {
 		msg = msg[i+2:]

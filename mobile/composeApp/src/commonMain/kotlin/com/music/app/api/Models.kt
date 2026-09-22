@@ -160,6 +160,10 @@ data class PlaylistImport(
     /** Why the whole import stopped. */
     val error: String? = null,
     val failures: List<ImportFailure> = emptyList(),
+    /** Entries whose video was in the library already; they were only linked. */
+    val existingTracks: List<ImportExisting> = emptyList(),
+    /** Entries added although a library track looks like the same song — worth a look. */
+    val possibleDuplicates: List<ImportDuplicate> = emptyList(),
     val startedAt: String = "",
     val finishedAt: String? = null,
 ) {
@@ -168,6 +172,27 @@ data class PlaylistImport(
 
 @Serializable
 data class ImportFailure(val title: String = "", val reason: String = "")
+
+@Serializable
+data class ImportExisting(val title: String = "", val trackId: String = "", val reason: String = "")
+
+@Serializable
+data class ImportDuplicate(
+    val title: String = "",
+    val trackId: String = "",
+    val existingId: String = "",
+    val existingTitle: String = "",
+    val existingArtist: String = "",
+)
+
+/** Library tracks that look like one song (GET /api/library/duplicates). */
+@Serializable
+data class DuplicateGroup(
+    /** "same title and artist" or "same title and length". */
+    val reason: String = "",
+    /** Oldest first. */
+    val tracks: List<Track> = emptyList(),
+)
 
 @Serializable
 data class ListenedRequest(val seconds: Double)
