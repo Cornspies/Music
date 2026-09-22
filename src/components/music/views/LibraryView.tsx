@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { CopyCheck, Music2, Search, Upload } from "lucide-react"
 import { useLibraryStore, type TrackSort } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
@@ -25,7 +25,9 @@ const SORTS: { value: TrackSort; label: string }[] = [
   { value: "plays", label: "Most played" },
 ]
 
-const INITIAL_ROWS = 50
+// Rows are added in batches as the end of the list comes near, so a big
+// library doesn't render every row up front.
+const PAGE_ROWS = 50
 
 export function LibraryView() {
   const tracks = useLibraryStore((s) => s.tracks)
@@ -34,7 +36,8 @@ export function LibraryView() {
 
   const [sort, setSort] = useState<TrackSort>("created")
   const [query, setQuery] = useState("")
-  const [visible, setVisible] = useState(INITIAL_ROWS)
+  const [visible, setVisible] = useState(PAGE_ROWS)
+  const sentinelRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
 
   const onSortChange = (next: string) => {
@@ -55,6 +58,26 @@ export function LibraryView() {
   }, [tracks, query])
 
   const shown = filtered.slice(0, visible)
+  const complete = shown.length >= filtered.length
+
+  // The next batch loads once the end of the list is within a screen or so
+  // of view. The page scrolls inside <main>, not the window, so that is the
+  // observer's root — otherwise the look-ahead margin would be clipped away.
+  // The observer is recreated after every batch: a new one reports straight
+  // away whether the end is still in reach (a tall screen, a short batch),
+  // which an existing one wouldn't, since nothing about it changed.
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || complete) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setVisible((v) => v + PAGE_ROWS)
+      },
+      { root: el.closest("main"), rootMargin: "0px 0px 800px 0px" }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [visible, complete])
 
   return (
     <div className="p-4 md:p-6">
@@ -104,7 +127,7 @@ export function LibraryView() {
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
-              setVisible(INITIAL_ROWS)
+              setVisible(PAGE_ROWS)
             }}
             className="h-9 border-zinc-700/80 bg-zinc-900/60 pl-9"
           />
@@ -135,22 +158,14 @@ export function LibraryView() {
         ) : (
           <>
             <TrackList tracks={shown} />
-            {filtered.length > shown.length && (
-              <div className="mt-4 flex justify-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setVisible((v) => v + INITIAL_ROWS)}
-                  className="border-zinc-700 bg-zinc-900/60 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
-                >
-                  Show more ({filtered.length - shown.length} remaining)
-                </Button>
-              </div>
+            {complete ? (
+              <p className="mt-4 text-center text-[11px] text-zinc-600">
+                {filtered.length} track{filtered.length === 1 ? "" : "s"} · sorted by{" "}
+                {SORTS.find((s) => s.value === sort)?.label.toLowerCase()}
+              </p>
+            ) : (
+              <div ref={sentinelRef} aria-hidden="true" className="h-px" />
             )}
-            <p className="mt-4 text-center text-[11px] text-zinc-600">
-              {filtered.length} track{filtered.length === 1 ? "" : "s"} · sorted by{" "}
-              {SORTS.find((s) => s.value === sort)?.label.toLowerCase()}
-            </p>
           </>
         )}
       </div>
