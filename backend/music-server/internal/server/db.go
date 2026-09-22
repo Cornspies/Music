@@ -218,6 +218,15 @@ func migrate(db *sql.DB) error {
                         last_error      TEXT NOT NULL DEFAULT ''
                 )`,
                 `CREATE INDEX IF NOT EXISTS idx_metadata_jobs_state ON metadata_jobs(state, created_at)`,
+                `CREATE TABLE IF NOT EXISTS track_shares (
+                        token      TEXT PRIMARY KEY,
+                        track_id   TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                        created_by TEXT REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT,
+                        plays      INTEGER NOT NULL DEFAULT 0
+                )`,
+                `CREATE INDEX IF NOT EXISTS idx_track_shares_track ON track_shares(track_id)`,
                 `CREATE TABLE IF NOT EXISTS invites (
                         code       TEXT PRIMARY KEY,
                         note       TEXT NOT NULL DEFAULT '',

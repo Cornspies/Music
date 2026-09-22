@@ -535,6 +535,25 @@ class ApiClient(private val store: TokenStore) {
     suspend fun discoverAdd(source: String, id: String): Track =
         postJson("/api/discover/add", DiscoverAddRequest(source, id))
 
+    // ---------------------------------------------------------------- share links
+
+    /** The caller's share link for a track, or null when it isn't shared. */
+    suspend fun trackShare(trackId: String): TrackShare? {
+        val response = client.get(url("/api/tracks/$trackId/share")) { auth() }
+        noteRefreshedToken(response)
+        if (!response.status.isSuccess()) return null
+        return response.body()
+    }
+
+    /** Creates the link (or returns the existing one). */
+    suspend fun createTrackShare(trackId: String): TrackShare =
+        postJson("/api/tracks/$trackId/share", ShareRequest())
+
+    /** Revokes the link; it stops working at once. */
+    suspend fun deleteTrackShare(trackId: String) {
+        expectNoContent(client.delete(url("/api/tracks/$trackId/share")) { auth() })
+    }
+
     /** Groups of library tracks that look like the same song. */
     suspend fun libraryDuplicates(): List<DuplicateGroup> = getJson("/api/library/duplicates")
 

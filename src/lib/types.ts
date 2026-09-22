@@ -210,6 +210,31 @@ export interface DiscoverPlaylist {
   total?: number
 }
 
+/** A share link to one track: anyone who has it can play that track. */
+export interface TrackShare {
+  token: string
+  trackId: string
+  createdAt: string
+  /** "" (absent) for a link that doesn't expire. */
+  expiresAt?: string
+  /** How often the link has been opened. */
+  plays: number
+  /** True when the signed-in user created this link. */
+  mine: boolean
+}
+
+/** What the public share page knows about the track behind a link. */
+export interface SharedTrack {
+  title: string
+  artist: string
+  album: string
+  duration: number
+  hasCover: boolean
+  /** Who made the link. */
+  sharedBy: string
+  coverColor?: string
+}
+
 /** Library tracks that look like one song (GET /api/library/duplicates). */
 export interface DuplicateGroup {
   /** "same title and artist" or "same title and length". */

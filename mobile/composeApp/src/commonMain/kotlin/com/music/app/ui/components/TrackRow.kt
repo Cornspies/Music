@@ -32,6 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import com.music.app.api.friendlyError
+import com.music.app.plainTextClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -71,6 +74,11 @@ fun TrackRow(
     val mine = model.user?.let { it.id == track.uploadedBy.id || it.isAdmin } == true
     var menuOpen by remember { mutableStateOf(false) }
     var reviewOpen by remember { mutableStateOf(false) }
+    // Share link: made on demand, copied to the clipboard, reported once.
+    var sharing by remember(track.id) { mutableStateOf(false) }
+    var shareMessage by remember(track.id) { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val lookingUp = track.metadataStatus == "queued" || track.metadataStatus == "running"
 
     Box(modifier) {
@@ -139,6 +147,39 @@ fun TrackRow(
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(
+                text = { Text(if (sharing) "Copying link…" else "Copy share link") },
+                enabled = !sharing,
+                onClick = {
+                    sharing = true
+                    scope.launch {
+                        try {
+                            // A link anyone can open, account or not.
+                            clipboard.setClipEntry(plainTextClipEntry(model.shareLinkFor(track)))
+                            shareMessage = "Link copied"
+                        } catch (e: Exception) {
+                            shareMessage = friendlyError(e)
+                        } finally {
+                            sharing = false
+                            menuOpen = false
+                        }
+                    }
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Stop sharing") },
+                onClick = {
+                    menuOpen = false
+                    scope.launch {
+                        shareMessage = try {
+                            model.stopSharing(track)
+                            "Link turned off"
+                        } catch (e: Exception) {
+                            friendlyError(e)
+                        }
+                    }
+                },
+            )
+            DropdownMenuItem(
                 text = { Text("Check track details") },
                 onClick = {
                     menuOpen = false
@@ -150,6 +191,14 @@ fun TrackRow(
 
     if (reviewOpen) {
         MetadataReviewDialog(tracks = listOf(track), onDismiss = { reviewOpen = false })
+    }
+
+    shareMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { shareMessage = null },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { shareMessage = null }) { Text("OK") } },
+        )
     }
 
 }

@@ -7,8 +7,10 @@ import type { User } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
+import { useUIStore } from "@/stores/ui"
 import { AuthView } from "@/components/music/AuthView"
 import { AppShell } from "@/components/music/AppShell"
+import { SharePage } from "@/components/music/SharePage"
 import { useRouteSync } from "@/hooks/use-route-sync"
 
 const emptySubscribe = () => () => {}
@@ -28,6 +30,8 @@ function Splash() {
 
 export default function Home() {
   const token = useAuthStore((s) => s.token)
+  const view = useUIStore((s) => s.view)
+  const viewArg = useUIStore((s) => s.viewArg)
   // Adopt the current URL and follow browser back/forward. Runs before the
   // token check so a deep link survives the login round-trip.
   useRouteSync()
@@ -59,5 +63,9 @@ export default function Home() {
   }, [mounted, token])
 
   if (!mounted) return <Splash />
+  // A share link is for someone without an account, so it is answered
+  // before the sign-in gate — and for a signed-in visitor too, who would
+  // otherwise land on their library instead of the track they followed.
+  if (view === "share" && viewArg) return <SharePage token={viewArg} />
   return token ? <AppShell /> : <AuthView />
 }

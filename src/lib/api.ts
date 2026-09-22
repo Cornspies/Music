@@ -22,6 +22,8 @@ import type {
   DiscoverSearch,
   DuplicateGroup,
   PlaylistImport,
+  TrackShare,
+  SharedTrack,
   MetadataQueueStatus,
   SilenceInfo,
   MetadataCandidate,
@@ -316,6 +318,45 @@ export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?:
 }
 
 // ---- delta sync -------------------------------------------------------------
+
+// ---- share links -------------------------------------------------------------
+
+/** The caller's share link for a track, or null when it isn't shared. */
+export async function fetchTrackShare(trackId: string): Promise<TrackShare | null> {
+  try {
+    return await api<TrackShare>(`/api/tracks/${trackId}/share`)
+  } catch {
+    return null
+  }
+}
+
+/** Creates the link (or returns the existing one). */
+export function createTrackShare(trackId: string, expiresInDays = 0): Promise<TrackShare> {
+  return api<TrackShare>(`/api/tracks/${trackId}/share`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresInDays }),
+  })
+}
+
+/** Revokes the link; it stops working at once. */
+export function deleteTrackShare(trackId: string): Promise<void> {
+  return api<void>(`/api/tracks/${trackId}/share`, { method: "DELETE" })
+}
+
+/** The track behind a share token — no session needed. */
+export function fetchSharedTrack(token: string): Promise<SharedTrack> {
+  return api<SharedTrack>(`/api/share/${encodeURIComponent(token)}`)
+}
+
+/** Audio and artwork for a shared track; the token is the only credential. */
+export function sharedStreamUrl(token: string): string {
+  return gw(`/api/share/${encodeURIComponent(token)}/stream`)
+}
+
+export function sharedCoverUrl(token: string): string {
+  return gw(`/api/share/${encodeURIComponent(token)}/cover`)
+}
 
 /** Groups of library tracks that look like the same song. */
 export function fetchDuplicates(): Promise<DuplicateGroup[]> {

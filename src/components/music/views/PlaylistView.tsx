@@ -17,6 +17,7 @@ import {
 import { api } from "@/lib/api"
 import { formatTotal, hashGradient } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { copyText } from "@/lib/clipboard"
 import type { PlaylistDetail } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
@@ -42,45 +43,15 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 /**
- * Copies a shareable link to a playlist.
- *
- * The link is this app's own URL, so it works in any browser and — on Android
- * with a matching build — opens the app. navigator.clipboard needs a secure
- * context, which a self-hosted instance reached over plain http on a LAN won't
- * have, so there's a fallback for that case.
+ * Copies a shareable link to a playlist. The link is this app's own URL, so
+ * it works in any browser and — on Android with a matching build — opens
+ * the app. Whoever follows it still needs an account on this server; a
+ * single track can be shared with someone who hasn't (see ShareDialog).
  */
 async function copyPlaylistLink(playlistId: string): Promise<void> {
   const url = `${window.location.origin}/playlists/${encodeURIComponent(playlistId)}`
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(url)
-    } else {
-      legacyCopy(url)
-    }
-    toast.success("Link copied")
-  } catch {
-    try {
-      legacyCopy(url)
-      toast.success("Link copied")
-    } catch {
-      toast.error(`Couldn't copy automatically. The link is: ${url}`)
-    }
-  }
-}
-
-function legacyCopy(text: string): void {
-  const field = document.createElement("textarea")
-  field.value = text
-  field.setAttribute("readonly", "")
-  field.style.position = "fixed"
-  field.style.opacity = "0"
-  document.body.appendChild(field)
-  field.select()
-  try {
-    document.execCommand("copy")
-  } finally {
-    document.body.removeChild(field)
-  }
+  if (await copyText(url)) toast.success("Link copied")
+  else toast.error(`Couldn't copy automatically. The link is: ${url}`)
 }
 
 export function PlaylistView() {

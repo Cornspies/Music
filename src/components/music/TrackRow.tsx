@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Scissors,
   Play,
+  Share2,
   Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -342,6 +343,9 @@ function TrackRowMenu({
     <DropdownMenuContent align="end" className="w-52" onClick={(e) => e.stopPropagation()}>
       <DropdownMenuItem onClick={() => usePlayerStore.getState().playNow(track)}>
         <Play className="size-4" /> Play
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => useUIStore.getState().setShareTrack(track)}>
+        <Share2 className="size-4" /> Share link…
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {

@@ -113,6 +113,15 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("GET /api/discover/search", s.requireAuth(s.handleDiscoverSearch))
         mux.HandleFunc("POST /api/discover/add", s.requireAuth(s.handleDiscoverAdd))
         mux.HandleFunc("GET /api/discover/artwork", s.requireMediaAuth(s.handleDiscoverArtwork))
+        // Share links: the three public ones take their token in the path
+        // and never look at the session — that is what makes a link work for
+        // someone without an account.
+        mux.HandleFunc("GET /api/share/{token}", s.handleSharedTrack)
+        mux.HandleFunc("GET /api/share/{token}/stream", s.handleSharedStream)
+        mux.HandleFunc("GET /api/share/{token}/cover", s.handleSharedCover)
+        mux.HandleFunc("GET /api/tracks/{id}/share", s.requireAuth(s.handleGetTrackShare))
+        mux.HandleFunc("POST /api/tracks/{id}/share", s.requireAuth(s.handleCreateTrackShare))
+        mux.HandleFunc("DELETE /api/tracks/{id}/share", s.requireAuth(s.handleDeleteTrackShare))
         mux.HandleFunc("GET /api/library/duplicates", s.requireAuth(s.handleLibraryDuplicates))
         mux.HandleFunc("POST /api/discover/import", s.requireAuth(s.handleStartImport))
         mux.HandleFunc("GET /api/discover/imports", s.requireAuth(s.handleListImports))

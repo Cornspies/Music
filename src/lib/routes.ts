@@ -61,6 +61,8 @@ export function routeToPath(view: View, arg: string | null): string {
       return "/discover"
     case "duplicates":
       return "/duplicates"
+    case "share":
+      return arg ? `/s/${encodeURIComponent(arg)}` : "/"
     case "admin":
       return "/admin"
     default:
@@ -97,6 +99,9 @@ export function pathToRoute(pathname: string): Route {
       return { view: "discover", arg: null }
     case "duplicates":
       return { view: "duplicates", arg: null }
+    case "s":
+      // A share link: one track, playable without an account.
+      return parts[1] ? { view: "share", arg: parts[1] } : { view: "home", arg: null }
     case "admin":
       return { view: "admin", arg: null }
     case "login":

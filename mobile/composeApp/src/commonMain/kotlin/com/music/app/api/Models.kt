@@ -185,6 +185,23 @@ data class ImportDuplicate(
     val existingArtist: String = "",
 )
 
+/** A share link to one track: anyone who has it can play that track. */
+@Serializable
+data class TrackShare(
+    val token: String,
+    val trackId: String = "",
+    val createdAt: String = "",
+    /** null for a link that doesn't expire. */
+    val expiresAt: String? = null,
+    /** How often the link has been opened. */
+    val plays: Int = 0,
+    /** True when the signed-in user created this link. */
+    val mine: Boolean = false,
+)
+
+@Serializable
+data class ShareRequest(val expiresInDays: Int = 0)
+
 /** Library tracks that look like one song (GET /api/library/duplicates). */
 @Serializable
 data class DuplicateGroup(

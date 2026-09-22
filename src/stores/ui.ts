@@ -23,6 +23,7 @@ export type View =
   | "history"
   | "discover"
   | "duplicates"
+  | "share"
   | "admin"
 
 export type PlaylistDialogState =
@@ -63,6 +64,9 @@ interface UIState {
   /** tracks open in the metadata review dialog (from a track's menu) */
   metadataReviewTracks: Track[] | null
   setMetadataReviewTracks: (tracks: Track[] | null) => void
+  /** track open in the share-link dialog */
+  shareTrack: Track | null
+  setShareTrack: (track: Track | null) => void
   /** track open in the trim editor */
   trimTrack: Track | null
   setTrimTrack: (track: Track | null) => void
@@ -128,6 +132,8 @@ export const useUIStore = create<UIState>()((set) => ({
   editTrackId: null,
   metadataReviewTracks: null,
   setMetadataReviewTracks: (tracks) => set({ metadataReviewTracks: tracks }),
+  shareTrack: null,
+  setShareTrack: (track) => set({ shareTrack: track }),
   trimTrack: null,
   setTrimTrack: (track) => set({ trimTrack: track }),
   setEditTrackId: (id) => set({ editTrackId: id }),

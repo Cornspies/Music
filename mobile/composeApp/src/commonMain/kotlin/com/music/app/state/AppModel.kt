@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.music.app.Screen
+import com.music.app.DeepLinks
 import com.music.app.api.ApiClient
 import com.music.app.api.AuthConfig
 import com.music.app.api.ApiException
@@ -672,6 +673,20 @@ class AppModel(
         // The audio is gone from the server, so a downloaded copy is stale.
         downloads.remove(track.id)
         loadStats()
+    }
+
+    /**
+     * The share link for a track, making one if there isn't one yet.
+     * @throws Exception with the server's message.
+     */
+    suspend fun shareLinkFor(track: Track): String {
+        val share = api.trackShare(track.id) ?: api.createTrackShare(track.id)
+        return DeepLinks.trackShareUrl(api.baseUrl, share.token)
+    }
+
+    /** Turns the link off; it stops working at once. */
+    suspend fun stopSharing(track: Track) {
+        api.deleteTrackShare(track.id)
     }
 
     fun openSharedPlaylist(id: String) {

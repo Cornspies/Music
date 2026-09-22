@@ -63,6 +63,7 @@ func (s *Server) queueAnalysis(trackID string) {
 func (s *Server) StartBackgroundWork() {
 	s.initDiscoverSources()
 	s.startImportWorker()
+	s.startShareCleanup()
 	s.purgeStaleLyricsMisses()
 	go s.backfillCoverColors()
 	s.startMetadataWorker()

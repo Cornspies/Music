@@ -17,6 +17,7 @@ import { PasswordDialog } from "@/components/music/PasswordDialog"
 import { UploadDialog } from "@/components/music/UploadDialog"
 import { EditTrackDialog } from "@/components/music/EditTrackDialog"
 import { MetadataReviewDialog } from "@/components/music/MetadataReviewDialog"
+import { ShareDialog } from "@/components/music/ShareDialog"
 import { TrimDialog } from "@/components/music/TrimDialog"
 import { PlaylistDialog } from "@/components/music/PlaylistDialog"
 import { HomeView } from "@/components/music/views/HomeView"
@@ -257,6 +258,7 @@ export function AppShell() {
       <EditTrackDialog />
       <GlobalMetadataReview />
       <TrimDialog />
+      <ShareDialog />
       <PlaylistDialog />
     </div>
   )

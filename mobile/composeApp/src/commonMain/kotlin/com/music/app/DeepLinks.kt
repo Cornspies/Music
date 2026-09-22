@@ -104,4 +104,14 @@ object DeepLinks {
         val root = baseUrl.trim().trimEnd('/')
         return "$root/playlists/$playlistId"
     }
+
+    /**
+     * The link for a shared track. Unlike a playlist link this one opens for
+     * anyone — the page behind it needs no account — so it is the one to
+     * send to someone who isn't on this server.
+     */
+    fun trackShareUrl(baseUrl: String, token: String): String {
+        val root = baseUrl.trim().trimEnd('/')
+        return "$root/s/$token"
+    }
 }
