@@ -12,7 +12,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-internal actual val defaultBaseUrl: String = "http://10.0.2.2:3001" // emulator → host loopback
+internal actual val defaultBaseUrl: String = "https://music.cornspies.com"
 
 /**
  * Token storage backed by the Android Keystore.

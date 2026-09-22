@@ -32,13 +32,23 @@ running natively on both platforms:
 
 ## Configure the server URL
 
-Set it once on the login screen — it's persisted per device:
+A fresh installation points at `https://music.cornspies.com`; change it on
+the login screen and it is persisted per device. Point your own builds
+somewhere else by editing `defaultBaseUrl` in
+`composeApp/src/{androidMain,iosMain}/kotlin/com/music/app/TokenStore.*.kt`.
 
 | Environment | URL |
 |---|---|
-| Android emulator | `http://10.0.2.2:3001` (default) |
-| iOS simulator | `http://localhost:3001` (default) |
-| Physical device | `http://<YOUR-LAN-IP>:3001` (e.g. `http://192.168.1.20:3001`) |
+| Installed app | `https://music.cornspies.com` (default) |
+| Android emulator → server on this machine | `http://10.0.2.2:3001` |
+| iOS simulator → server on this machine | `http://localhost:3001` |
+| Physical device → server on this machine | `http://<YOUR-LAN-IP>:3001` (e.g. `http://192.168.1.20:3001`) |
+
+Enter the site's origin, **not** its API path — the app appends `/api/…`
+itself, so `https://music.cornspies.com` is right and
+`https://music.cornspies.com/api` would ask the server for `/api/api/…`.
+What you type is used as it stands, so a server that really does live under
+a path works too.
 
 Notes:
 - Plain `http://` is accepted for **private addresses only** (localhost, the
@@ -98,6 +108,48 @@ gradle wrapper --gradle-version 9.7.1
 
 Or simply open the project root in **Android Studio** and press ▶ on the
 `androidApp` configuration.
+
+#### Release build for the server's download list
+
+```bash
+./gradlew :androidApp:releaseApk
+# → mobile/dist/Music-<versionName>.apk
+```
+
+That is the name the server's "Android app" list expects, so the file can be
+copied straight into its APK directory (`MUSIC_APK_DIR`, default
+`<data dir>/apk`). Raise `versionName`/`versionCode` in
+`androidApp/build.gradle.kts` before each build; both files can sit in the
+directory, and the newest version is offered first.
+
+**Signing is required** — an unsigned APK will not install, and Android only
+accepts an update when it carries the same key as the version already on the
+phone. Create a key once and keep it safe; losing it means every installation
+has to be uninstalled before it can be updated.
+
+```bash
+keytool -genkeypair -v -keystore ~/music-release.jks -alias music \
+        -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Then either write `mobile/keystore.properties` (gitignored):
+
+```properties
+storeFile=/home/you/music-release.jks
+storePassword=...
+keyAlias=music
+keyPassword=...
+```
+
+…or pass the same values on the command line:
+
+```bash
+./gradlew :androidApp:releaseApk -Pmusic.storeFile=$HOME/music-release.jks \
+    -Pmusic.storePassword=... -Pmusic.keyAlias=music -Pmusic.keyPassword=...
+```
+
+Without either, the build still runs and the task warns that the APK is
+unsigned.
 
 ### iOS
 

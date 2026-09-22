@@ -210,6 +210,23 @@ export interface DiscoverPlaylist {
   total?: number
 }
 
+/** One Android build the server offers (GET /api/app/releases). */
+export interface AppRelease {
+  version: string
+  fileName: string
+  size: number
+  /** When the file was put on the server. */
+  modifiedAt: string
+}
+
+/** Tracks changed since a timestamp (GET /api/tracks/changes). */
+export interface TrackChanges {
+  tracks: Track[]
+  deleted: string[]
+  /** Pass this back as `since` on the next call. */
+  now: string
+}
+
 /** A share link to one track: anyone who has it can play that track. */
 export interface TrackShare {
   token: string

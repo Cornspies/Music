@@ -12,6 +12,7 @@ import { PlayerBar } from "@/components/music/PlayerBar"
 import { QueuePanel } from "@/components/music/QueuePanel"
 import { LyricsSidebar } from "@/components/music/LyricsSidebar"
 import { NowPlayingView } from "@/components/music/NowPlayingView"
+import { AndroidAppDialog } from "@/components/music/AndroidAppDialog"
 import { ShortcutsDialog } from "@/components/music/ShortcutsDialog"
 import { PasswordDialog } from "@/components/music/PasswordDialog"
 import { UploadDialog } from "@/components/music/UploadDialog"
@@ -252,6 +253,7 @@ export function AppShell() {
       <QueuePanel />
       <NowPlayingView />
       <ShortcutsDialog />
+      <AndroidAppDialog />
       <PasswordDialog />
       <PlaybackSettingsDialog />
       <UploadDialog />

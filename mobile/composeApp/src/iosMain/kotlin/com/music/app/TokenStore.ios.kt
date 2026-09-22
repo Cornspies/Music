@@ -38,7 +38,7 @@ import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
 import platform.posix.memcpy
 
-internal actual val defaultBaseUrl: String = "http://localhost:3001" // simulator → host loopback
+internal actual val defaultBaseUrl: String = "https://music.cornspies.com"
 
 /**
  * Token storage backed by the iOS Keychain.

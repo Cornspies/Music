@@ -42,10 +42,10 @@ import com.music.app.ui.theme.Emerald
 import kotlinx.coroutines.launch
 
 /**
- * Login / register (toggle) + server URL configuration. The server URL is persisted in
- * TokenStore and can be changed any time from this screen (practical multi-device story:
- * Android emulator → http://10.0.2.2:3001, iOS simulator → http://localhost:3001,
- * real devices → http://<LAN-IP>:3001).
+ * Login / register (toggle) + server URL configuration. A fresh installation
+ * points at [defaultBaseUrl]; another server can be typed here at any time
+ * and is persisted in TokenStore. What goes in is the site's origin — the
+ * app appends "/api/…" itself.
  */
 @Composable
 fun LoginScreen() {

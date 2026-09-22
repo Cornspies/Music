@@ -49,7 +49,7 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
 
   useEffect(() => {
     let alive = true
-    fetchWaveform(track.id).then((p) => {
+    fetchWaveform(track.id, track.updatedAt).then((p) => {
       if (alive) setPeaks(p)
     })
     // Only synced lyrics care about the cut, so the switch appears only for
@@ -62,7 +62,7 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     return () => {
       alive = false
     }
-  }, [track.id])
+  }, [track.id, track.updatedAt])
 
   // One preview element, stopped when the dialog goes away.
   useEffect(() => {
@@ -127,7 +127,9 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     try {
       const updated = await trimTrack(track.id, start, end, shiftLyrics)
       toast.success(`Cut to ${formatDuration(updated.duration)}`)
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      // The cut file is analysed again in the background, so the library is
+      // followed for a while: the new waveform appears when it is ready.
+      useLibraryStore.getState().followAnalysis(updated.id)
       onClose()
     } catch (e) {
       toast.error((e as Error).message)
@@ -142,7 +144,7 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     try {
       const updated = await restoreTrack(track.id)
       toast.success(`Original restored (${formatDuration(updated.duration)})`)
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      useLibraryStore.getState().followAnalysis(updated.id)
       onClose()
     } catch (e) {
       toast.error((e as Error).message)

@@ -961,17 +961,23 @@ class AppModel(
     private val waveformRequests = mutableSetOf<String>()
 
     /** Peaks for [track]'s seek bar, or null while loading / unavailable. */
-    fun waveformFor(track: Track): List<Int>? = waveforms[track.id]
+    // The peaks describe the audio, which can change under the same id (a
+    // trim re-analyses the file), so they are kept against the track's
+    // updatedAt — a changed track is simply a different entry.
+    private fun waveformKey(track: Track) = "${track.id}:${track.updatedAt}"
+
+    fun waveformFor(track: Track): List<Int>? = waveforms[waveformKey(track)]
 
     /** Fetches the waveform for [track] if the server has one and it isn't cached yet. */
     fun loadWaveform(track: Track) {
         if (!track.hasWaveform || offlineMode) return
-        if (track.id in waveforms || !waveformRequests.add(track.id)) return
+        val key = waveformKey(track)
+        if (key in waveforms || !waveformRequests.add(key)) return
         scope.launch {
             try {
-                runCatching { api.waveform(track.id) }.getOrNull()?.let { waveforms[track.id] = it }
+                runCatching { api.waveform(track.id) }.getOrNull()?.let { waveforms[key] = it }
             } finally {
-                waveformRequests.remove(track.id)
+                waveformRequests.remove(key)
             }
         }
     }

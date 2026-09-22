@@ -19,6 +19,7 @@ import {
   Plus,
   Search,
   ShieldCheck,
+  Smartphone,
   SquareLibrary,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -271,6 +272,13 @@ export function SidebarContent() {
             <KeyRound className="size-3" aria-hidden="true" /> Password
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => useUIStore.getState().setAndroidAppOpen(true)}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-900/40 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+        >
+          <Smartphone className="size-3" aria-hidden="true" /> Android app
+        </button>
       </div>
     </div>
   )

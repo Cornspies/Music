@@ -36,9 +36,11 @@ export function WaveformSeek({
   height = 28,
   fallback,
 }: WaveformSeekProps) {
-  // Peaks are remembered together with the id they belong to, so a track
-  // change simply stops matching rather than needing a reset in the effect.
-  const [loaded, setLoaded] = useState<{ id: string; peaks: number[] | null } | null>(null)
+  // Peaks are remembered together with the version of the track they
+  // belong to, so a track change — or the same track re-analysed after a
+  // trim — simply stops matching rather than needing a reset in the effect.
+  const version = `${track.id}:${track.updatedAt}`
+  const [loaded, setLoaded] = useState<{ version: string; peaks: number[] | null } | null>(null)
   const [dragging, setDragging] = useState<number | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   // The player bar and the full-screen view can both show the same track.
@@ -47,15 +49,17 @@ export function WaveformSeek({
   useEffect(() => {
     if (!track.hasWaveform) return
     let alive = true
-    fetchWaveform(track.id).then((p) => {
-      if (alive) setLoaded({ id: track.id, peaks: p })
+    fetchWaveform(track.id, track.updatedAt).then((p) => {
+      if (alive) setLoaded({ version, peaks: p })
     })
     return () => {
       alive = false
     }
-  }, [track.id, track.hasWaveform])
+  }, [track.id, track.updatedAt, track.hasWaveform, version])
 
-  const peaks = loaded?.id === track.id ? loaded.peaks : null
+  // While a re-analysis is pending the track has no waveform, and the old
+  // one no longer matches the audio — the plain slider stands in.
+  const peaks = track.hasWaveform && loaded?.version === version ? loaded.peaks : null
   if (!peaks || peaks.length === 0) return <>{fallback}</>
 
   const fraction = duration > 0 ? Math.min(1, Math.max(0, (dragging ?? position) / duration)) : 0

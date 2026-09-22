@@ -22,6 +22,8 @@ import type {
   DiscoverSearch,
   DuplicateGroup,
   PlaylistImport,
+  AppRelease,
+  TrackChanges,
   TrackShare,
   SharedTrack,
   MetadataQueueStatus,
@@ -241,7 +243,9 @@ export function restoreTrack(trackId: string): Promise<Track> {
 
 /** The waveform and lyrics timing cached for a track are stale once its audio changed. */
 function forgetAudioDerived(trackId: string) {
-  waveformCache.delete(trackId)
+  for (const key of waveformCache.keys()) {
+    if (key.startsWith(`${trackId}:`)) waveformCache.delete(key)
+  }
   lyricsCache.delete(trackId)
 }
 
@@ -318,6 +322,23 @@ export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?:
 }
 
 // ---- delta sync -------------------------------------------------------------
+
+/** Tracks changed since `since` (RFC 3339), for catching up without a full reload. */
+export function fetchTrackChanges(since: string): Promise<TrackChanges> {
+  return api<TrackChanges>(`/api/tracks/changes?since=${encodeURIComponent(since)}`)
+}
+
+// ---- the Android app ---------------------------------------------------------
+
+/** Android builds this server offers, newest first; empty when there are none. */
+export function fetchAppReleases(): Promise<AppRelease[]> {
+  return api<AppRelease[]>("/api/app/releases")
+}
+
+/** Download URL for one build (a plain link, so it carries the media token). */
+export function appReleaseUrl(fileName: string): string {
+  return gw(`/api/app/releases/${encodeURIComponent(fileName)}`) + tokenQuery()
+}
 
 // ---- share links -------------------------------------------------------------
 
@@ -453,17 +474,25 @@ export async function saveLyrics(trackId: string, text: string): Promise<Lyrics 
 
 const waveformCache = new Map<string, Promise<number[] | null>>()
 
-/** Peaks for the seek bar, or null when the track hasn't been analysed. */
-export function fetchWaveform(trackId: string): Promise<number[] | null> {
-  let cached = waveformCache.get(trackId)
+/**
+ * Peaks for the seek bar, or null when the track hasn't been analysed.
+ *
+ * The peaks describe the audio, which can change under the same id (a trim
+ * re-analyses the file), so they are cached against the track's updatedAt:
+ * a changed track is simply a different entry, and the stale one ages out
+ * with the rest when the page goes away.
+ */
+export function fetchWaveform(trackId: string, version = ""): Promise<number[] | null> {
+  const key = `${trackId}:${version}`
+  let cached = waveformCache.get(key)
   if (!cached) {
     cached = api<Waveform>(`/api/tracks/${trackId}/waveform`)
       .then((w) => w.peaks)
       .catch(() => {
-        waveformCache.delete(trackId)
+        waveformCache.delete(key)
         return null
       })
-    waveformCache.set(trackId, cached)
+    waveformCache.set(key, cached)
   }
   return cached
 }

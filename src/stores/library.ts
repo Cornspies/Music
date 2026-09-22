@@ -4,7 +4,7 @@
 
 import { create } from "zustand"
 import { toast } from "sonner"
-import { api } from "@/lib/api"
+import { api, fetchTrackChanges } from "@/lib/api"
 import type { Playlist, Stats, Track, TrackPatch } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
 import { useMediaTokenStore } from "@/stores/media-token"
@@ -46,6 +46,8 @@ interface LibraryState {
   removePlaylistTrack: (playlistId: string, trackId: string) => Promise<void>
   deleteTrack: (id: string) => Promise<void>
   updateTrack: (id: string, patch: TrackPatch) => Promise<boolean>
+  /** Picks up a track's server-side changes while its audio is re-analysed. */
+  followAnalysis: (trackId: string) => void
   reset: () => void
 }
 
@@ -298,6 +300,36 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
       toast.error((e as Error).message)
       return false
     }
+  },
+
+  followAnalysis: (trackId) => {
+    // Cutting a track throws away its loudness and waveform and queues a
+    // fresh analysis, which takes a few seconds. Rather than reloading the
+    // whole library on a guess, ask what changed — a handful of times, at
+    // growing intervals — and stop as soon as the waveform is back.
+    let since = new Date(Date.now() - 60_000).toISOString().replace(/\.\d+Z$/, "Z")
+    const delays = [1500, 3000, 5000, 10_000, 20_000]
+    let step = 0
+    const tick = async () => {
+      try {
+        const changes = await fetchTrackChanges(since)
+        since = changes.now
+        if (changes.tracks.length > 0) {
+          const byID = new Map(changes.tracks.map((t) => [t.id, t]))
+          const merge = (list: Track[]) => list.map((t) => byID.get(t.id) ?? t)
+          set({ tracks: merge(get().tracks), favorites: merge(get().favorites) })
+          for (const t of changes.tracks) {
+            usePlayerStore.getState().replaceTrack(t)
+            useOfflineStore.getState().replaceTrack(t)
+          }
+        }
+        if (get().tracks.find((t) => t.id === trackId)?.hasWaveform) return
+      } catch {
+        // Offline or a hiccup: the next tick tries again.
+      }
+      if (step < delays.length) setTimeout(tick, delays[step++])
+    }
+    setTimeout(tick, delays[step++])
   },
 
   reset: () => {

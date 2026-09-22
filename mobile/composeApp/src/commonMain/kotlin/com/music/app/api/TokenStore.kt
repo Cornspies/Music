@@ -18,9 +18,17 @@ expect class TokenStore() {
 }
 
 /**
- * Platform default for the server URL:
- *  - Android: http://10.0.2.2:3001 (emulator → host loopback).
- *  - iOS:     http://localhost:3001 (simulator → host loopback).
- * Real devices must set the machine's LAN IP on the login screen.
+ * The server a fresh installation talks to, until someone types another one
+ * on the login screen. It is the site's origin, not its API path: every
+ * request appends "/api/…" itself, and share links are built from the same
+ * value. What is typed is taken as it stands — a server may well live under
+ * a path, and quietly rewriting it would only hide the mistake.
+ *
+ * Both platforms default to the public instance; point them at your own
+ * server by changing this (and `musicHost` in androidApp/build.gradle.kts,
+ * which is what makes its links open the app). For development against a
+ * server on your machine, type http://10.0.2.2:3001 on the login screen from
+ * the Android emulator, http://localhost:3001 from the iOS simulator, or the
+ * machine's LAN address from a real phone.
  */
 internal expect val defaultBaseUrl: String

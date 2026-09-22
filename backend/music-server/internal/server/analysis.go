@@ -285,14 +285,25 @@ type Waveform struct {
 
 func (s *Server) handleTrackWaveform(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	var raw string
-	err := s.db.QueryRow(`SELECT COALESCE(waveform_json, '') FROM tracks WHERE id = ?`, id).Scan(&raw)
+	var raw, updatedAt string
+	err := s.db.QueryRow(`SELECT COALESCE(waveform_json, ''), COALESCE(updated_at, '') FROM tracks WHERE id = ?`, id).
+		Scan(&raw, &updatedAt)
 	if err != nil || raw == "" {
 		writeErr(w, http.StatusNotFound, "no waveform for this track")
 		return
 	}
-	// Stable per track once analysed, so browsers may keep it.
-	w.Header().Set("Cache-Control", "private, max-age=86400")
+	// The peaks describe the audio, and the audio can change under the same
+	// id — a trim re-analyses the file. So the browser has to ask whether
+	// what it holds is still current instead of keeping it for a day; the
+	// ETag carries updated_at, which every such change bumps, and an
+	// unchanged track is answered with an empty 304.
+	etag := `"wave-` + id + `-` + updatedAt + `"`
+	w.Header().Set("Cache-Control", "private, no-cache")
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"peaks":` + raw + `}`))

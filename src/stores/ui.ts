@@ -48,6 +48,9 @@ interface UIState {
   /** keyboard shortcuts help dialog */
   shortcutsOpen: boolean
   setShortcutsOpen: (open: boolean) => void
+  /** the "Android app" download dialog */
+  androidAppOpen: boolean
+  setAndroidAppOpen: (open: boolean) => void
   /** change password dialog */
   passwordOpen: boolean
   setPasswordOpen: (open: boolean) => void
@@ -114,6 +117,8 @@ export const useUIStore = create<UIState>()((set) => ({
   setNowPlayingOpen: (open) => set({ nowPlayingOpen: open }),
   shortcutsOpen: false,
   setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
+  androidAppOpen: false,
+  setAndroidAppOpen: (open) => set({ androidAppOpen: open }),
   passwordOpen: false,
   setPasswordOpen: (open) => set({ passwordOpen: open }),
   playbackSettingsOpen: false,

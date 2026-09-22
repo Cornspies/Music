@@ -116,6 +116,8 @@ func (s *Server) Routes() http.Handler {
         // Share links: the three public ones take their token in the path
         // and never look at the session — that is what makes a link work for
         // someone without an account.
+        mux.HandleFunc("GET /api/app/releases", s.requireAuth(s.handleAppReleases))
+        mux.HandleFunc("GET /api/app/releases/{file}", s.requireMediaAuth(s.handleAppReleaseDownload))
         mux.HandleFunc("GET /api/share/{token}", s.handleSharedTrack)
         mux.HandleFunc("GET /api/share/{token}/stream", s.handleSharedStream)
         mux.HandleFunc("GET /api/share/{token}/cover", s.handleSharedCover)
