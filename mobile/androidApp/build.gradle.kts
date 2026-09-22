@@ -35,7 +35,7 @@ android {
         minSdk = 27
         targetSdk = 37
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.1.3"
 
         // Host that shared playlist links use, claimed by the deep-link
         // intent-filter in composeApp's AndroidManifest.xml. The server is
