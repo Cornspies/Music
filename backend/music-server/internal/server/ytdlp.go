@@ -214,8 +214,9 @@ func (y *ytdlpSource) run(ctx context.Context, what string, args ...string) ([]b
 		return nil, fmt.Errorf("yt-dlp %s: %w", what, ctx.Err())
 	}
 	if err != nil {
-		log.Printf("yt-dlp %s failed; the command was: %s %s", what, y.bin, strings.Join(full, " "))
-		return nil, fmt.Errorf("yt-dlp %s: %s", what, ytdlpReason(stderr.String(), err))
+		reason := ytdlpReason(stderr.String(), err)
+		log.Printf("yt-dlp %s failed: %s; the command was: %s %s", what, reason, y.bin, strings.Join(full, " "))
+		return nil, fmt.Errorf("yt-dlp %s: %s", what, reason)
 	}
 	if warning := ytdlpLine(stderr.String(), "WARNING:"); warning != "" {
 		log.Printf("yt-dlp %s: %s", what, warning)
@@ -550,14 +551,23 @@ func ytdlpFriendly(err error, withCookies bool) string {
 		return "YouTube is asking this server to sign in (bot check); the person running it can export YouTube cookies to a file and set MUSIC_YTDLP_COOKIES"
 	case strings.Contains(low, "private video"):
 		return "that video is private"
-	case strings.Contains(low, "age"):
-		return "that video is age-restricted and can't be fetched without signing in"
+	case strings.Contains(low, "confirm your age") || strings.Contains(low, "age-restricted") ||
+		strings.Contains(low, "age restricted") || strings.Contains(low, "inappropriate for some users"):
+		if withCookies {
+			return "that video is age-restricted; the cookies passed didn't get it through (are they from a signed-in, adult account?)"
+		}
+		return "that video is age-restricted and can't be fetched without signing in (MUSIC_YTDLP_COOKIES)"
 	case strings.Contains(low, "playlist does not exist") || strings.Contains(low, "playlist doesn't exist"):
 		return "that playlist doesn't exist or isn't public"
 	case strings.Contains(low, "unavailable") || strings.Contains(low, "removed"):
 		return "that video isn't available"
-	case strings.Contains(low, "requested format is not available"):
-		return "no audio stream was available for that video (yt-dlp may need updating or a JavaScript runtime)"
+	case strings.Contains(low, "requested format is not available") || strings.Contains(low, "only images are available"):
+		return "no audio stream was available for that video — yt-dlp probably needs updating (yt-dlp -U) or a JavaScript runtime (MUSIC_YTDLP_ARGS=--js-runtimes node)"
+	case strings.Contains(low, "unable to extract") || strings.Contains(low, "please report this issue") ||
+		strings.Contains(low, "http error 403"):
+		return "yt-dlp couldn't read YouTube's page — it probably needs updating (yt-dlp -U); the server log has the exact message"
+	case strings.Contains(low, "javascript runtime") || strings.Contains(low, "js runtime"):
+		return "yt-dlp needs a JavaScript runtime on the server (install Deno or Node and set MUSIC_YTDLP_ARGS=--js-runtimes node)"
 	}
 	if i := strings.LastIndex(msg, ": "); i >= 0 && i+2 < len(msg) {
 		msg = msg[i+2:]
