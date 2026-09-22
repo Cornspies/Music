@@ -15,6 +15,7 @@ import com.music.app.appContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
+import androidx.core.net.toUri
 
 /**
  * Media3 implementation. The player itself lives in [PlaybackService] so
@@ -105,7 +106,7 @@ actual class PlayerController actual constructor() {
         // Offline playback passes a plain filesystem path; streaming passes an
         // http(s) URL. Uri.fromFile handles the escaping a raw "file://" + path
         // string would get wrong for names containing spaces or '#'.
-        val uri = if (url.startsWith("/")) Uri.fromFile(File(url)) else Uri.parse(url)
+        val uri = if (url.startsWith("/")) Uri.fromFile(File(url)) else url.toUri()
         val metadata = MediaMetadata.Builder().apply {
             if (info != null) {
                 setTitle(info.title)
