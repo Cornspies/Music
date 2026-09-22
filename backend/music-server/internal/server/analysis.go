@@ -61,7 +61,7 @@ func (s *Server) queueAnalysis(trackID string) {
 // that has never been analysed. Called once from main after the server is
 // constructed.
 func (s *Server) StartBackgroundWork() {
-	initDiscoverSources()
+	s.initDiscoverSources()
 	s.startImportWorker()
 	s.purgeStaleLyricsMisses()
 	go s.backfillCoverColors()

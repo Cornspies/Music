@@ -17,6 +17,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"music-server/internal/config"
 )
@@ -44,6 +46,18 @@ import (
 type ytdlpSource struct {
 	bin   string
 	extra []string // MUSIC_YTDLP_ARGS, appended to every call
+
+	// Cookies (MUSIC_YTDLP_COOKIES): the exported file stays the person's;
+	// yt-dlp is handed the server's own copy (jar), because it writes
+	// rotated cookies back after every run and the export would otherwise
+	// be clobbered — or, when it isn't writable, fail. The copy is refreshed
+	// whenever the export changes, so re-exporting is all it takes.
+	cookies       string
+	jar           string
+	cookieMu      sync.Mutex
+	cookieSrcMod  time.Time
+	cookieSrcSize int64
+	cookieLastErr string
 }
 
 const (
@@ -63,7 +77,8 @@ var ytdlpSlots = make(chan struct{}, 2)
 
 // newYTDLPSource reads MUSIC_YTDLP: unset means no YouTube source; a path
 // or command name is looked up; a plain "1"/"true" means yt-dlp on PATH.
-func newYTDLPSource() (*ytdlpSource, error) {
+// dataDir is where the server keeps its copy of the cookies file.
+func newYTDLPSource(dataDir string) (*ytdlpSource, error) {
 	raw := config.Value("MUSIC_YTDLP")
 	if raw == "" {
 		return nil, nil
@@ -76,19 +91,99 @@ func newYTDLPSource() (*ytdlpSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("MUSIC_YTDLP=%q: %w", raw, err)
 	}
-	return &ytdlpSource{bin: bin, extra: strings.Fields(config.Value("MUSIC_YTDLP_ARGS"))}, nil
+	y := &ytdlpSource{bin: bin, extra: strings.Fields(config.Value("MUSIC_YTDLP_ARGS"))}
+	if cookies := config.Value("MUSIC_YTDLP_COOKIES"); cookies != "" {
+		y.cookies = cookies
+		y.jar = filepath.Join(dataDir, "ytdlp-cookies.txt")
+		if err := y.syncCookies(); err != nil {
+			logErr("discover", fmt.Errorf("MUSIC_YTDLP_COOKIES: %w (YouTube will be asked without cookies until this is fixed)", err))
+		}
+	}
+	return y, nil
 }
 
-func (ytdlpSource) key() string  { return "youtube" }
-func (ytdlpSource) name() string { return "YouTube" }
+// describe is the start-up log line: what exactly yt-dlp is run with, so a
+// mismatch with a manual test is visible at once.
+func (y *ytdlpSource) describe() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "YouTube via yt-dlp %s (%s)", y.version(), y.bin)
+	if len(y.extra) > 0 {
+		fmt.Fprintf(&b, "; extra args: %s", strings.Join(y.extra, " "))
+	}
+	switch {
+	case y.cookies == "":
+		b.WriteString("; no cookies")
+	case y.cookieLastErr != "":
+		fmt.Fprintf(&b, "; cookies: %s (NOT USABLE: %s)", y.cookies, y.cookieLastErr)
+	default:
+		fmt.Fprintf(&b, "; cookies: %s (copied to %s)", y.cookies, y.jar)
+	}
+	return b.String()
+}
+
+// syncCookies copies the exported cookies file into the server's jar when
+// it is new or has changed. Errors say what is wrong with the export from
+// the server's point of view — under systemd, ProtectHome or a service
+// user is what usually hides a file that "is right there".
+func (y *ytdlpSource) syncCookies() error {
+	y.cookieMu.Lock()
+	defer y.cookieMu.Unlock()
+	err := y.syncCookiesLocked()
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	if msg != y.cookieLastErr {
+		y.cookieLastErr = msg
+		if err != nil {
+			logErr("yt-dlp cookies", err)
+		}
+	}
+	return err
+}
+
+func (y *ytdlpSource) syncCookiesLocked() error {
+	fi, err := os.Stat(y.cookies)
+	if err != nil {
+		return fmt.Errorf("%s: %w — is the path right, and can the server's user read it?", y.cookies, err)
+	}
+	if fi.IsDir() {
+		return fmt.Errorf("%s is a directory; point at the cookies.txt file", y.cookies)
+	}
+	if fi.ModTime().Equal(y.cookieSrcMod) && fi.Size() == y.cookieSrcSize {
+		return nil // unchanged since the last copy
+	}
+	raw, err := os.ReadFile(y.cookies)
+	if err != nil {
+		return fmt.Errorf("%s: %w — the server's user needs read access", y.cookies, err)
+	}
+	// A Netscape cookies file starts with a comment header; anything else
+	// (a JSON export, an HTML error page) is silently no cookies to yt-dlp.
+	head := strings.TrimSpace(string(raw[:min(len(raw), 200)]))
+	if !strings.HasPrefix(head, "# Netscape HTTP Cookie File") && !strings.HasPrefix(head, "# HTTP Cookie File") && !strings.Contains(head, "\t") {
+		return fmt.Errorf("%s doesn't look like a Netscape cookies.txt (export with a \"Get cookies.txt LOCALLY\" browser extension)", y.cookies)
+	}
+	if !strings.Contains(string(raw), "youtube.com") {
+		return fmt.Errorf("%s holds no youtube.com cookies", y.cookies)
+	}
+	if err := os.WriteFile(y.jar, raw, 0o600); err != nil {
+		return fmt.Errorf("copy to %s: %w", y.jar, err)
+	}
+	y.cookieSrcMod, y.cookieSrcSize = fi.ModTime(), fi.Size()
+	log.Printf("yt-dlp cookies: copied %s to %s", y.cookies, y.jar)
+	return nil
+}
+
+func (*ytdlpSource) key() string  { return "youtube" }
+func (*ytdlpSource) name() string { return "YouTube" }
 
 // coverAllowed limits the artwork proxy to YouTube's thumbnail hosts.
-func (ytdlpSource) coverAllowed(u string) bool {
+func (*ytdlpSource) coverAllowed(u string) bool {
 	return strings.HasPrefix(u, "https://i.ytimg.com/") || strings.HasPrefix(u, "https://i9.ytimg.com/")
 }
 
 // version is what `yt-dlp --version` prints, for the start-up log.
-func (y ytdlpSource) version() string {
+func (y *ytdlpSource) version() string {
 	out, err := exec.Command(y.bin, "--version").Output()
 	if err != nil {
 		return "unknown version"
@@ -98,9 +193,18 @@ func (y ytdlpSource) version() string {
 
 // run executes yt-dlp with the standing options and returns stdout. stderr
 // is folded into the error; on success its warnings (a missing JS runtime,
-// say) are logged once per call so they reach whoever runs the server.
-func (y ytdlpSource) run(ctx context.Context, what string, args ...string) ([]byte, error) {
-	full := append([]string{"--ignore-config", "--no-playlist", "--no-progress"}, y.extra...)
+// say) are logged once per call so they reach whoever runs the server. A
+// failure logs the whole command line, so what the server ran can be
+// compared with a manual test.
+func (y *ytdlpSource) run(ctx context.Context, what string, args ...string) ([]byte, error) {
+	full := []string{"--ignore-config", "--no-playlist", "--no-progress"}
+	if y.jar != "" {
+		// A copy that exists keeps working when the export has gone away.
+		if err := y.syncCookies(); err == nil || fileExists(y.jar) {
+			full = append(full, "--cookies", y.jar)
+		}
+	}
+	full = append(full, y.extra...)
 	full = append(full, args...)
 	cmd := exec.CommandContext(ctx, y.bin, full...)
 	var stdout, stderr bytes.Buffer
@@ -110,6 +214,7 @@ func (y ytdlpSource) run(ctx context.Context, what string, args ...string) ([]by
 		return nil, fmt.Errorf("yt-dlp %s: %w", what, ctx.Err())
 	}
 	if err != nil {
+		log.Printf("yt-dlp %s failed; the command was: %s %s", what, y.bin, strings.Join(full, " "))
 		return nil, fmt.Errorf("yt-dlp %s: %s", what, ytdlpReason(stderr.String(), err))
 	}
 	if warning := ytdlpLine(stderr.String(), "WARNING:"); warning != "" {
@@ -118,11 +223,29 @@ func (y ytdlpSource) run(ctx context.Context, what string, args ...string) ([]by
 	return stdout.Bytes(), nil
 }
 
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // ytdlpReason picks yt-dlp's own explanation out of stderr, which is more
-// useful than "exit status 1".
+// useful than "exit status 1". A Python traceback (yt-dlp crashing, e.g. on
+// an unreadable cookies file) ends with the exception, so that line is it.
 func ytdlpReason(stderr string, err error) string {
 	if line := ytdlpLine(stderr, "ERROR:"); line != "" {
 		return line
+	}
+	last := ""
+	for _, line := range strings.Split(stderr, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			last = line
+		}
+	}
+	if last != "" {
+		if len(last) > 200 {
+			last = last[:200] + "…"
+		}
+		return err.Error() + ": " + last
 	}
 	return err.Error()
 }
@@ -160,7 +283,7 @@ type ytdlpEntry struct {
 	LiveStatus string   `json:"live_status"`
 }
 
-func (y ytdlpSource) search(ctx context.Context, query string, page int) ([]discoverResult, bool, error) {
+func (y *ytdlpSource) search(ctx context.Context, query string, page int) ([]discoverResult, bool, error) {
 	if page > ytdlpMaxPages {
 		return nil, false, nil
 	}
@@ -211,7 +334,7 @@ func (y ytdlpSource) search(ctx context.Context, query string, page int) ([]disc
 
 // result shapes one listing entry; false for what can't be fetched (streams
 // and premieres, and the private or deleted videos a playlist may hold).
-func (y ytdlpSource) result(e ytdlpEntry) (discoverResult, bool) {
+func (y *ytdlpSource) result(e ytdlpEntry) (discoverResult, bool) {
 	title := strings.TrimSpace(e.Title)
 	if !youtubeIDRe.MatchString(e.ID) || e.LiveStatus == "is_live" || e.LiveStatus == "is_upcoming" ||
 		title == "[Private video]" || title == "[Deleted video]" {
@@ -266,18 +389,18 @@ func youtubePlaylistID(raw string) string {
 	return id
 }
 
-func (y ytdlpSource) playlistID(raw string) string { return youtubePlaylistID(raw) }
+func (y *ytdlpSource) playlistID(raw string) string { return youtubePlaylistID(raw) }
 
 // listPlaylist returns the playlist's title and its playable entries, in
 // order. Mixes (list=RD…) are endless; yt-dlp returns their first stretch.
-func (y ytdlpSource) listPlaylist(ctx context.Context, id string) (catalogPlaylist, error) {
+func (y *ytdlpSource) listPlaylist(ctx context.Context, id string) (catalogPlaylist, error) {
 	if !youtubePlaylistIDRe.MatchString(id) {
 		return catalogPlaylist{}, &statusError{http.StatusBadRequest, "not a YouTube playlist id"}
 	}
 	out, err := y.run(ctx, "playlist", "--yes-playlist", "--flat-playlist", "--skip-download", "--dump-single-json",
 		"--playlist-end", strconv.Itoa(ytdlpMaxPlaylist), "https://www.youtube.com/playlist?list="+id)
 	if err != nil {
-		return catalogPlaylist{}, &statusError{http.StatusBadGateway, ytdlpFriendly(err)}
+		return catalogPlaylist{}, &statusError{http.StatusBadGateway, ytdlpFriendly(err, y.jar != "")}
 	}
 	var parsed struct {
 		Title   string       `json:"title"`
@@ -327,7 +450,7 @@ func (t *tempDownload) Close() error {
 	return err
 }
 
-func (y ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, error) {
+func (y *ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, error) {
 	if !youtubeIDRe.MatchString(id) {
 		return nil, &statusError{http.StatusBadRequest, "not a YouTube video id"}
 	}
@@ -349,7 +472,7 @@ func (y ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, err
 		"https://www.youtube.com/watch?v="+id)
 	if err != nil {
 		os.RemoveAll(dir)
-		return nil, &statusError{http.StatusBadGateway, ytdlpFriendly(err)}
+		return nil, &statusError{http.StatusBadGateway, ytdlpFriendly(err, y.jar != "")}
 	}
 	var info ytdlpInfo
 	if len(out) > 0 {
@@ -412,15 +535,19 @@ func (y ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, err
 }
 
 // ytdlpFriendly turns yt-dlp's error text into something the person who
-// clicked "Add" can act on.
-func ytdlpFriendly(err error) string {
+// clicked "Add" can act on. withCookies says whether cookies were passed,
+// which changes what the bot check means.
+func ytdlpFriendly(err error, withCookies bool) string {
 	msg := err.Error()
 	low := strings.ToLower(msg)
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return "the download took too long; try again"
 	case strings.Contains(low, "sign in to confirm") || strings.Contains(low, "not a bot"):
-		return "YouTube is asking this server to sign in (bot check); the person running it can pass cookies through MUSIC_YTDLP_ARGS"
+		if withCookies {
+			return "YouTube asked this server to sign in even with cookies — they expire and rotate, so export them again from a private window; the server log has the exact command that was run"
+		}
+		return "YouTube is asking this server to sign in (bot check); the person running it can export YouTube cookies to a file and set MUSIC_YTDLP_COOKIES"
 	case strings.Contains(low, "private video"):
 		return "that video is private"
 	case strings.Contains(low, "age"):

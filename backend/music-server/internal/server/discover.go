@@ -119,15 +119,15 @@ var discoverSources = []source{ncsSource{}}
 
 // initDiscoverSources adds the optional sources once the environment is
 // known (package init runs before .env is read). Called at start-up.
-func initDiscoverSources() {
-	yt, err := newYTDLPSource()
+func (s *Server) initDiscoverSources() {
+	yt, err := newYTDLPSource(s.dataDir)
 	if err != nil {
 		logErr("discover", fmt.Errorf("YouTube source is off: %w", err))
 		return
 	}
 	if yt != nil {
-		discoverSources = append(discoverSources, *yt)
-		log.Printf("discover: YouTube via yt-dlp %s (%s)", yt.version(), yt.bin)
+		discoverSources = append(discoverSources, yt)
+		log.Printf("discover: %s", yt.describe())
 	}
 }
 
