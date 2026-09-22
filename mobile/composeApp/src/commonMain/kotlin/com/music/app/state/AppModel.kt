@@ -49,6 +49,7 @@ enum class RepeatMode { OFF, ALL, ONE }
 
 /** How often the playback position is written to the server while playing. */
 private const val LISTEN_REPORT_INTERVAL_S = 15.0
+private const val KEY_SWIPE_TO_DELETE = "ui.swipeToDelete"
 private const val PLAYBACK_SAVE_INTERVAL_MS = 10_000L
 
 /** How often to check whether the media token wants renewing. */
@@ -100,8 +101,24 @@ class AppModel(
     val api = ApiClient(store)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    /** On-device key/value storage, shared by the downloads and the few local settings. */
+    private val localStore = OfflineStore()
+
     /** Offline downloads: the on-device library and its download/remove actions. */
-    val downloads = DownloadManager(api, OfflineStore())
+    val downloads = DownloadManager(api, localStore)
+
+    /**
+     * Swiping a library row away to delete it. Off until turned on in the
+     * profile: a stray swipe on a phone is easy, and the track would be gone
+     * for everyone. Kept per device, across sign-outs.
+     */
+    var swipeToDelete by mutableStateOf(localStore.loadMeta(KEY_SWIPE_TO_DELETE) == "1")
+        private set
+
+    fun updateSwipeToDelete(on: Boolean) {
+        swipeToDelete = on
+        localStore.saveMeta(KEY_SWIPE_TO_DELETE, if (on) "1" else null)
+    }
 
     /**
      * True when the app started from a cached session because the server

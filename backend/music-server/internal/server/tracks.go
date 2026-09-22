@@ -595,6 +595,7 @@ func (s *Server) startCompatibleCopy(trackID, originalRel string) {
 	go func() {
 		transcodeSlots <- struct{}{}
 		defer func() { <-transcodeSlots }()
+		defer logPanic("compatible copy of track " + trackID)
 
 		alt := s.makeCompatibleCopy(trackID, originalRel)
 		if alt == nil {

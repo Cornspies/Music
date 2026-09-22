@@ -76,6 +76,12 @@ const (
 // few MB/s of bandwidth.
 var ytdlpSlots = make(chan struct{}, 2)
 
+// ytdlpProcs bounds yt-dlp processes of any kind — every search starts one
+// too, so without a cap anyone signed in could start as many as they can
+// send requests. Downloads take a download slot first and then one of
+// these, always in that order, so the two can't deadlock.
+var ytdlpProcs = make(chan struct{}, 4)
+
 // newYTDLPSource reads MUSIC_YTDLP: unset means no YouTube source; a path
 // or command name is looked up; a plain "1"/"true" means yt-dlp on PATH.
 // dataDir is where the server keeps its copy of the cookies file.
@@ -261,6 +267,12 @@ func (y *ytdlpSource) version() string {
 // failure logs the whole command line, so what the server ran can be
 // compared with a manual test.
 func (y *ytdlpSource) run(ctx context.Context, what string, args ...string) ([]byte, error) {
+	select {
+	case ytdlpProcs <- struct{}{}:
+		defer func() { <-ytdlpProcs }()
+	case <-ctx.Done():
+		return nil, fmt.Errorf("yt-dlp %s: %w", what, ctx.Err())
+	}
 	full := []string{"--ignore-config", "--no-playlist", "--no-progress"}
 	if y.jar != "" {
 		// A copy that exists keeps working when the export has gone away.

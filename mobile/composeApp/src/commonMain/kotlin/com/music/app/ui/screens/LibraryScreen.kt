@@ -150,7 +150,8 @@ private fun TrackList(tracks: List<Track>) {
  *
  * Only the uploader can delete a track (the server answers 403 otherwise), so
  * everyone else's rows are not swipeable at all rather than offering an action
- * that would fail.
+ * that would fail — and nobody's are until swiping is switched on in the
+ * profile.
  */
 @Composable
 private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
@@ -159,7 +160,8 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     // The uploader may edit or delete; so may an admin (the server enforces both).
     val mine = model.user?.let { it.id == track.uploadedBy.id || it.isAdmin } == true
 
-    if (!mine) {
+    // Swipe-to-delete is opt-in (Profile → Library).
+    if (!mine || !model.swipeToDelete) {
         row()
         return
     }

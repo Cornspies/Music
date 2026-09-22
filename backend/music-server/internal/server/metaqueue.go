@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -227,8 +228,22 @@ func (s *Server) metadataWorker() {
 			}
 			continue
 		}
-		s.runMetadataJob(id)
+		s.runMetadataJobSafely(id)
 	}
+}
+
+// runMetadataJobSafely runs one job; a job that panics is closed with an
+// error rather than left "running" — and picked up again, and panicking
+// again, after every restart.
+func (s *Server) runMetadataJobSafely(id string) {
+	defer func() {
+		if v := recover(); v != nil {
+			log.Printf("PANIC in metadata lookup for track %s (recovered): %v\n%s", id, v, debug.Stack())
+			_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, not_before = '', finished_at = ?, last_error = ? WHERE track_id = ?`,
+				jobDone, nowRFC3339(), "the lookup failed", id)
+		}
+	}()
+	s.runMetadataJob(id)
 }
 
 // nextMetadataJob returns the oldest runnable job, or how long until one

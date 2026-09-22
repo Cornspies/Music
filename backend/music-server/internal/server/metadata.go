@@ -74,7 +74,15 @@ func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Re
         u := userFrom(r)
         id := r.PathValue("id")
 
-        if _, _, _, ok := s.getTrack(w, r, u.ID, id); !ok {
+        // The review belongs to whoever may apply a result — and opening it
+        // queues a lookup, which others shouldn't be able to trigger for
+        // every track in the library.
+        t, _, _, ok := s.getTrack(w, r, u.ID, id)
+        if !ok {
+                return
+        }
+        if t.UploadedBy.ID != u.ID && !u.IsAdmin() {
+                writeErr(w, http.StatusForbidden, "only the person who uploaded this track can edit it")
                 return
         }
         if metadataLookupDisabled() {
@@ -132,7 +140,12 @@ func (s *Server) handleCandidateArtwork(w http.ResponseWriter, r *http.Request) 
         id := r.PathValue("id")
         candidateID := r.PathValue("candidateId")
 
-        if _, _, _, ok := s.getTrack(w, r, u.ID, id); !ok {
+        t, _, _, ok := s.getTrack(w, r, u.ID, id)
+        if !ok {
+                return
+        }
+        if t.UploadedBy.ID != u.ID && !u.IsAdmin() {
+                writeErr(w, http.StatusForbidden, "only the person who uploaded this track can edit it")
                 return
         }
 

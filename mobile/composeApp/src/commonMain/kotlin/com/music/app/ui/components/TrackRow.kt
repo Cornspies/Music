@@ -70,8 +70,8 @@ fun TrackRow(
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val model = LocalAppModel.current
-    // Long-press: the track's own actions. Only the uploader (or an admin)
-    // can change its details, so others get nothing here.
+    // Long-press: the track's own actions. Sharing is for everyone; only the
+    // uploader (or an admin) can change its details.
     val mine = model.user?.let { it.id == track.uploadedBy.id || it.isAdmin } == true
     var menuOpen by remember { mutableStateOf(false) }
     var reviewOpen by remember { mutableStateOf(false) }
@@ -88,7 +88,7 @@ fun TrackRow(
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = { model.playTrack(track, context) },
-                    onLongClick = { if (mine) menuOpen = true },
+                    onLongClick = { menuOpen = true },
                 )
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -181,13 +181,15 @@ fun TrackRow(
                     }
                 },
             )
-            DropdownMenuItem(
-                text = { Text("Check track details") },
-                onClick = {
-                    menuOpen = false
-                    reviewOpen = true
-                },
-            )
+            if (mine) {
+                DropdownMenuItem(
+                    text = { Text("Check track details") },
+                    onClick = {
+                        menuOpen = false
+                        reviewOpen = true
+                    },
+                )
+            }
         }
     }
 

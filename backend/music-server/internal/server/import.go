@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -160,7 +161,15 @@ var imports = struct {
 func (s *Server) startImportWorker() {
 	go func() {
 		for job := range imports.queue {
-			s.runImport(job)
+			func() {
+				defer func() {
+					if v := recover(); v != nil {
+						log.Printf("PANIC in playlist import %s (recovered): %v\n%s", job.ID, v, debug.Stack())
+						job.finish(importFailed, "the import stopped unexpectedly")
+					}
+				}()
+				s.runImport(job)
+			}()
 		}
 	}()
 }

@@ -91,6 +91,7 @@ func dominantColor(raw []byte) string {
 // Run in the background: decoding a 1000² JPEG takes tens of milliseconds
 // and nothing waits on the result.
 func (s *Server) updateCoverColor(trackID string) {
+	defer logPanic("cover colour of track " + trackID)
 	raw, err := os.ReadFile(filepath.Join(s.covDir, trackID+".img"))
 	if err != nil {
 		return

@@ -56,6 +56,12 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // Once a browser has seen the site over https, it refuses plain http for a
+  // year — no downgrade on a hostile network. Browsers ignore this header on
+  // http responses, so reaching the server over http on the LAN still works.
+  // No includeSubDomains: that would bind every other subdomain of the
+  // domain as well.
+  { key: "Strict-Transport-Security", value: "max-age=31536000" },
 ];
 
 const nextConfig: NextConfig = {

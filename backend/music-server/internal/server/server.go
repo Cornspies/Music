@@ -1,6 +1,7 @@
 package server
 
 import (
+        "runtime/debug"
         "context"
         "crypto/rand"
         "database/sql"
@@ -306,6 +307,18 @@ func (u *User) IsAdmin() bool { return u != nil && u.Role == roleAdmin }
 
 func logErr(ctx string, err error) {
         log.Printf("ERROR %s: %v", ctx, err)
+}
+
+// logPanic, deferred at the top of a background task, keeps a panic in that
+// task from taking the whole server down. net/http recovers a request's
+// panic on its own; a goroutine of ours has no such net, and several read
+// what people upload (tags, cover images) — one crafted file would crash the
+// server, and crash it again on every restart while a start-up backfill
+// still had it queued. The task in hand is abandoned; the rest carry on.
+func logPanic(task string) {
+        if v := recover(); v != nil {
+                log.Printf("PANIC in %s (recovered): %v\n%s", task, v, debug.Stack())
+        }
 }
 
 type ctxKey int

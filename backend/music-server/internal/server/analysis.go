@@ -86,9 +86,12 @@ func (s *Server) analysisWorker() {
 	for id := range analysisQueue {
 		// Share the CPU cap with transcoding: a bulk upload should not run
 		// two ffmpegs per file on top of each other.
-		transcodeSlots <- struct{}{}
-		s.analyzeTrack(id)
-		<-transcodeSlots
+		func() {
+			transcodeSlots <- struct{}{}
+			defer func() { <-transcodeSlots }()
+			defer logPanic("analysis of track " + id)
+			s.analyzeTrack(id)
+		}()
 	}
 }
 

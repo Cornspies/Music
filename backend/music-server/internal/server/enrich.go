@@ -73,8 +73,31 @@ func dialGuard(network, address string, c syscall.RawConn) error {
 		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return fmt.Errorf("refusing to connect to non-public address %s", ip)
 	}
+	for _, n := range nonPublicNets {
+		if n.Contains(ip) {
+			return fmt.Errorf("refusing to connect to non-public address %s", ip)
+		}
+	}
 	return nil
 }
+
+// nonPublicNets are ranges net.IP doesn't count as private but that aren't
+// the public internet either: 100.64.0.0/10 is carrier-grade NAT — and the
+// range Tailscale hands its devices, so on a server in a tailnet it reaches
+// your other machines — 198.18.0.0/15 is for benchmarking, 192.0.0.0/24 is
+// protocol assignments, and 64:ff9b::/96 is NAT64, which can map onto
+// private IPv4 addresses.
+var nonPublicNets = func() []*net.IPNet {
+	var out []*net.IPNet
+	for _, cidr := range []string{"100.64.0.0/10", "198.18.0.0/15", "192.0.0.0/24", "64:ff9b::/96", "64:ff9b:1::/48"} {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, n)
+	}
+	return out
+}()
 
 // acceptScoreThreshold is the minimum confidence (0-1) a candidate needs
 // before we'll auto-apply it at upload time. Below this, enrichment is a
@@ -178,6 +201,7 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 		wg.Add(1)
 		go func(i int, src source) {
 			defer wg.Done()
+			defer logPanic("metadata lookup (" + src.name + ")")
 			cands, err := src.search(ctx, query)
 			if err != nil {
 				failed.Add(1)

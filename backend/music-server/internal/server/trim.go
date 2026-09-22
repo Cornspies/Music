@@ -59,6 +59,15 @@ func (s *Server) handleTrackSilence(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), trimTimeout)
 	defer cancel()
+	// It decodes the whole file, so it waits its turn with the other ffmpeg
+	// work: requests can't pile up processes.
+	select {
+	case transcodeSlots <- struct{}{}:
+		defer func() { <-transcodeSlots }()
+	case <-ctx.Done():
+		writeErr(w, http.StatusServiceUnavailable, "the server is busy; try again in a moment")
+		return
+	}
 	cmd := exec.CommandContext(ctx, bin,
 		"-nostdin", "-hide_banner", "-nostats",
 		"-i", filepath.Join(s.dataDir, filePath),
