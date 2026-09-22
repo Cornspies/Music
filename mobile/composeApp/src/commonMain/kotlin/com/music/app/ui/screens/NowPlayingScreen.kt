@@ -221,7 +221,7 @@ private fun NowPlayingContent(track: Track) {
                                     dx > skipThresholdPx -> scope.launch {
                                         skipping = true
                                         coverOffset.animateTo(widthPx, tween(150))
-                                        model.previous()
+                                        model.previous(restartFirst = false)
                                         coverOffset.snapTo(-widthPx)
                                         coverOffset.animateTo(0f, tween(200))
                                         skipping = false

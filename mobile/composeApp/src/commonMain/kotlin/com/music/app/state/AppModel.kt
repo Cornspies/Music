@@ -1118,9 +1118,15 @@ class AppModel(
         return candidate
     }
 
-    fun previous() {
+    /**
+     * Back to the previous track — or, like every player's ⏮ button, to the
+     * start of this one when it's more than a few seconds in. [restartFirst]
+     * false always changes track: the cover swipe slides the art away, so
+     * restarting the same song would look like a skip that didn't happen.
+     */
+    fun previous(restartFirst: Boolean = true) {
         if (queue.isEmpty()) return
-        if (player.positionSec.value > 3.0) {
+        if (restartFirst && player.positionSec.value > 3.0) {
             player.seekTo(0.0)
             return
         }
