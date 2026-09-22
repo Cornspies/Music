@@ -57,7 +57,6 @@ export function DuplicatesView() {
     <div className="p-4 pb-16 md:p-6 md:pb-12">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">Your library</p>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Duplicates</h1>
           {shown && shown.length > 0 ? (
             <p className="mt-1 text-sm text-zinc-400">

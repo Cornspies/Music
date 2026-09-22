@@ -1,4 +1,10 @@
+@file:OptIn(ExperimentalTime::class)
+
 package com.music.app.ui
+
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /** "3:45" / "1:02:03" — track durations and seek-bar labels. */
 fun formatDuration(totalSeconds: Double): String {
@@ -38,5 +44,17 @@ fun formatBytes(bytes: Long): String = when {
     else -> {
         val gb = ((bytes / 1_000_000_000.0) * 10.0).toLong() / 10.0
         "$gb GB"
+    }
+}
+
+/** "in 6 days", "in 3 hours", "in 20 minutes" — for expiry times; "expired" once past. */
+fun formatTimeUntil(iso: String): String {
+    val at = runCatching { Instant.parse(iso) }.getOrNull() ?: return ""
+    val minutes = (at - Clock.System.now()).inWholeMinutes
+    return when {
+        minutes <= 0 -> "expired"
+        minutes < 60 -> "in $minutes minute${if (minutes == 1L) "" else "s"}"
+        minutes < 60 * 24 -> (minutes / 60).let { "in $it hour${if (it == 1L) "" else "s"}" }
+        else -> (minutes / (60 * 24)).let { "in $it day${if (it == 1L) "" else "s"}" }
     }
 }

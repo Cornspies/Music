@@ -96,12 +96,10 @@ function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
 function ShortcutCard({
   icon: Icon,
   label,
-  sub,
   onClick,
 }: {
   icon: typeof Heart
   label: string
-  sub: string
   onClick: () => void
 }) {
   return (
@@ -113,10 +111,7 @@ function ShortcutCard({
       <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-emerald-400 transition-all group-hover:bg-emerald-500 group-hover:text-zinc-950 group-hover:shadow-lg group-hover:shadow-emerald-950/60">
         <Icon className="size-4" aria-hidden="true" />
       </div>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-zinc-100">{label}</p>
-        <p className="truncate text-xs text-zinc-500">{sub}</p>
-      </div>
+      <p className="min-w-0 truncate text-sm font-semibold text-zinc-100">{label}</p>
     </button>
   )
 }
@@ -205,19 +200,16 @@ export function HomeView() {
         <ShortcutCard
           icon={Heart}
           label="Favorites"
-          sub="Your loved tracks"
           onClick={() => navigate("favorites")}
         />
         <ShortcutCard
           icon={ListMusic}
           label="Playlists"
-          sub={`${playlists.length} playlist${playlists.length === 1 ? "" : "s"}`}
           onClick={() => navigate("playlists")}
         />
         <ShortcutCard
           icon={Upload}
           label="Upload"
-          sub="Add new music"
           onClick={() => useUIStore.getState().setUploadOpen(true)}
         />
       </div>

@@ -175,7 +175,7 @@ fun LoginScreen() {
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = acceptInsecure, onCheckedChange = { acceptInsecure = it })
-                Text("I understand, connect anyway", style = MaterialTheme.typography.bodyMedium)
+                Text("Connect anyway", style = MaterialTheme.typography.bodyMedium)
             }
         }
 

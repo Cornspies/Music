@@ -45,6 +45,7 @@ import com.music.app.LocalAppModel
 import com.music.app.api.Track
 import com.music.app.offline.DownloadState
 import com.music.app.ui.formatDuration
+import com.music.app.ui.formatTimeUntil
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc500
 import kotlinx.coroutines.launch
@@ -154,8 +155,9 @@ fun TrackRow(
                     scope.launch {
                         try {
                             // A link anyone can open, account or not.
-                            clipboard.setClipEntry(plainTextClipEntry(model.shareLinkFor(track)))
-                            shareMessage = "Link copied"
+                            val (link, expiresAt) = model.shareLinkFor(track)
+                            clipboard.setClipEntry(plainTextClipEntry(link))
+                            shareMessage = "Link copied" + (expiresAt?.let { " · expires ${formatTimeUntil(it)}" } ?: "")
                         } catch (e: Exception) {
                             shareMessage = friendlyError(e)
                         } finally {

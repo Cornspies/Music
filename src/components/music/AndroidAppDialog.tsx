@@ -7,7 +7,7 @@ import { formatFileSize, formatRelativeDate } from "@/lib/format"
 import type { AppRelease } from "@/lib/types"
 import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 /**
  * The Android builds this server has. There is no store to get a
@@ -33,16 +33,12 @@ export function AndroidAppDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+      <DialogContent aria-describedby={undefined} className="border-zinc-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Smartphone className="size-4 text-emerald-400" aria-hidden="true" />
             Android app
           </DialogTitle>
-          <DialogDescription className="text-xs text-zinc-500">
-            Open the file on your phone to install it. Android asks once for permission to install
-            apps from this browser.
-          </DialogDescription>
         </DialogHeader>
 
         {error ? (
@@ -52,9 +48,7 @@ export function AndroidAppDialog() {
             <Loader2 className="size-5 animate-spin text-zinc-500" />
           </div>
         ) : releases.length === 0 ? (
-          <p className="text-sm text-zinc-400">
-            No build has been put on this server yet.
-          </p>
+          <p className="text-sm text-zinc-400">No builds yet.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {releases.map((r, i) => (

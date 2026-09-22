@@ -43,10 +43,7 @@ export function PlaylistsView() {
       {publicPlaylists.length > 0 && (
         <div className="mt-8">
           <h2 className="text-lg font-semibold tracking-tight text-zinc-200">Shared with you</h2>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            Playlists other people have made public.
-          </p>
-          <div className="mt-4">
+          <div className="mt-3">
             <PlaylistGrid
               playlists={publicPlaylists}
               onOpen={(id) => navigate("playlist", id)}

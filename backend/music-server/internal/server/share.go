@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,7 +21,8 @@ import (
 // place where the library leaves the circle of people who have signed in, so
 // it is deliberately narrow: sharing is per track and opt-in (nothing is
 // public until someone shares it), the link carries a 128-bit random token
-// that is the only way in, it can be revoked at any time, and it exposes
+// that is the only way in, it expires after a week at most, it can be
+// revoked at any time (by its maker or an admin), and it exposes
 // exactly one track's title, artist, album, cover and audio — no library, no
 // usernames, no other tracks. MUSIC_DISABLE_SHARING turns the whole feature
 // off for a server that shouldn't serve anyone but its members.
@@ -30,6 +32,11 @@ import (
 // and in a media player, Range requests included.
 
 const shareTokenBytes = 16
+
+// maxShareDays is how long a share link lives at most. A link travels —
+// chats get forwarded, screenshots get posted — so it can't be allowed to
+// work forever; whoever needs it for longer shares the track again.
+const maxShareDays = 7
 
 // TrackShare is a share link as the clients see it.
 type TrackShare struct {
@@ -131,7 +138,8 @@ func (s *Server) loadShare(trackID string, u *User) (*TrackShare, error) {
 
 // handleCreateTrackShare: POST /api/tracks/{id}/share {"expiresInDays": n}.
 // Returns the caller's existing link when there is one, so pressing "share"
-// twice doesn't scatter links for the same track.
+// twice doesn't scatter links for the same track. A link lasts
+// expiresInDays, at most (and by default) maxShareDays.
 func (s *Server) handleCreateTrackShare(w http.ResponseWriter, r *http.Request) {
 	if sharingDisabled() {
 		writeErr(w, http.StatusNotFound, "share links are disabled on this server")
@@ -161,10 +169,11 @@ func (s *Server) handleCreateTrackShare(w http.ResponseWriter, r *http.Request) 
 		s.internalErr(w, "make share token", err)
 		return
 	}
-	expires := ""
-	if body.ExpiresInDays > 0 {
-		expires = time.Now().UTC().AddDate(0, 0, body.ExpiresInDays).Format(time.RFC3339)
+	days := body.ExpiresInDays
+	if days <= 0 || days > maxShareDays {
+		days = maxShareDays
 	}
+	expires := time.Now().UTC().AddDate(0, 0, days).Format(time.RFC3339)
 	now := nowRFC3339()
 	if _, err := s.db.Exec(`INSERT INTO track_shares (token, track_id, created_by, created_at, expires_at, plays)
 		VALUES (?,?,?,?,?,0)`, token, id, u.ID, now, expires); err != nil {
@@ -300,8 +309,12 @@ func (s *Server) handleSharedCover(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
-// purgeExpiredShares drops links that ran out, at start-up and daily.
+// startShareCleanup drops links that ran out, at start-up and daily.
 func (s *Server) startShareCleanup() {
+	// Links made before there was a limit never expired; they get the same
+	// week as any other, counted from when they were made.
+	_, _ = s.db.Exec(`UPDATE track_shares SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, ?)
+		WHERE COALESCE(expires_at, '') = ''`, fmt.Sprintf("+%d days", maxShareDays))
 	purge := func() {
 		_, _ = s.db.Exec(`DELETE FROM track_shares WHERE COALESCE(expires_at, '') <> '' AND expires_at < ?`,
 			time.Now().UTC().Format(time.RFC3339))
@@ -313,4 +326,56 @@ func (s *Server) startShareCleanup() {
 			purge()
 		}
 	}()
+}
+
+// ---- admin ---------------------------------------------------------------------
+
+// AdminShare is one live share link, as the admin list shows it.
+type AdminShare struct {
+	Token     string `json:"token"`
+	TrackID   string `json:"trackId"`
+	Title     string `json:"title"`
+	Artist    string `json:"artist"`
+	SharedBy  string `json:"sharedBy"`
+	CreatedAt string `json:"createdAt"`
+	ExpiresAt string `json:"expiresAt"`
+	Plays     int    `json:"plays"`
+}
+
+// handleAdminShares: GET /api/admin/shares — every link that still works,
+// newest first.
+func (s *Server) handleAdminShares(w http.ResponseWriter, _ *http.Request) {
+	rows, err := s.db.Query(`
+		SELECT sh.token, sh.track_id, t.title, t.artist, COALESCE(u.username, ''), sh.created_at,
+		       COALESCE(sh.expires_at, ''), sh.plays
+		FROM track_shares sh
+		JOIN tracks t ON t.id = sh.track_id
+		LEFT JOIN users u ON u.id = sh.created_by
+		WHERE COALESCE(sh.expires_at, '') = '' OR sh.expires_at > ?
+		ORDER BY sh.created_at DESC`, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		s.internalErr(w, "list shares", err)
+		return
+	}
+	defer rows.Close()
+	out := []AdminShare{}
+	for rows.Next() {
+		var sh AdminShare
+		if err := rows.Scan(&sh.Token, &sh.TrackID, &sh.Title, &sh.Artist, &sh.SharedBy, &sh.CreatedAt, &sh.ExpiresAt, &sh.Plays); err != nil {
+			s.internalErr(w, "scan share", err)
+			return
+		}
+		out = append(out, sh)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleAdminRevokeShare: DELETE /api/admin/shares/{token} — the link
+// stops working at once, whoever made it.
+func (s *Server) handleAdminRevokeShare(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.db.Exec(`DELETE FROM track_shares WHERE token = ?`, r.PathValue("token")); err != nil {
+		s.internalErr(w, "revoke share", err)
+		return
+	}
+	writeNoContent(w)
 }

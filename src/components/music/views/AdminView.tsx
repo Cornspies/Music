@@ -10,6 +10,7 @@ import {
   Loader2,
   LogOut,
   Plus,
+  Share2,
   Shield,
   ShieldCheck,
   Ticket,
@@ -19,8 +20,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { admin, inviteLink } from "@/lib/api"
-import { formatFileSize, formatRelativeDate } from "@/lib/format"
-import type { AdminSettings, AdminUser, Invite } from "@/lib/types"
+import { formatFileSize, formatRelativeDate, formatTimeUntil } from "@/lib/format"
+import type { AdminSettings, AdminShare, AdminUser, Invite } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
 import { UserAvatar } from "@/components/music/UserAvatar"
@@ -87,6 +88,89 @@ function inviteExpiry(iso: string): string {
  * the record of who used which. Copy the link and send it; the sign-up page
  * fills the code in itself.
  */
+/** Every share link that still works: what it points at, who made it, when it runs out. */
+function SharesSection() {
+  const [shares, setShares] = useState<AdminShare[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    admin
+      .shares()
+      .then((list) => alive && setShares(list))
+      .catch((e: Error) => {
+        if (alive) {
+          toast.error(e.message)
+          setShares([])
+        }
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const revoke = async (sh: AdminShare) => {
+    setBusy(sh.token)
+    try {
+      await admin.revokeShare(sh.token)
+      setShares((list) => (list ?? []).filter((x) => x.token !== sh.token))
+      toast.success(`Link to “${sh.title}” turned off`)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
+        <Share2 className="size-4" aria-hidden="true" />
+        Shared links {shares ? <span className="text-zinc-600">· {shares.length}</span> : null}
+      </h2>
+      {!shares ? (
+        <div className="flex justify-center py-6 text-zinc-500">
+          <Loader2 className="size-5 animate-spin" />
+        </div>
+      ) : shares.length === 0 ? (
+        <p className="py-6 text-center text-xs text-zinc-600">No shared links.</p>
+      ) : (
+        <div role="list" className="overflow-hidden rounded-xl border border-zinc-800/80">
+          {shares.map((sh) => (
+            <div
+              key={sh.token}
+              role="listitem"
+              className="flex items-center gap-3 border-b border-zinc-800/60 bg-zinc-900/30 px-3 py-2.5"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-zinc-100">
+                  {sh.title}
+                  {sh.artist ? <span className="font-normal text-zinc-500"> · {sh.artist}</span> : null}
+                </p>
+                <p className="truncate text-xs text-zinc-500">
+                  by {sh.sharedBy || "someone"} · expires {formatTimeUntil(sh.expiresAt)} (
+                  {new Date(sh.expiresAt).toLocaleDateString()}) · opened {sh.plays}{" "}
+                  {sh.plays === 1 ? "time" : "times"}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy === sh.token}
+                onClick={() => revoke(sh)}
+                className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              >
+                {busy === sh.token ? <Loader2 className="size-3.5 animate-spin" /> : <Ban className="size-3.5" />}
+                Revoke
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function InvitesSection() {
   const [invites, setInvites] = useState<Invite[] | null>(null)
   const [note, setNote] = useState("")
@@ -379,7 +463,6 @@ export function AdminView() {
 
   return (
     <div className="p-4 pb-16 md:p-6 md:pb-12">
-      <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">Server</p>
       <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Admin</h1>
 
       {error ? (
@@ -429,6 +512,7 @@ export function AdminView() {
       ) : null}
 
       <InvitesSection />
+      <SharesSection />
 
       <section className="mt-8">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">

@@ -113,7 +113,14 @@ fun SearchScreen() {
                 .fillMaxWidth()
                 .focusRequester(focusRequester),
             placeholder = {
-                Text(if (source == null) "Songs, artists, albums…" else "Search ${sources.firstOrNull { it.key == source }?.name ?: source}")
+                val catalogue = sources.firstOrNull { it.key == source }
+                Text(
+                    when {
+                        source == null -> "Songs, artists, albums…"
+                        catalogue?.playlists == true -> "Search ${catalogue.name}, or paste a link"
+                        else -> "Search ${catalogue?.name ?: source}"
+                    },
+                )
             },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             trailingIcon = {
@@ -231,7 +238,6 @@ private fun DiscoverResults(source: String, query: String) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { model.loadImports() }
     val imports = model.shownImports
-    val hasPlaylists = model.discoverSources.orEmpty().firstOrNull { it.key == source }?.playlists == true
     var starting by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
 
@@ -248,18 +254,7 @@ private fun DiscoverResults(source: String, query: String) {
             )
         }
         when {
-            query.isBlank() -> item {
-                Text(
-                    if (hasPlaylists) {
-                        "Search the catalogue, or paste a playlist link to import all of it; tracks you add are downloaded into the library."
-                    } else {
-                        "Search the catalogue; tracks you add are downloaded into the library."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 32.dp, start = 8.dp),
-                )
-            }
+            query.isBlank() -> {}
             error != null && results == null -> item {
                 Text(
                     error,

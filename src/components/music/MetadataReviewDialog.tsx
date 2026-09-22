@@ -265,7 +265,7 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
 
           {!loading && !error && !queue?.pending && queue?.partial && (
             <p className="mt-3 text-xs text-amber-300/80">
-              Not every provider answered (rate limits); “Look up again” tries them all once more.
+              Not every provider answered.
             </p>
           )}
 
@@ -408,7 +408,7 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
             <Input
               value={ytUrl}
               onChange={(e) => setYtUrl(e.target.value)}
-              placeholder="Not listed? Paste a YouTube link to use that video's details"
+              placeholder="Or paste a YouTube link"
               aria-label="YouTube link"
               disabled={ytBusy}
               className="h-8 border-zinc-800 bg-zinc-950/60 text-xs"

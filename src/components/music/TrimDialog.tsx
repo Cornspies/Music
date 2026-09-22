@@ -165,7 +165,7 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
           Trim “{track.title}”
         </DialogTitle>
         <DialogDescription className="text-xs text-zinc-500">
-          Drag the handles or set the times; the shaded parts are removed. This changes the file for everyone.
+          This changes the file for everyone.
         </DialogDescription>
       </DialogHeader>
 

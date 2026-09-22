@@ -245,7 +245,7 @@ fun MetadataReviewDialog(
                     Spacer(Modifier.height(8.dp))
                 } else if (!loading && error == null && partial) {
                     Text(
-                        "Not every provider answered; “Look up again” tries them all once more.",
+                        "Not every provider answered.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.tertiary,
                     )

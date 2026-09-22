@@ -120,6 +120,8 @@ func (s *Server) Routes() http.Handler {
         // someone without an account.
         mux.HandleFunc("GET /api/app/releases", s.requireAuth(s.handleAppReleases))
         mux.HandleFunc("GET /api/app/releases/{file}", s.requireMediaAuth(s.handleAppReleaseDownload))
+        mux.HandleFunc("GET /api/admin/shares", s.requireAdmin(s.handleAdminShares))
+        mux.HandleFunc("DELETE /api/admin/shares/{token}", s.requireAdmin(s.handleAdminRevokeShare))
         mux.HandleFunc("GET /api/share/{token}", s.handleSharedTrack)
         mux.HandleFunc("GET /api/share/{token}/stream", s.handleSharedStream)
         mux.HandleFunc("GET /api/share/{token}/cover", s.handleSharedCover)

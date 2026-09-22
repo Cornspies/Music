@@ -5,6 +5,7 @@ import { Check, Copy, Link2, Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { createTrackShare, deleteTrackShare, fetchTrackShare } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
+import { formatTimeUntil } from "@/lib/format"
 import type { Track, TrackShare } from "@/lib/types"
 import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
@@ -89,7 +90,7 @@ function ShareBody({ track, onClose }: { track: Track; onClose: () => void }) {
           Share “{track.title}”
         </DialogTitle>
         <DialogDescription className="text-xs text-zinc-500">
-          Anyone with the link can play this one track, without an account here.
+          Anyone with the link can play this track.
         </DialogDescription>
       </DialogHeader>
 
@@ -115,7 +116,8 @@ function ShareBody({ track, onClose }: { track: Track; onClose: () => void }) {
             </Button>
           </div>
           <p className="text-xs text-zinc-500">
-            {share.plays > 0 ? `Opened ${share.plays} ${share.plays === 1 ? "time" : "times"}` : "Not opened yet"}
+            {share.expiresAt ? `Expires ${formatTimeUntil(share.expiresAt)} · ` : ""}
+            {share.plays > 0 ? `opened ${share.plays} ${share.plays === 1 ? "time" : "times"}` : "not opened yet"}
             {share.mine ? "" : " · made by someone else"}
           </p>
         </>

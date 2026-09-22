@@ -99,18 +99,15 @@ function RenameSection({ current }: { current: string }) {
         className="border-zinc-800 bg-zinc-950/60"
       />
       {changed ? (
-        <>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Current password"
-            aria-label="Current password"
-            autoComplete="current-password"
-            className="border-zinc-800 bg-zinc-950/60"
-          />
-          <p className="text-xs text-zinc-500">This is also the name you sign in with.</p>
-        </>
+        <Input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Current password"
+          aria-label="Current password"
+          autoComplete="current-password"
+          className="border-zinc-800 bg-zinc-950/60"
+        />
       ) : null}
       {error ? <p className="text-xs text-red-400">{error}</p> : null}
       {changed ? (
@@ -170,8 +167,8 @@ function DeleteSection({ onDeleted }: { onDeleted: () => void }) {
     <form onSubmit={remove} className="flex flex-col gap-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
       <p className="text-sm font-medium text-red-300">Delete your account?</p>
       <p className="text-xs text-zinc-400">
-        The music you uploaded stays in the library. Your playlists, favorites, history and share links are
-        removed, and you are signed out everywhere. This cannot be undone.
+        Your uploads stay in the library. Your playlists, favorites and history are deleted. This can&apos;t
+        be undone.
       </p>
       <Input
         type="password"

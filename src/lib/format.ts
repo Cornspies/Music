@@ -50,6 +50,19 @@ export function formatRelativeDate(iso: string): string {
   return `${years} year${years === 1 ? "" : "s"} ago`
 }
 
+/** "in 5 days", "in 3 hours", "in 20 minutes" — for expiry times; "expired" once past. */
+export function formatTimeUntil(iso: string): string {
+  const at = new Date(iso).getTime()
+  if (!Number.isFinite(at)) return ""
+  const mins = Math.floor((at - Date.now()) / 60000)
+  if (mins <= 0) return "expired"
+  if (mins < 60) return `in ${mins} minute${mins === 1 ? "" : "s"}`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `in ${hours} hour${hours === 1 ? "" : "s"}`
+  const days = Math.floor(hours / 24)
+  return `in ${days} day${days === 1 ? "" : "s"}`
+}
+
 /** mm:ss countdown for sleep timer remaining seconds */
 export function formatCountdown(totalSec: number): string {
   const s = Math.max(0, Math.ceil(totalSec))

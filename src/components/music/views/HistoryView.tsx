@@ -121,7 +121,6 @@ export function HistoryView() {
     <div className="p-4 pb-16 md:p-6 md:pb-12">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">Listening</p>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-50">History</h1>
         </div>
         <div role="tablist" aria-label="Time range" className="flex gap-1 rounded-lg bg-zinc-900/70 p-1">

@@ -191,7 +191,7 @@ data class TrackShare(
     val token: String,
     val trackId: String = "",
     val createdAt: String = "",
-    /** null for a link that doesn't expire. */
+    /** When the link stops working; a week after it was made at most. */
     val expiresAt: String? = null,
     /** How often the link has been opened. */
     val plays: Int = 0,

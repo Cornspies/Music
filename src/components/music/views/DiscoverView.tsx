@@ -184,7 +184,6 @@ export function DiscoverView() {
     <div className="p-4 pb-16 md:p-6 md:pb-12">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">Add music</p>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Discover</h1>
         </div>
         {sources && sources.length > 1 ? (

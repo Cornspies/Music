@@ -232,12 +232,26 @@ export interface TrackShare {
   token: string
   trackId: string
   createdAt: string
-  /** "" (absent) for a link that doesn't expire. */
+  /** When the link stops working; a week after it was made at most. */
   expiresAt?: string
   /** How often the link has been opened. */
   plays: number
   /** True when the signed-in user created this link. */
   mine: boolean
+}
+
+/** A live share link, as the admin list shows it. */
+export interface AdminShare {
+  token: string
+  trackId: string
+  title: string
+  artist: string
+  /** Who made the link. */
+  sharedBy: string
+  createdAt: string
+  expiresAt: string
+  /** How often the link has been opened. */
+  plays: number
 }
 
 /** What the public share page knows about the track behind a link. */

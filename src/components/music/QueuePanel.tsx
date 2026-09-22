@@ -74,7 +74,7 @@ export function QueuePanel() {
             </section>
           ) : (
             <p className="px-4 py-6 text-center text-sm text-zinc-600">
-              Nothing playing — pick a track from your library.
+              Nothing playing
             </p>
           )}
 

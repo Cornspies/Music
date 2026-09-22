@@ -22,6 +22,7 @@ import type {
   DiscoverSearch,
   DuplicateGroup,
   PlaylistImport,
+  AdminShare,
   AppRelease,
   TrackChanges,
   TrackShare,
@@ -564,6 +565,9 @@ export const admin = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }),
+  shares: () => api<AdminShare[]>("/api/admin/shares"),
+  revokeShare: (token: string) =>
+    api<void>(`/api/admin/shares/${encodeURIComponent(token)}`, { method: "DELETE" }),
   invites: () => api<Invite[]>("/api/admin/invites"),
   createInvite: (body: { note?: string; expiresHours?: number }) =>
     api<Invite>("/api/admin/invites", {

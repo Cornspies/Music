@@ -687,12 +687,13 @@ class AppModel(
     }
 
     /**
-     * The share link for a track, making one if there isn't one yet.
+     * The share link for a track, making one if there isn't one yet, and
+     * when it stops working (links last a week at most).
      * @throws Exception with the server's message.
      */
-    suspend fun shareLinkFor(track: Track): String {
+    suspend fun shareLinkFor(track: Track): Pair<String, String?> {
         val share = api.trackShare(track.id) ?: api.createTrackShare(track.id)
-        return DeepLinks.trackShareUrl(api.baseUrl, share.token)
+        return DeepLinks.trackShareUrl(api.baseUrl, share.token) to share.expiresAt
     }
 
     /** Turns the link off; it stops working at once. */

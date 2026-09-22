@@ -435,11 +435,6 @@ private fun RenameAccountDialog(onDismiss: () -> Unit) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Text(
-                        "This is also the name you sign in with.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     error?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
@@ -496,8 +491,8 @@ private fun DeleteAccountDialog(onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "The music you uploaded stays in the library. Your playlists, favorites, history and share links " +
-                        "are removed, and you are signed out everywhere. This cannot be undone.",
+                    "Your uploads stay in the library. Your playlists, favorites and history are deleted. " +
+                        "This can't be undone.",
                 )
                 OutlinedTextField(
                     value = password,
