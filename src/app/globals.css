@@ -1,4 +1,7 @@
-@import "tailwindcss";
+/* Class names only live under src/. Scanning from the repository root would
+   also walk the server's data directory (the music library, and files the
+   service user keeps private), which is slow and fails the build. */
+@import "tailwindcss" source("../");
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
