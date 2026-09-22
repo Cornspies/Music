@@ -47,6 +47,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.time.Instant
+import kotlin.time.ExperimentalTime
+import kotlin.time.Clock
 import coil3.compose.AsyncImage
 import com.music.app.LocalAppModel
 import com.music.app.api.MetadataCandidate
@@ -132,6 +135,7 @@ fun MetadataReviewDialog(
     var pending by remember { mutableStateOf(false) }
     var queuePosition by remember { mutableStateOf(0) }
     var attempts by remember { mutableStateOf(0) }
+    var retryAt by remember { mutableStateOf<String?>(null) }
     var partial by remember { mutableStateOf(false) }
 
     // trackId -> chosen candidate id, so revisiting a track shows what was applied.
@@ -160,6 +164,7 @@ fun MetadataReviewDialog(
                 pending = response.pending
                 queuePosition = response.queuePosition
                 attempts = response.attempts
+                retryAt = response.retryAt
                 partial = response.partial
                 error = null
             } catch (e: Exception) {
@@ -225,6 +230,7 @@ fun MetadataReviewDialog(
                             buildString {
                                 append(
                                     when {
+                                        retryAt != null -> "A provider didn't answer — trying again ${formatIn(retryAt!!)} (attempt ${attempts + 1})"
                                         queuePosition > 1 -> "Waiting for the lookup queue · ${queuePosition - 1} ahead"
                                         attempts > 0 -> "A provider was rate-limited — retrying (attempt ${attempts + 1})"
                                         else -> "Searching MusicBrainz, Deezer, iTunes…"
@@ -511,5 +517,18 @@ private fun Badge(text: String, color: Color) {
             color = color,
             maxLines = 1,
         )
+    }
+}
+
+/** "in 10 min", "in 12 h", "in a day" — when a parked retry runs. */
+@OptIn(ExperimentalTime::class)
+private fun formatIn(iso: String): String {
+    val at = runCatching { Instant.parse(iso) }.getOrNull() ?: return "later"
+    val minutes = (at - Clock.System.now()).inWholeMinutes
+    return when {
+        minutes < 1 -> "any moment"
+        minutes < 60 -> "in $minutes min"
+        minutes < 60 * 23 -> "in ${(minutes + 30) / 60} h"
+        else -> "in a day"
     }
 }

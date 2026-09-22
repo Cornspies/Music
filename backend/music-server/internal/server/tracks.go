@@ -83,7 +83,8 @@ type Track struct {
 	// "restore original".
 	Trimmed bool `json:"trimmed"`
 	// MetadataStatus is the online lookup's state for this track:
-	// "queued", "running", "done", or "" when none was ever queued.
+	// "queued", "running", "waiting" (a provider was missing; the retry is
+	// scheduled, hours away at most), "done", or "" when none was ever queued.
 	MetadataStatus string `json:"metadataStatus"`
 	// HasWaveform is true once GET /api/tracks/{id}/waveform has data.
 	HasWaveform bool `json:"hasWaveform"`
@@ -150,7 +151,7 @@ SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration
        COALESCE(t.alt_path, ''), COALESCE(t.alt_mime, ''), COALESCE(t.alt_size, 0),
        COALESCE(t.updated_at, ''), t.loudness, (COALESCE(t.waveform_json, '') <> ''),
        COALESCE(t.source, ''), COALESCE(t.source_id, ''), COALESCE(t.cover_color, ''),
-       COALESCE(mj.state, '')
+       CASE WHEN mj.state = 'queued' AND mj.attempts > 0 THEN 'waiting' ELSE COALESCE(mj.state, '') END
 FROM tracks t
 LEFT JOIN users u ON u.id = t.user_id
 LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?

@@ -38,7 +38,7 @@ export interface Track {
   sourceId: string
   /** "#rrggbb" representative colour of the cover, "" until computed. */
   coverColor: string
-  /** Online lookup state: "queued" | "running" | "done" | "" (never queued). */
+  /** Online lookup state: "queued" | "running" | "waiting" (retry parked, a provider was missing) | "done" | "" (never queued). */
   metadataStatus: string
   /** The audio was cut and the uploaded original is kept for "restore". */
   trimmed: boolean
@@ -317,6 +317,8 @@ export interface MetadataCandidatesResponse {
   /** A finished lookup that was missing a provider. */
   partial: boolean
   attempts: number
+  /** When a parked retry runs (RFC 3339), while a provider is missing. */
+  retryAt?: string
 }
 
 /** One existing track that looks like an upload (409 from POST /api/tracks). */

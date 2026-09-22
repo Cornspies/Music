@@ -52,20 +52,20 @@ const (
 	// A queued lookup may take longer than the upload-time budget did: the
 	// worker isn't holding anyone's request open.
 	queuedLookupTimeout = 40 * time.Second
-	// After this many incomplete attempts the job is closed with what it has;
-	// a manual re-lookup can always try again.
-	maxLookupAttempts = 8
 )
 
-// retryDelay grows with each incomplete attempt. MusicBrainz's cooldown is a
-// minute, so the first retries are short; the later ones space out so a
-// day-long YouTube quota exhaustion doesn't burn the whole schedule at once.
+// retryDelay grows with each incomplete attempt: a minute for MusicBrainz's
+// cooldown, then ten, an hour, half a day, and from there once a day for as
+// long as a provider stays away (a YouTube quota resets daily; an outage
+// ends eventually). A job is never written off — but it doesn't hold the
+// track's tags hostage either: a confident match is applied on the first
+// attempt that has one, and the retries only fill in what's still missing.
 func retryDelay(attempt int) time.Duration {
-	delays := []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 5 * time.Minute, 10 * time.Minute}
+	delays := []time.Duration{time.Minute, 10 * time.Minute, time.Hour, 12 * time.Hour}
 	if attempt-1 < len(delays) {
 		return delays[attempt-1]
 	}
-	return 15 * time.Minute
+	return 24 * time.Hour
 }
 
 // metadataJob is one row of metadata_jobs.
@@ -194,8 +194,10 @@ func (s *Server) loadMetadataJob(trackID string) (*metadataJob, error) {
 // queuePosition is how many jobs are ahead of this one (1 = next up).
 func (s *Server) queuePosition(trackID string) int {
 	var n int
-	_ = s.db.QueryRow(`SELECT COUNT(1) FROM metadata_jobs WHERE state IN (?, ?) AND created_at <= (SELECT created_at FROM metadata_jobs WHERE track_id = ?)`,
-		jobQueued, jobRunning, trackID).Scan(&n)
+	// Jobs parked until a retry hour aren't in the way of this one.
+	_ = s.db.QueryRow(`SELECT COUNT(1) FROM metadata_jobs WHERE state IN (?, ?) AND (not_before = '' OR not_before <= ?)
+		AND created_at <= (SELECT created_at FROM metadata_jobs WHERE track_id = ?)`,
+		jobQueued, jobRunning, nowRFC3339(), trackID).Scan(&n)
 	return max(n, 1)
 }
 
@@ -283,44 +285,46 @@ func (s *Server) runMetadataJob(id string) {
 	cancel()
 
 	attempt := job.Attempts + 1
-	if outcome.degraded() && attempt < maxLookupAttempts {
-		delay := retryDelay(attempt)
-		log.Printf("metadata queue: %q incomplete (%d provider(s) missing), retry %d in %s",
-			fileName, outcome.failed, attempt, delay)
-		_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, attempts = ?, not_before = ?, candidates_json = ?, partial = 1, last_error = ? WHERE track_id = ?`,
-			jobQueued, attempt, time.Now().UTC().Add(delay).Format(time.RFC3339), marshalCandidates(cands),
-			fmt.Sprintf("%d provider(s) didn't answer; retrying", outcome.failed), id)
-		return
-	}
 
-	appliedID := ""
+	// A confident match goes in as soon as there is one, even while a
+	// provider is still missing: the retries can be a day apart, and the
+	// track shouldn't sit untagged that long. Later attempts only fill in
+	// what is still empty.
+	appliedID := job.AppliedID
 	if job.Reason == reasonUpload && len(cands) > 0 && cands[0].score >= acceptScoreThreshold {
 		applyCtx, applyCancel := context.WithTimeout(context.Background(), 20*time.Second)
-		if s.autoApplyCandidate(applyCtx, &t, meta, cands[0]) {
+		if s.autoApplyCandidate(applyCtx, &t, meta, cands[0], appliedID == "") && appliedID == "" {
 			appliedID = cands[0].id
 		}
 		applyCancel()
-	} else if len(cands) > 0 && job.Reason == reasonUpload {
+	} else if len(cands) > 0 && job.Reason == reasonUpload && !outcome.degraded() {
 		log.Printf("metadata queue: no confident match for %q (best %.2f from %s) — leaving tags as-is, %d alternative(s) available",
 			fileName, cands[0].score, cands[0].source, len(cands))
 	}
 
-	partial := 0
 	if outcome.degraded() {
-		partial = 1
+		delay := retryDelay(attempt)
+		log.Printf("metadata queue: %q incomplete (%d provider(s) missing), retry %d in %s",
+			fileName, outcome.failed, attempt, delay)
+		_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, attempts = ?, not_before = ?, applied_id = ?, candidates_json = ?, partial = 1, last_error = ? WHERE track_id = ?`,
+			jobQueued, attempt, time.Now().UTC().Add(delay).Format(time.RFC3339), appliedID, marshalCandidates(cands),
+			fmt.Sprintf("%d provider(s) didn't answer; retrying", outcome.failed), id)
+		return
 	}
-	_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, attempts = ?, not_before = '', finished_at = ?, applied_id = ?, candidates_json = ?, partial = ?, last_error = '' WHERE track_id = ?`,
-		jobDone, attempt, nowRFC3339(), appliedID, marshalCandidates(cands), partial, id)
+
+	_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, attempts = ?, not_before = '', finished_at = ?, applied_id = ?, candidates_json = ?, partial = 0, last_error = '' WHERE track_id = ?`,
+		jobDone, attempt, nowRFC3339(), appliedID, marshalCandidates(cands), id)
 }
 
 // autoApplyCandidate fills what the file's own tags left empty from the best
 // match — never overwriting a real tag — and stores the cover if there was
 // none. meta holds the track's current values with placeholders dropped.
-func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMetadata, best scoredCandidate) bool {
+// first says this is the job's first application (a retry only tops up).
+func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMetadata, best scoredCandidate, first bool) bool {
 	// A YouTube track's cover is a video thumbnail standing in for the
-	// real art, so a confident match may replace it; otherwise the cover
-	// the file had stays.
-	replaceCover := t.Source == "youtube"
+	// real art, so a confident match may replace it — once; otherwise the
+	// cover the file had stays.
+	replaceCover := first && t.Source == "youtube"
 	if t.HasCover && !replaceCover {
 		meta.picture = []byte{1} // non-empty: keep the cover the file had
 	} else {

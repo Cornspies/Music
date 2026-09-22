@@ -47,8 +47,11 @@ type MetadataCandidatesResponse struct {
         QueuePosition int `json:"queuePosition,omitempty"`
         // Partial is true when the finished lookup was missing a provider.
         Partial bool `json:"partial"`
-        // Attempts counts lookups made so far, for "retry 3 of 8" wording.
+        // Attempts counts lookups made so far, for "retrying (attempt 3)" wording.
         Attempts int `json:"attempts"`
+        // RetryAt is when a lookup missing a provider will be tried again
+        // (RFC 3339), while it is parked.
+        RetryAt string `json:"retryAt,omitempty"`
 }
 
 func toJSONCandidates(cands []scoredCandidate, appliedID string) []MetadataCandidate {
@@ -104,6 +107,9 @@ func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Re
         }
         if resp.Pending {
                 resp.QueuePosition = s.queuePosition(id)
+                if job.State == jobQueued && !job.NotBefore.IsZero() && job.NotBefore.After(time.Now()) {
+                        resp.RetryAt = job.NotBefore.UTC().Format(time.RFC3339)
+                }
         }
         writeJSON(w, http.StatusOK, resp)
 }

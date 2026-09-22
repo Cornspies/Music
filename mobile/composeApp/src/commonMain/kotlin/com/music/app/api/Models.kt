@@ -83,7 +83,7 @@ data class Track(
     val sourceId: String = "",
     /** "#rrggbb" representative colour of the cover, "" until computed. */
     val coverColor: String = "",
-    /** Online lookup state: "queued" | "running" | "done" | "" (never queued). */
+    /** Online lookup state: "queued" | "running" | "waiting" (retry parked) | "done" | "" (never queued). */
     val metadataStatus: String = "",
 )
 
@@ -391,6 +391,8 @@ data class MetadataCandidatesResponse(
     /** A finished lookup that was missing a provider. */
     val partial: Boolean = false,
     val attempts: Int = 0,
+    /** When a parked retry runs (RFC 3339), while a provider is missing. */
+    val retryAt: String? = null,
 )
 
 /** GET /api/metadata/queue */
