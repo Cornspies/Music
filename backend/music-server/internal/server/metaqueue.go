@@ -42,18 +42,19 @@ func retryDelay(attempt int) time.Duration {
 }
 
 type metadataJob struct {
-	TrackID     string
-	State       string
-	Reason      string
-	RequestedBy string
-	Attempts    int
-	NotBefore   time.Time
-	CreatedAt   time.Time
-	FinishedAt  time.Time
-	AppliedID   string
-	Candidates  []scoredCandidate
-	Partial     bool
-	LastError   string
+	TrackID      string
+	State        string
+	Reason       string
+	RequestedBy  string
+	Attempts     int
+	NotBefore    time.Time
+	CreatedAt    time.Time
+	FinishedAt   time.Time
+	AppliedID    string
+	Candidates   []scoredCandidate
+	Partial      bool
+	LastError    string
+	CoverApplied bool
 }
 
 type persistedCandidate struct {
@@ -136,7 +137,7 @@ func (s *Server) enqueueMetadataLookup(trackID, reason, requestedBy string) erro
 		VALUES (?, ?, ?, ?, 0, '', ?, '', '', '[]', 0, '')
 		ON CONFLICT(track_id) DO UPDATE SET state = excluded.state, reason = excluded.reason, requested_by = excluded.requested_by,
 			attempts = 0, not_before = '', created_at = excluded.created_at, finished_at = '', applied_id = '',
-			candidates_json = '[]', partial = 0, last_error = ''`,
+			candidates_json = '[]', partial = 0, last_error = '', cover_applied = 0`,
 		trackID, jobQueued, reason, requestedBy, nowRFC3339())
 	if err != nil {
 		return err
@@ -148,10 +149,10 @@ func (s *Server) enqueueMetadataLookup(trackID, reason, requestedBy string) erro
 func (s *Server) loadMetadataJob(trackID string) (*metadataJob, error) {
 	var j metadataJob
 	var notBefore, created, finished, cands string
-	var partial int
-	err := s.db.QueryRow(`SELECT track_id, state, reason, requested_by, attempts, not_before, created_at, finished_at, applied_id, candidates_json, partial, last_error
+	var partial, coverApplied int
+	err := s.db.QueryRow(`SELECT track_id, state, reason, requested_by, attempts, not_before, created_at, finished_at, applied_id, candidates_json, partial, last_error, cover_applied
 		FROM metadata_jobs WHERE track_id = ?`, trackID).
-		Scan(&j.TrackID, &j.State, &j.Reason, &j.RequestedBy, &j.Attempts, &notBefore, &created, &finished, &j.AppliedID, &cands, &partial, &j.LastError)
+		Scan(&j.TrackID, &j.State, &j.Reason, &j.RequestedBy, &j.Attempts, &notBefore, &created, &finished, &j.AppliedID, &cands, &partial, &j.LastError, &coverApplied)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +161,7 @@ func (s *Server) loadMetadataJob(trackID string) (*metadataJob, error) {
 	j.FinishedAt, _ = time.Parse(time.RFC3339, finished)
 	j.Candidates = unmarshalCandidates(cands)
 	j.Partial = partial == 1
+	j.CoverApplied = coverApplied == 1
 	return &j, nil
 }
 
@@ -267,12 +269,16 @@ func (s *Server) runMetadataJob(id string) {
 	appliedID := job.AppliedID
 	_, wantArtist, wantTitle := buildSearchPlan(meta, fileName)
 	identified := wantArtist != "" && wantTitle != ""
+	coverApplied := job.CoverApplied
 	if job.Reason == reasonUpload && identified && len(cands) > 0 && cands[0].score >= acceptScoreThreshold {
+		replaceCover := t.Source == "youtube" && !coverApplied && cands[0].score >= coverMatchThreshold
 		applyCtx, applyCancel := context.WithTimeout(context.Background(), 20*time.Second)
-		if s.autoApplyCandidate(applyCtx, &t, meta, cands[0], appliedID == "") && appliedID == "" {
+		applied, replaced := s.autoApplyCandidate(applyCtx, &t, meta, cands[0], replaceCover)
+		applyCancel()
+		if applied && appliedID == "" {
 			appliedID = cands[0].id
 		}
-		applyCancel()
+		coverApplied = coverApplied || replaced
 	} else if len(cands) > 0 && job.Reason == reasonUpload && !outcome.degraded() {
 		why := fmt.Sprintf("no confident match (best %.2f from %s)", cands[0].score, cands[0].source)
 		if !identified {
@@ -286,18 +292,17 @@ func (s *Server) runMetadataJob(id string) {
 		delay := retryDelay(attempt)
 		log.Printf("metadata queue: %q incomplete (%d provider(s) missing), retry %d in %s",
 			fileName, outcome.failed, attempt, delay)
-		_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, attempts = ?, not_before = ?, applied_id = ?, candidates_json = ?, partial = 1, last_error = ? WHERE track_id = ?`,
+		_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, attempts = ?, not_before = ?, applied_id = ?, candidates_json = ?, partial = 1, last_error = ?, cover_applied = ? WHERE track_id = ?`,
 			jobQueued, attempt, time.Now().UTC().Add(delay).Format(time.RFC3339), appliedID, marshalCandidates(cands),
-			fmt.Sprintf("%d provider(s) didn't answer; retrying", outcome.failed), id)
+			fmt.Sprintf("%d provider(s) didn't answer; retrying", outcome.failed), boolToInt(coverApplied), id)
 		return
 	}
 
-	_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, attempts = ?, not_before = '', finished_at = ?, applied_id = ?, candidates_json = ?, partial = 0, last_error = '' WHERE track_id = ?`,
-		jobDone, attempt, nowRFC3339(), appliedID, marshalCandidates(cands), id)
+	_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, attempts = ?, not_before = '', finished_at = ?, applied_id = ?, candidates_json = ?, partial = 0, last_error = '', cover_applied = ? WHERE track_id = ?`,
+		jobDone, attempt, nowRFC3339(), appliedID, marshalCandidates(cands), boolToInt(coverApplied), id)
 }
 
-func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMetadata, best scoredCandidate, first bool) bool {
-	replaceCover := first && t.Source == "youtube"
+func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMetadata, best scoredCandidate, replaceCover bool) (applied, coverReplaced bool) {
 	if t.HasCover && !replaceCover {
 		meta.picture = []byte{1}
 	} else {
@@ -305,13 +310,14 @@ func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMeta
 	}
 	filled := applyCandidate(ctx, &meta, best.metadataCandidate, false)
 	if len(filled) == 0 {
-		return false
+		return false, false
 	}
 	hasCover := t.HasCover
 	if (!t.HasCover || replaceCover) && len(meta.picture) > 1 {
 		if safeCoverBytes(meta.picture) {
 			if err := os.WriteFile(filepath.Join(s.covDir, t.ID+".img"), meta.picture, 0o644); err == nil {
 				hasCover = true
+				coverReplaced = replaceCover
 			}
 		}
 	}
@@ -321,15 +327,15 @@ func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMeta
 	if _, err := s.db.Exec(`UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, has_cover = ?, updated_at = ? WHERE id = ?`,
 		title, artist, album, meta.genre, meta.year, boolToInt(hasCover), nowRFC3339(), t.ID); err != nil {
 		logErr("metadata queue apply", err)
-		return false
+		return false, false
 	}
 	log.Printf("metadata queue: filled %s for %q from %s match %q by %q (confidence %.2f)",
 		strings.Join(filled, ", "), t.Title, best.source, best.title, best.artist, best.score)
 	s.forgetLookedUpLyrics(t.ID)
-	if hasCover && !t.HasCover {
+	if coverReplaced || (hasCover && !t.HasCover) {
 		go s.updateCoverColor(t.ID)
 	}
-	return true
+	return true, coverReplaced
 }
 
 type MetadataQueueStatus struct {

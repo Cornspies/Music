@@ -171,9 +171,11 @@ func migrate(db *sql.DB) error {
                         applied_id      TEXT NOT NULL DEFAULT '',
                         candidates_json TEXT NOT NULL DEFAULT '[]',
                         partial         INTEGER NOT NULL DEFAULT 0,
-                        last_error      TEXT NOT NULL DEFAULT ''
+                        last_error      TEXT NOT NULL DEFAULT '',
+                        cover_applied   INTEGER NOT NULL DEFAULT 0
                 )`,
                 `CREATE INDEX IF NOT EXISTS idx_metadata_jobs_state ON metadata_jobs(state, created_at)`,
+                `ALTER TABLE metadata_jobs ADD COLUMN cover_applied INTEGER NOT NULL DEFAULT 0`,
                 `CREATE TABLE IF NOT EXISTS track_shares (
                         token      TEXT PRIMARY KEY,
                         track_id   TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,

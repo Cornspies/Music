@@ -80,6 +80,8 @@ var nonPublicNets = func() []*net.IPNet {
 
 const acceptScoreThreshold = 0.5
 
+const coverMatchThreshold = 0.75
+
 type metadataCandidate struct {
 	title, artist, album, genre string
 	year                        int
