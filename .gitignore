@@ -81,3 +81,4 @@ iosApp/DerivedData/
 *.iml
 .DS_Store
 .vscode/
+/backup
