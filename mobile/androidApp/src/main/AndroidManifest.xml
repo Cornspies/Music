@@ -2,9 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      Only the application-level attributes are declared here. The activity,
-      playback service, widget receiver and permissions come from
-      composeApp/src/androidMain/AndroidManifest.xml and are merged in.
+      The application-level attributes and the verified link filter are
+      declared here; the filter needs musicHost, which only this module
+      defines. The activity itself, the playback service, the widget receiver
+      and the permissions come from composeApp/src/androidMain/AndroidManifest.xml
+      and are merged in.
 
       Backups are off: the session token is Keystore-encrypted and would be
       useless on another device anyway, and downloaded audio belongs to the
@@ -25,6 +27,36 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
-        android:supportsRtl="true" />
+        android:supportsRtl="true">
+
+        <activity
+            android:name="com.music.app.MainActivity"
+            android:exported="true">
+            <!--
+              Shared playlist and track links. The host is a build setting because the
+              server is self-hosted: set musicHost in gradle.properties (or
+              -PmusicHost=...) to your domain, e.g. music.example.com.
+
+              Android only opens these links in the app once the server's
+              /.well-known/assetlinks.json lists the SHA-256 fingerprint of
+              the certificate the installed APK was signed with.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="${musicHost}" />
+                <data android:pathPrefix="/playlists/" />
+                <data android:pathPrefix="/s/" />
+                <data android:path="/register" />
+                <data android:scheme="http" />
+                <data android:host="${musicHost}" />
+                <data android:pathPrefix="/playlists/" />
+                <data android:pathPrefix="/s/" />
+                <data android:path="/register" />
+            </intent-filter>
+        </activity>
+    </application>
 
 </manifest>

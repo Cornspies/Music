@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "com.music.app",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_YOUR_SIGNING_CERT_SHA256"
+        "19:81:10:BC:A3:B5:D4:ED:7E:00:DF:66:40:94:E7:BB:A7:1E:D0:AA:D2:75:A6:50:12:C9:92:68:3A:23:52:F7",
+        "F8:BD:47:88:9B:B5:64:4E:0C:8A:6A:88:8D:12:B6:3D:CD:0E:A9:DC:37:1E:8B:A1:4C:B5:8D:B1:1F:53:53:70"
       ]
     }
   }

@@ -26,31 +26,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!--
-              Shared playlist and track links. The host is a build setting because the
-              server is self-hosted: set musicHost in gradle.properties (or
-              -PmusicHost=...) to your domain, e.g. music.example.com.
-
-              The web app serves /.well-known/assetlinks.json; fill in your
-              signing certificate's fingerprint there and links open the app
-              directly (see public/.well-known/README.md in the repo).
-            -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" />
-                <data android:host="${musicHost}" />
-                <data android:pathPrefix="/playlists/" />
-                <data android:pathPrefix="/s/" />
-                <data android:path="/register" />
-                <data android:scheme="http" />
-                <data android:host="${musicHost}" />
-                <data android:pathPrefix="/playlists/" />
-                <data android:pathPrefix="/s/" />
-                <data android:path="/register" />
-            </intent-filter>
-
             <!-- Works regardless of host, for links shared from the app itself. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

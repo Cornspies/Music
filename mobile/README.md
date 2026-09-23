@@ -90,12 +90,24 @@ Notes:
 - **Download on Wi-Fi only** (Downloads screen) holds audio downloads back on
   mobile data; the playlist track lists still sync.
 
-## Shared playlist links
+## Shared links
 
-The web app serves `/.well-known/assetlinks.json` and
-`apple-app-site-association`. Fill in your signing certificate fingerprint /
-Team ID there (see `public/.well-known/README.md` in the repository root) and
-`https://<musicHost>/playlists/<id>` opens straight in the app.
+`https://<musicHost>/playlists/<id>`, shared tracks (`/s/<token>`) and invite
+links (`/register`) open straight in the app once Android has verified that
+the app belongs to the domain. For that, `public/.well-known/assetlinks.json`
+in the repository root must list the SHA-256 fingerprint of the certificate
+the installed APK was signed with. It lists the release key and the debug key
+of the machine the app was developed on; to read another APK's fingerprint:
+
+```bash
+$ANDROID_HOME/build-tools/<version>/apksigner verify --print-certs Music-<version>.apk
+```
+
+Android checks the file when the app is installed or updated. After changing
+it, redeploy the web app, then reinstall the app or run
+`adb shell pm verify-app-links --re-verify com.music.app`;
+`adb shell pm get-app-links com.music.app` shows the result. iOS needs your
+Team ID in place of `REPLACE_WITH_TEAMID` in `apple-app-site-association`.
 
 ## Build & run
 
