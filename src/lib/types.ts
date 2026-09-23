@@ -134,6 +134,7 @@ export interface DiscoverSource {
   key: string
   name: string
   playlists: boolean
+  links: boolean
 }
 
 export interface DiscoverResult {

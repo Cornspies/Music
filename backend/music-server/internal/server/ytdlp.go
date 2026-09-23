@@ -386,6 +386,8 @@ func youtubePlaylistID(raw string) string {
 
 func (y *ytdlpSource) playlistID(raw string) string { return youtubePlaylistID(raw) }
 
+func (*ytdlpSource) takesLinks() {}
+
 func (y *ytdlpSource) listPlaylist(ctx context.Context, id string) (catalogPlaylist, error) {
 	if !youtubePlaylistIDRe.MatchString(id) {
 		return catalogPlaylist{}, &statusError{http.StatusBadRequest, "not a YouTube playlist id"}

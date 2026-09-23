@@ -50,7 +50,15 @@ var scClient struct {
 	failedAt time.Time
 }
 
+var scNoRedirectClient = &http.Client{
+	Timeout:       15 * time.Second,
+	Transport:     metadataLookupClient.Transport,
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
 var errSCRefused = &statusError{http.StatusBadGateway, "SoundCloud is turning down every client id it hands out right now — try again later"}
+
+func (soundcloudSource) takesLinks() {}
 
 func (soundcloudSource) key() string  { return "soundcloud" }
 func (soundcloudSource) name() string { return "SoundCloud" }
@@ -73,6 +81,7 @@ type scTrack struct {
 	CreatedAt          string `json:"created_at"`
 	Policy             string `json:"policy"`
 	Streamable         bool   `json:"streamable"`
+	Sharing            string `json:"sharing"`
 	TrackAuthorization string `json:"track_authorization"`
 	User               struct {
 		Username  string `json:"username"`
@@ -303,9 +312,108 @@ func scAPI(ctx context.Context, rawURL string, q url.Values, out any) error {
 	return &statusError{http.StatusBadGateway, "SoundCloud refused that request (the track may be private or not available in this country)"}
 }
 
+func scLink(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if !strings.Contains(raw, "soundcloud.com") || strings.ContainsAny(raw, " \t\n") {
+		return "", false
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	host := strings.ToLower(u.Hostname())
+	switch host {
+	case "soundcloud.com", "www.soundcloud.com", "m.soundcloud.com":
+		host = "soundcloud.com"
+	case "on.soundcloud.com", "api.soundcloud.com":
+	case "w.soundcloud.com":
+		if inner := u.Query().Get("url"); inner != "" && !strings.Contains(inner, "w.soundcloud.com") {
+			return scLink(inner)
+		}
+		return "", false
+	default:
+		return "", false
+	}
+	path := strings.TrimRight(u.EscapedPath(), "/")
+	if path == "" {
+		return "", false
+	}
+	return "https://" + host + path, true
+}
+
+func scFollowShortLink(ctx context.Context, link string) (string, error) {
+	resp, err := scGet(ctx, scNoRedirectClient, link)
+	if err != nil {
+		return "", err
+	}
+	resp.Body.Close()
+	loc, err := resp.Location()
+	if err != nil || resp.StatusCode < 300 || resp.StatusCode > 399 {
+		return "", &statusError{http.StatusNotFound, "that SoundCloud short link doesn't lead anywhere"}
+	}
+	full, ok := scLink(loc.String())
+	if !ok || strings.HasPrefix(full, "https://on.soundcloud.com/") {
+		return "", &statusError{http.StatusUnprocessableEntity, "that short link doesn't lead to a SoundCloud track"}
+	}
+	return full, nil
+}
+
+func scResolveLink(ctx context.Context, link string) (*scTrack, error) {
+	if strings.HasPrefix(link, "https://on.soundcloud.com/") {
+		full, err := scFollowShortLink(ctx, link)
+		if err != nil {
+			return nil, err
+		}
+		link = full
+	}
+	var out struct {
+		Kind string `json:"kind"`
+		scTrack
+	}
+	if err := scAPI(ctx, scAPIBase+"/resolve", url.Values{"url": {link}}, &out); err != nil {
+		var status *statusError
+		if errors.As(err, &status) && status.code == http.StatusNotFound {
+			return nil, &statusError{http.StatusNotFound, "there's no SoundCloud track at that link"}
+		}
+		return nil, err
+	}
+	switch out.Kind {
+	case "track":
+	case "playlist", "system-playlist":
+		return nil, &statusError{http.StatusUnprocessableEntity, "that's a SoundCloud playlist — paste a link to a single track"}
+	case "user":
+		return nil, &statusError{http.StatusUnprocessableEntity, "that's a SoundCloud profile — paste a link to a single track"}
+	default:
+		return nil, &statusError{http.StatusUnprocessableEntity, "that link isn't a SoundCloud track"}
+	}
+	t := &out.scTrack
+	switch {
+	case t.Sharing == "private":
+		return nil, &statusError{http.StatusUnprocessableEntity, "that's a private SoundCloud track — only public ones can be added"}
+	case !scIsCreativeCommons(t.License):
+		return nil, &statusError{http.StatusUnprocessableEntity, "This track isn't Creative Commons"}
+	case !t.fullStream():
+		return nil, &statusError{http.StatusUnprocessableEntity, "SoundCloud only offers a preview of that track"}
+	}
+	return t, nil
+}
+
 func (soundcloudSource) search(ctx context.Context, query string, page int) ([]discoverResult, bool, error) {
 	if page > scMaxPages {
 		return nil, false, nil
+	}
+	if link, ok := scLink(query); ok {
+		if page > 1 {
+			return nil, false, nil
+		}
+		t, err := scResolveLink(ctx, link)
+		if err != nil {
+			return nil, false, err
+		}
+		return []discoverResult{t.result()}, false, nil
 	}
 	var out struct {
 		Collection []scTrack `json:"collection"`

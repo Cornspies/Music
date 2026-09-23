@@ -61,7 +61,28 @@ func (s *Server) StartBackgroundWork() {
 	go s.analysisWorker()
 	go s.backfillAnalysis()
 	if autoTrimEnabled() {
+		s.recheckEdgesOnNewRule()
 		go s.backfillEdgeChecks()
+	}
+}
+
+const settingAutoTrimRule = "auto_trim_rule"
+
+func (s *Server) recheckEdgesOnNewRule() {
+	rule := autoTrimThresholdDB + " for " + strconv.FormatFloat(autoTrimMinSeconds, 'f', -1, 64) + "s"
+	if prev, _ := s.getSetting(settingAutoTrimRule); prev == rule {
+		return
+	}
+	res, err := s.db.Exec(`UPDATE tracks SET edges_checked = 0 WHERE edges_checked = 1`)
+	if err != nil {
+		logErr("silence trim rule", err)
+		return
+	}
+	if err := s.putSetting(settingAutoTrimRule, rule); err != nil {
+		logErr("silence trim rule", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("trim: the silence rule is now %s — checking %d track(s) again", rule, n)
 	}
 }
 
@@ -138,9 +159,10 @@ func (s *Server) analyzeTrack(trackID string) {
 	if edgesChecked == 0 && autoTrimEnabled() {
 		trimmed, err := s.trimSilentEdges(ctx, trackID, rel)
 		if err != nil {
-			logErr("trim silence", fmt.Errorf("track %s: %w", trackID, err))
+			logErr("trim silence", fmt.Errorf("track %s (checked again at the next start): %w", trackID, err))
+		} else {
+			_, _ = s.db.Exec(`UPDATE tracks SET edges_checked = 1 WHERE id = ?`, trackID)
 		}
-		_, _ = s.db.Exec(`UPDATE tracks SET edges_checked = 1 WHERE id = ?`, trackID)
 		if !trimmed && analyzedAt != "" {
 			return
 		}

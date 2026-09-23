@@ -22,7 +22,7 @@ const (
 	trimTimeout         = 2 * time.Minute
 	silenceThresholdDB  = "-45dB"
 	silenceMinSeconds   = "0.3"
-	autoTrimThresholdDB = "-60dB"
+	autoTrimThresholdDB = "-55dB"
 	autoTrimMinSeconds  = 0.5
 	autoTrimMargin      = 0.05
 )
@@ -40,7 +40,20 @@ type SilenceInfo struct {
 var (
 	silenceStartRe = regexp.MustCompile(`silence_start: (-?[0-9.]+)`)
 	silenceEndRe   = regexp.MustCompile(`silence_end: (-?[0-9.]+)`)
+	decodedTimeRe  = regexp.MustCompile(`time=([0-9]+):([0-9]{2}):([0-9]{2}(?:\.[0-9]+)?)`)
 )
+
+func decodedLength(ffmpegOutput string) float64 {
+	m := decodedTimeRe.FindAllStringSubmatch(ffmpegOutput, -1)
+	if len(m) == 0 {
+		return 0
+	}
+	last := m[len(m)-1]
+	h, _ := strconv.Atoi(last[1])
+	min, _ := strconv.Atoi(last[2])
+	sec, _ := strconv.ParseFloat(last[3], 64)
+	return float64(h*3600+min*60) + sec
+}
 
 func (s *Server) handleTrackSilence(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
@@ -78,6 +91,9 @@ func detectSilence(ctx context.Context, bin, abs, noise, minSeconds string, dura
 		"-f", "null", "-",
 	)
 	out, err := cmd.CombinedOutput()
+	if d := decodedLength(string(out)); d > 0 {
+		duration = d
+	}
 	info := SilenceInfo{Duration: duration, TrailingStart: duration}
 	starts := silenceStartRe.FindAllStringSubmatch(string(out), -1)
 	ends := silenceEndRe.FindAllStringSubmatch(string(out), -1)
@@ -230,7 +246,7 @@ func (s *Server) handleTrackRestore(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) afterAudioChanged(id, filePath string, lyricsShift float64) {
 	s.recordNewAudio(id, filePath)
-	_, _ = s.db.Exec(`UPDATE tracks SET loudness = NULL, waveform_json = '', analyzed_at = '', edges_checked = 1 WHERE id = ?`, id)
+	_, _ = s.db.Exec(`UPDATE tracks SET loudness = NULL, waveform_json = '', analyzed_at = '', edges_checked = 2 WHERE id = ?`, id)
 	s.queueAnalysis(id)
 	if lyricsShift > 0 {
 		s.shiftSyncedLyrics(id, -lyricsShift, false)
@@ -263,6 +279,7 @@ func (s *Server) trimSilentEdges(ctx context.Context, id, rel string) (bool, err
 	if err != nil {
 		return false, err
 	}
+	duration = info.Duration
 	start, end := 0.0, duration
 	if info.LeadingEnd >= autoTrimMinSeconds {
 		start = info.LeadingEnd - autoTrimMargin

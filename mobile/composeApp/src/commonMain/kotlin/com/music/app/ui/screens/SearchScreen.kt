@@ -110,7 +110,7 @@ fun SearchScreen() {
                 Text(
                     when {
                         source == null -> "Songs, artists, albums…"
-                        catalogue?.playlists == true -> "Search ${catalogue.name}, or paste a link"
+                        catalogue?.links == true -> "Search ${catalogue.name}, or paste a link"
                         else -> "Search ${catalogue?.name ?: source}"
                     },
                 )

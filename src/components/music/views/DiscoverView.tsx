@@ -215,7 +215,7 @@ export function DiscoverView() {
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={source ? (source.playlists ? `Search ${source.name}, or paste a link` : `Search ${source.name}`) : "Search"}
+                placeholder={source ? (source.links ? `Search ${source.name}, or paste a link` : `Search ${source.name}`) : "Search"}
                 aria-label="Search the catalogue"
                 autoFocus
                 className="border-zinc-800 bg-zinc-900/60 pl-9"

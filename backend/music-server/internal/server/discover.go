@@ -57,10 +57,13 @@ type sourceDownload struct {
 	LookupMetadata              bool
 }
 
+type linkSource interface{ takesLinks() }
+
 type DiscoverSource struct {
 	Key       string `json:"key"`
 	Name      string `json:"name"`
 	Playlists bool   `json:"playlists"`
+	Links     bool   `json:"links"`
 }
 
 type DiscoverSearch struct {
@@ -120,7 +123,8 @@ func (s *Server) handleDiscoverSources(w http.ResponseWriter, _ *http.Request) {
 	if !discoverDisabled() {
 		for _, src := range discoverSources {
 			_, playlists := src.(playlistSource)
-			out = append(out, DiscoverSource{Key: src.key(), Name: src.name(), Playlists: playlists})
+			_, links := src.(linkSource)
+			out = append(out, DiscoverSource{Key: src.key(), Name: src.name(), Playlists: playlists, Links: links})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -174,6 +178,14 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	results, more, err := src.search(ctx, q, page)
 	if err != nil {
+		var status *statusError
+		if errors.As(err, &status) {
+			if status.code >= 500 {
+				logErr("discover search", err)
+			}
+			writeErr(w, status.code, status.msg)
+			return
+		}
 		logErr("discover search", err)
 		writeErr(w, http.StatusBadGateway, src.name()+" didn't answer; try again in a moment")
 		return

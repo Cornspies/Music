@@ -68,6 +68,7 @@ data class DiscoverSource(
     val key: String,
     val name: String,
     val playlists: Boolean = false,
+    val links: Boolean = false,
 )
 
 @Serializable
