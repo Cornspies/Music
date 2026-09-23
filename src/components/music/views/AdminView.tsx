@@ -9,6 +9,8 @@ import {
   Link2,
   Loader2,
   LogOut,
+  Pause,
+  Play,
   Plus,
   Share2,
   Shield,
@@ -26,7 +28,7 @@ import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { EmptyState } from "@/components/music/EmptyState"
-import { MetadataQueueStatus } from "@/components/music/MetadataQueueStatus"
+import { MetadataQueueLine, useMetadataQueue } from "@/components/music/MetadataQueueStatus"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -83,11 +85,6 @@ function inviteExpiry(iso: string): string {
   return `expires in ${Math.max(1, Math.floor(ms / 60_000))} min`
 }
 
-/**
- * Single-use invite links: one per friend, valid for a day by default, with
- * the record of who used which. Copy the link and send it; the sign-up page
- * fills the code in itself.
- */
 /** Every share link that still works: what it points at, who made it, when it runs out. */
 function SharesSection() {
   const [shares, setShares] = useState<AdminShare[] | null>(null)
@@ -171,6 +168,11 @@ function SharesSection() {
   )
 }
 
+/**
+ * Single-use invite links: one per friend, valid for a day by default, with
+ * the record of who used which. Copy the link and send it; the sign-up page
+ * fills the code in itself.
+ */
 function InvitesSection() {
   const [invites, setInvites] = useState<Invite[] | null>(null)
   const [note, setNote] = useState("")
@@ -378,6 +380,53 @@ function InvitesSection() {
   )
 }
 
+/**
+ * The lookup queue's status, and the admin's pause: while paused, new tracks
+ * still join the queue but none are looked up.
+ */
+function MetadataSection() {
+  const { status, refresh } = useMetadataQueue()
+  const [busy, setBusy] = useState(false)
+
+  const setPaused = async (paused: boolean) => {
+    setBusy(true)
+    try {
+      await admin.updateSettings({ metadataLookupPaused: paused })
+      await refresh()
+      toast.success(paused ? "Metadata lookups paused" : "Metadata lookups resumed")
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="mt-6">
+      <h2 className="mb-3 text-sm font-semibold text-zinc-300">Metadata lookups</h2>
+      <div className="flex min-h-14 items-center justify-between gap-4 rounded-xl border border-zinc-800/80 bg-zinc-900/50 px-4 py-3">
+        <MetadataQueueLine status={status} showIdle className="min-w-0" />
+        {status && !status.disabled ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => setPaused(!status.paused)}
+            className="h-8 shrink-0 border-zinc-700 bg-zinc-800/60 px-3 text-xs text-zinc-200 hover:bg-zinc-800"
+          >
+            {status.paused ? (
+              <Play className="mr-1.5 size-3.5" aria-hidden="true" />
+            ) : (
+              <Pause className="mr-1.5 size-3.5" aria-hidden="true" />
+            )}
+            {status.paused ? "Resume" : "Pause"}
+          </Button>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 /** Server administration: who has an account, and whether more may join. */
 export function AdminView() {
   const me = useAuthStore((s) => s.user)
@@ -471,12 +520,7 @@ export function AdminView() {
         </div>
       ) : null}
 
-      <section className="mt-6">
-        <h2 className="mb-3 text-sm font-semibold text-zinc-300">Metadata lookups</h2>
-        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 px-4 py-3">
-          <MetadataQueueStatus showIdle />
-        </div>
-      </section>
+      <MetadataSection />
 
       {settings ? (
         <section className="mt-6">

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Check, ChevronLeft, ChevronRight, ImageIcon, ImageOff, Link2, Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { Check, ChevronLeft, ChevronRight, ImageIcon, ImageOff, Link2, Loader2, Pause, RefreshCw, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { addYouTubeCandidate, applyMetadataCandidate, candidateArtworkUrl, fetchMetadataCandidates, requestMetadataLookup } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
@@ -87,7 +87,7 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
   const [lookupDisabled, setLookupDisabled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Queue state of the current track's lookup, from the last response.
-  const [queue, setQueue] = useState<Pick<MetadataCandidatesResponse, "pending" | "queuePosition" | "partial" | "attempts" | "retryAt"> | null>(null)
+  const [queue, setQueue] = useState<Pick<MetadataCandidatesResponse, "pending" | "queuePosition" | "partial" | "attempts" | "retryAt" | "paused"> | null>(null)
   // Provider tab, keyed by track so a new track starts back on "all".
   const [tab, setTab] = useState<{ id: string; tab: string } | null>(null)
   // "Paste a YouTube link" row.
@@ -114,7 +114,7 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
       if (ac.signal.aborted) return
       setCandidates(res.candidates ?? [])
       setLookupDisabled(res.lookupDisabled)
-      setQueue({ pending: res.pending, queuePosition: res.queuePosition, partial: res.partial, attempts: res.attempts, retryAt: res.retryAt })
+      setQueue({ pending: res.pending, queuePosition: res.queuePosition, partial: res.partial, attempts: res.attempts, retryAt: res.retryAt, paused: res.paused })
     } catch (e) {
       if ((e as Error)?.name === "AbortError") return
       setError((e as Error).message)
@@ -140,14 +140,14 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
   const lookupAgain = async () => {
     if (!track) return
     try {
-      await requestMetadataLookup(track.id)
+      const queued = await requestMetadataLookup(track.id)
       setResolved((r) => {
         const next = { ...r }
         delete next[track.id]
         return next
       })
       setCandidates([])
-      setQueue({ pending: true, queuePosition: 1, partial: false, attempts: 0 })
+      setQueue({ pending: true, queuePosition: queued.position, partial: false, attempts: 0, paused: queued.paused })
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -249,15 +249,21 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
 
           {!loading && !error && queue?.pending && (
             <div className="mt-3 flex items-center gap-2 rounded-lg border border-zinc-800/80 bg-zinc-950/50 px-3 py-2 text-xs text-zinc-400">
-              <Loader2 className="size-3.5 shrink-0 animate-spin text-emerald-400" aria-hidden="true" />
+              {queue.paused ? (
+                <Pause className="size-3.5 shrink-0 text-amber-300/80" aria-hidden="true" />
+              ) : (
+                <Loader2 className="size-3.5 shrink-0 animate-spin text-emerald-400" aria-hidden="true" />
+              )}
               <span>
-                {queue.retryAt
-                  ? `A provider didn't answer — trying again ${formatIn(queue.retryAt)} (attempt ${queue.attempts + 1})`
-                  : queue.queuePosition && queue.queuePosition > 1
-                    ? `Waiting for the lookup queue · ${queue.queuePosition - 1} ahead`
-                    : queue.attempts > 0
-                      ? `A provider was rate-limited — retrying (attempt ${queue.attempts + 1})`
-                      : "Searching MusicBrainz, Deezer, iTunes…"}
+                {queue.paused
+                  ? "Lookups are paused by an admin"
+                  : queue.retryAt
+                    ? `A provider didn't answer — trying again ${formatIn(queue.retryAt)} (attempt ${queue.attempts + 1})`
+                    : queue.queuePosition && queue.queuePosition > 1
+                      ? `Waiting for the lookup queue · ${queue.queuePosition - 1} ahead`
+                      : queue.attempts > 0
+                        ? `A provider was rate-limited — retrying (attempt ${queue.attempts + 1})`
+                        : "Searching MusicBrainz, Deezer, iTunes…"}
                 {candidates.length > 0 ? ` · ${candidates.length} found so far` : ""}
               </span>
             </div>

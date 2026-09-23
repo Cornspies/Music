@@ -412,6 +412,8 @@ data class MetadataCandidatesResponse(
     val attempts: Int = 0,
     /** When a parked retry runs (RFC 3339), while a provider is missing. */
     val retryAt: String? = null,
+    /** The lookup waits on an admin's pause of the queue. */
+    val paused: Boolean = false,
 )
 
 /** GET /api/metadata/queue */
@@ -420,6 +422,8 @@ data class MetadataQueueStatus(
     val queued: Int = 0,
     val running: RunningLookup? = null,
     val nextRetryAt: String? = null,
+    /** Paused by an admin; [running] is then the lookup being let finish. */
+    val paused: Boolean = false,
     val disabled: Boolean = false,
 ) {
     @Serializable

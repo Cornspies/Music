@@ -205,13 +205,24 @@ export function LyricsPanel({ trackId, position, onSeek, className, size = "comp
 /** Synced lyrics back into LRC so they can be edited with their timing. */
 function lyricsToLRC(l: Lyrics): string {
   if (!l.synced) return l.plain
-  return l.synced
-    .map((x) => {
-      const m = Math.floor(x.t / 60)
-      const s = (x.t - m * 60).toFixed(2).padStart(5, "0")
-      return `[${String(m).padStart(2, "0")}:${s}]${x.line}`
-    })
-    .join("\n")
+  return l.synced.map((x) => lrcStamp(x.t) + x.line).join("\n")
+}
+
+/** "[mm:ss.xx]" for t seconds. Rounded to the hundredth first, so 59.999 becomes 01:00.00, not 00:60.00. */
+function lrcStamp(t: number): string {
+  const cs = Math.round(Math.max(0, t) * 100)
+  const min = Math.floor(cs / 6000)
+  const sec = ((cs % 6000) / 100).toFixed(2).padStart(5, "0")
+  return `[${String(min).padStart(2, "0")}:${sec}]`
+}
+
+// The timestamps the server reads as synced lyrics; tags like [ar:…] or
+// [offset:…] don't match and are left alone.
+const LRC_STAMP = /\[(\d+):(\d{1,2}(?:\.\d+)?)\]/g
+
+/** Moves every timestamp in LRC text by delta seconds, none before 0. */
+function shiftLRC(text: string, delta: number): string {
+  return text.replace(LRC_STAMP, (_, m: string, sec: string) => lrcStamp(Number(m) * 60 + Number(sec) + delta))
 }
 
 function LyricsEditDialog({
@@ -227,6 +238,15 @@ function LyricsEditDialog({
 }) {
   const [text, setText] = useState(initial)
   const [busy, setBusy] = useState(false)
+  // Shifting every line at once, for lyrics that are all early or all late.
+  const [shiftBy, setShiftBy] = useState(1)
+  const [shifted, setShifted] = useState(0)
+  const synced = /\[\d+:\d{1,2}(?:\.\d+)?\]/.test(text)
+  const step = Number.isFinite(shiftBy) && shiftBy > 0 ? shiftBy : 0
+  const shift = (delta: number) => {
+    setText((t) => shiftLRC(t, delta))
+    setShifted((n) => Math.round((n + delta) * 100) / 100)
+  }
 
   const save = async () => {
     setBusy(true)
@@ -263,6 +283,47 @@ function LyricsEditDialog({
           spellCheck={false}
           className="h-72 w-full resize-y rounded-md border border-zinc-800 bg-zinc-900/60 p-3 font-mono text-sm text-zinc-100 outline-none focus:border-emerald-500/60"
         />
+        {synced ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+            <span className="text-zinc-300">Shift timing</span>
+            <input
+              type="number"
+              min={0.1}
+              step={0.1}
+              value={shiftBy}
+              onChange={(e) => setShiftBy(parseFloat(e.target.value))}
+              aria-label="Seconds to shift by"
+              className="w-16 rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-1 text-zinc-100 outline-none focus:border-emerald-500/60"
+            />
+            <span>s</span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || step === 0}
+              onClick={() => shift(-step)}
+              title={`Every line ${step} s sooner`}
+              className="h-7 border-zinc-800 bg-transparent text-zinc-200 hover:bg-zinc-800"
+            >
+              Earlier
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || step === 0}
+              onClick={() => shift(step)}
+              title={`Every line ${step} s later`}
+              className="h-7 border-zinc-800 bg-transparent text-zinc-200 hover:bg-zinc-800"
+            >
+              Later
+            </Button>
+            {shifted !== 0 ? (
+              <span className="tabular-nums text-emerald-300">
+                {shifted > 0 ? "+" : ""}
+                {shifted.toFixed(1)} s
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <DialogFooter className="gap-2 sm:justify-between">
           <Button
             variant="ghost"

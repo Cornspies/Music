@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -137,6 +138,7 @@ fun MetadataReviewDialog(
     var attempts by remember { mutableStateOf(0) }
     var retryAt by remember { mutableStateOf<String?>(null) }
     var partial by remember { mutableStateOf(false) }
+    var paused by remember { mutableStateOf(false) }
 
     // trackId -> chosen candidate id, so revisiting a track shows what was applied.
     var resolved by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -166,6 +168,7 @@ fun MetadataReviewDialog(
                 attempts = response.attempts
                 retryAt = response.retryAt
                 partial = response.partial
+                paused = response.paused
                 error = null
             } catch (e: Exception) {
                 if (first) error = friendlyError(e)
@@ -224,12 +227,22 @@ fun MetadataReviewDialog(
 
                 if (!loading && error == null && pending) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Emerald)
+                        if (paused) {
+                            Icon(
+                                Icons.Filled.Pause,
+                                contentDescription = null,
+                                Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.tertiary,
+                            )
+                        } else {
+                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Emerald)
+                        }
                         Spacer(Modifier.width(8.dp))
                         Text(
                             buildString {
                                 append(
                                     when {
+                                        paused -> "Lookups are paused by an admin"
                                         retryAt != null -> "A provider didn't answer — trying again ${formatIn(retryAt!!)} (attempt ${attempts + 1})"
                                         queuePosition > 1 -> "Waiting for the lookup queue · ${queuePosition - 1} ahead"
                                         attempts > 0 -> "A provider was rate-limited — retrying (attempt ${attempts + 1})"

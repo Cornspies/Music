@@ -131,6 +131,17 @@ func unmarshalCandidates(raw string) []scoredCandidate {
 	return out
 }
 
+// settingMetadataPaused is the settings-table key for an admin's pause.
+const settingMetadataPaused = "metadata_paused"
+
+// metadataPaused reports whether an admin has paused the queue. Tracks keep
+// joining it while paused; the worker just doesn't take any off until it is
+// resumed. The pause outlasts a restart.
+func (s *Server) metadataPaused() bool {
+	v, _ := s.getSetting(settingMetadataPaused)
+	return v == "1"
+}
+
 // metaQueue is the worker's wake-up signal; enqueueing pokes it.
 var metaQueue struct {
 	wake chan struct{}
@@ -215,6 +226,15 @@ func (s *Server) startMetadataWorker() {
 
 func (s *Server) metadataWorker() {
 	for {
+		// Paused: a lookup already under way has finished; wait for the
+		// resume to poke the worker.
+		if s.metadataPaused() {
+			select {
+			case <-metaQueue.wake:
+			case <-time.After(time.Minute):
+			}
+			continue
+		}
 		id, wait, ok := s.nextMetadataJob()
 		if !ok {
 			// Nothing runnable: sleep until poked, or until the earliest
@@ -274,20 +294,21 @@ func (s *Server) runMetadataJob(id string) {
 	}
 
 	var t Track
-	var fileName string
+	var filePath, fileName string
 	row := s.db.QueryRow(trackSelect+` WHERE t.id = ?`, append(trackSelectArgs(""), id)...)
-	tp, _, fn, err := scanTrack(row.Scan)
+	tp, fp, fn, err := scanTrack(row.Scan)
 	if err != nil {
 		// The track was deleted while queued; the row cascades away.
 		return
 	}
-	t, fileName = *tp, fn
+	t, filePath, fileName = *tp, fp, fn
 
 	// Placeholder values written at upload ("Unknown Artist", a title that's
-	// just the filename) count as absent: they'd poison the query and the
-	// scoring, and they're exactly what a confident match is allowed to fill.
+	// only the filename standing in for a missing tag) count as absent: they'd
+	// poison the query and the scoring, and they're exactly what a confident
+	// match is allowed to fill. Real tags are never replaced.
 	meta := fileMetadata{
-		title:    trackSearchTitle(t.Title, fileName),
+		title:    s.knownTitle(t.Title, filePath, fileName),
 		artist:   strings.TrimSpace(dropPlaceholder(t.Artist, "Unknown Artist")),
 		album:    strings.TrimSpace(dropPlaceholder(t.Album, "Unknown Album")),
 		genre:    t.Genre,
@@ -306,15 +327,26 @@ func (s *Server) runMetadataJob(id string) {
 	// track shouldn't sit untagged that long. Later attempts only fill in
 	// what is still empty.
 	appliedID := job.AppliedID
-	if job.Reason == reasonUpload && len(cands) > 0 && cands[0].score >= acceptScoreThreshold {
+	// Only when the track names both artist and title — in its tags, or in a
+	// filename like "Artist - Title". Either one alone fits many songs:
+	// "Numb" is Linkin Park and XXXTENTACION, a second apart, and an artist
+	// with no title matches whichever of their songs a provider lists first.
+	// Such a match stays a suggestion in the review instead.
+	_, wantArtist, wantTitle := buildSearchPlan(meta, fileName)
+	identified := wantArtist != "" && wantTitle != ""
+	if job.Reason == reasonUpload && identified && len(cands) > 0 && cands[0].score >= acceptScoreThreshold {
 		applyCtx, applyCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		if s.autoApplyCandidate(applyCtx, &t, meta, cands[0], appliedID == "") && appliedID == "" {
 			appliedID = cands[0].id
 		}
 		applyCancel()
 	} else if len(cands) > 0 && job.Reason == reasonUpload && !outcome.degraded() {
-		log.Printf("metadata queue: no confident match for %q (best %.2f from %s) — leaving tags as-is, %d alternative(s) available",
-			fileName, cands[0].score, cands[0].source, len(cands))
+		why := fmt.Sprintf("no confident match (best %.2f from %s)", cands[0].score, cands[0].source)
+		if !identified {
+			why = "artist or title unknown"
+		}
+		log.Printf("metadata queue: %s for %q — leaving tags as they are, %d suggestion(s) in the review",
+			why, fileName, len(cands))
 	}
 
 	if outcome.degraded() {
@@ -388,12 +420,15 @@ type MetadataQueueStatus struct {
 	// NextRetryAt is when the earliest delayed job will be tried again, when
 	// everything left is waiting on a provider.
 	NextRetryAt string `json:"nextRetryAt,omitempty"`
+	// Paused is true while an admin has the queue paused. Running is then
+	// the lookup that was under way and is being let finish.
+	Paused bool `json:"paused"`
 	// Disabled mirrors MUSIC_DISABLE_METADATA_LOOKUP.
 	Disabled bool `json:"disabled"`
 }
 
 func (s *Server) handleMetadataQueue(w http.ResponseWriter, _ *http.Request) {
-	st := MetadataQueueStatus{Disabled: metadataLookupDisabled()}
+	st := MetadataQueueStatus{Disabled: metadataLookupDisabled(), Paused: s.metadataPaused()}
 	_ = s.db.QueryRow(`SELECT COUNT(1) FROM metadata_jobs WHERE state = ?`, jobQueued).Scan(&st.Queued)
 	var id, title string
 	if err := s.db.QueryRow(`SELECT j.track_id, COALESCE(t.title, '') FROM metadata_jobs j LEFT JOIN tracks t ON t.id = j.track_id WHERE j.state = ? LIMIT 1`, jobRunning).Scan(&id, &title); err == nil {
@@ -404,7 +439,7 @@ func (s *Server) handleMetadataQueue(w http.ResponseWriter, _ *http.Request) {
 	}
 	var runnable int
 	_ = s.db.QueryRow(`SELECT COUNT(1) FROM metadata_jobs WHERE state = ? AND (not_before = '' OR not_before <= ?)`, jobQueued, nowRFC3339()).Scan(&runnable)
-	if st.Queued > 0 && runnable == 0 && st.Running == nil {
+	if st.Queued > 0 && runnable == 0 && st.Running == nil && !st.Paused {
 		var nb string
 		if err := s.db.QueryRow(`SELECT MIN(not_before) FROM metadata_jobs WHERE state = ? AND not_before <> ''`, jobQueued).Scan(&nb); err == nil {
 			st.NextRetryAt = nb
@@ -434,7 +469,7 @@ func (s *Server) handleTrackMetadataLookup(w http.ResponseWriter, r *http.Reques
 		s.internalErr(w, "queue lookup", err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "position": s.queuePosition(id)})
+	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "position": s.queuePosition(id), "paused": s.metadataPaused()})
 }
 
 var errNoJob = errors.New("no metadata job")
@@ -572,7 +607,7 @@ func youtubeVideoCandidate(ctx context.Context, videoID string) (*metadataCandid
 func (s *Server) handleTrackMetadataFromYouTube(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
-	t, _, fileName, ok := s.getTrack(w, r, u.ID, id)
+	t, filePath, fileName, ok := s.getTrack(w, r, u.ID, id)
 	if !ok {
 		return
 	}
@@ -602,7 +637,7 @@ func (s *Server) handleTrackMetadataFromYouTube(w http.ResponseWriter, r *http.R
 	// Scored against the track like a search hit would be, but placed first
 	// regardless: the person asked for this one specifically.
 	meta := fileMetadata{
-		title:    trackSearchTitle(t.Title, fileName),
+		title:    s.knownTitle(t.Title, filePath, fileName),
 		artist:   strings.TrimSpace(dropPlaceholder(t.Artist, "Unknown Artist")),
 		duration: t.Duration,
 	}

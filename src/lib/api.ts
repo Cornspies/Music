@@ -212,7 +212,7 @@ export function fetchMetadataCandidates(
 }
 
 /** Queues a fresh online lookup for a track that's already in the library. */
-export function requestMetadataLookup(trackId: string): Promise<{ queued: boolean; position: number }> {
+export function requestMetadataLookup(trackId: string): Promise<{ queued: boolean; position: number; paused: boolean }> {
   return api(`/api/tracks/${trackId}/metadata/lookup`, { method: "POST" })
 }
 
@@ -559,7 +559,7 @@ export const admin = {
       body: JSON.stringify(patch),
     }),
   settings: () => api<AdminSettings>("/api/admin/settings"),
-  updateSettings: (patch: { registrationOpen?: boolean }) =>
+  updateSettings: (patch: { registrationOpen?: boolean; metadataLookupPaused?: boolean }) =>
     api<AdminSettings>("/api/admin/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

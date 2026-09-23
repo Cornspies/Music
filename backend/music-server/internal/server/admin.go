@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -171,6 +172,9 @@ type AdminSettings struct {
 	TranscodingAvailable bool `json:"transcodingAvailable"`
 	// UserQuotaBytes is the per-user storage cap, 0 for none.
 	UserQuotaBytes int64 `json:"userQuotaBytes"`
+	// MetadataLookupPaused holds the lookup queue: new tracks still join
+	// it, none are looked up until it is resumed.
+	MetadataLookupPaused bool `json:"metadataLookupPaused"`
 }
 
 func (s *Server) adminSettings() AdminSettings {
@@ -180,6 +184,7 @@ func (s *Server) adminSettings() AdminSettings {
 		InviteRequired:       inviteRequired(),
 		TranscodingAvailable: TranscodingAvailable(),
 		UserQuotaBytes:       userQuotaBytes(),
+		MetadataLookupPaused: s.metadataPaused(),
 	}
 }
 
@@ -189,7 +194,8 @@ func (s *Server) handleAdminGetSettings(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		RegistrationOpen *bool `json:"registrationOpen"`
+		RegistrationOpen     *bool `json:"registrationOpen"`
+		MetadataLookupPaused *bool `json:"metadataLookupPaused"`
 	}
 	if err := jsonDecodeStrict(r, w, &body); err != nil {
 		return
@@ -207,6 +213,18 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 			s.internalErr(w, "save setting", err)
 			return
 		}
+	}
+	if p := body.MetadataLookupPaused; p != nil && *p != s.metadataPaused() {
+		v, verb := "0", "resumed"
+		if *p {
+			v, verb = "1", "paused"
+		}
+		if err := s.putSetting(settingMetadataPaused, v); err != nil {
+			s.internalErr(w, "save setting", err)
+			return
+		}
+		log.Printf("metadata queue: %s by %s", verb, userFrom(r).Username)
+		s.wakeMetadataWorker()
 	}
 	writeJSON(w, http.StatusOK, s.adminSettings())
 }

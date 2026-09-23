@@ -138,6 +138,8 @@ func migrate(db *sql.DB) error {
                 // SHA-256 of the stored file, for spotting re-uploads of the
                 // same rip; backfilled in the background for older tracks.
                 {"tracks.file_hash", `ALTER TABLE tracks ADD COLUMN file_hash TEXT NOT NULL DEFAULT ''`},
+                // 1 once the automatic silence trim has looked at the track.
+                {"tracks.edges_checked", `ALTER TABLE tracks ADD COLUMN edges_checked INTEGER NOT NULL DEFAULT 0`},
                 // Loudness analysis (integrated LUFS, EBU R128) for volume
                 // normalisation, and a coarse peaks array for waveform seek
                 // bars. NULL loudness means "not analysed yet".

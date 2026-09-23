@@ -52,6 +52,9 @@ type MetadataCandidatesResponse struct {
         // RetryAt is when a lookup missing a provider will be tried again
         // (RFC 3339), while it is parked.
         RetryAt string `json:"retryAt,omitempty"`
+        // Paused is true while the lookup waits on an admin's pause of the
+        // queue.
+        Paused bool `json:"paused"`
 }
 
 func toJSONCandidates(cands []scoredCandidate, appliedID string) []MetadataCandidate {
@@ -100,6 +103,7 @@ func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Re
                 }
                 writeJSON(w, http.StatusOK, MetadataCandidatesResponse{
                         Candidates: []MetadataCandidate{}, Pending: true, QueuePosition: s.queuePosition(id),
+                        Paused: s.metadataPaused(),
                 })
                 return
         } else if err != nil {
@@ -115,6 +119,7 @@ func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Re
         }
         if resp.Pending {
                 resp.QueuePosition = s.queuePosition(id)
+                resp.Paused = s.metadataPaused()
                 if job.State == jobQueued && !job.NotBefore.IsZero() && job.NotBefore.After(time.Now()) {
                         resp.RetryAt = job.NotBefore.UTC().Format(time.RFC3339)
                 }
@@ -222,6 +227,25 @@ func trackSearchTitle(title, fileName string) string {
                 return ""
         }
         return t
+}
+
+// knownTitle is a track's title as a lookup should see it: "" only when it
+// is the upload's fallback, the filename standing in for a missing tag. A
+// title that merely equals the filename is kept when the file's own title
+// tag says it too — files are often named after the song ("Numb.mp3"), and
+// a lookup may fill what's missing but must never replace a real tag.
+func (s *Server) knownTitle(title, filePath, fileName string) string {
+        if t := trackSearchTitle(title, fileName); t != "" {
+                return t
+        }
+        title = strings.TrimSpace(title)
+        if title == "" {
+                return ""
+        }
+        if tags := readMetadata(filepath.Join(s.dataDir, filePath)); strings.TrimSpace(tags.title) != "" {
+                return title
+        }
+        return ""
 }
 
 // handleApplyTrackMetadata applies a user-chosen candidate to a track,

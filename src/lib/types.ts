@@ -324,6 +324,8 @@ export interface AdminSettings {
   inviteRequired: boolean
   transcodingAvailable: boolean
   userQuotaBytes: number
+  /** The lookup queue is on hold: tracks join it, none are looked up. */
+  metadataLookupPaused: boolean
 }
 
 export interface SearchResults {
@@ -377,6 +379,8 @@ export interface MetadataCandidatesResponse {
   attempts: number
   /** When a parked retry runs (RFC 3339), while a provider is missing. */
   retryAt?: string
+  /** The lookup waits on an admin's pause of the queue. */
+  paused: boolean
 }
 
 /** One existing track that looks like an upload (409 from POST /api/tracks). */
@@ -400,6 +404,8 @@ export interface MetadataQueueStatus {
   running: { trackId: string; title: string } | null
   /** Set when everything left is waiting on a provider's rate limit. */
   nextRetryAt?: string
+  /** Paused by an admin; `running` is then the lookup being let finish. */
+  paused: boolean
   disabled: boolean
 }
 

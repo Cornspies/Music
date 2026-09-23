@@ -80,6 +80,37 @@ func (s *Server) StartBackgroundWork() {
 	}
 	go s.analysisWorker()
 	go s.backfillAnalysis()
+	if autoTrimEnabled() {
+		go s.backfillEdgeChecks()
+	}
+}
+
+// backfillEdgeChecks sends every analysed track the automatic silence trim
+// hasn't looked at yet through the analysis worker once — the library that
+// was there before the trim existed. Tracks not yet analysed get it as part
+// of their analysis anyway.
+func (s *Server) backfillEdgeChecks() {
+	defer logPanic("silence trim backfill")
+	rows, err := s.db.Query(`SELECT id FROM tracks WHERE edges_checked = 0 AND COALESCE(analyzed_at, '') <> '' ORDER BY created_at ASC`)
+	if err != nil {
+		logErr("silence trim backfill", err)
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	if len(ids) == 0 {
+		return
+	}
+	log.Printf("trim: checking %d track(s) for silence at the start and end, in the background", len(ids))
+	for _, id := range ids {
+		analysisQueue <- id // blocking is fine here, this is its own goroutine
+	}
 }
 
 func (s *Server) analysisWorker() {
@@ -121,14 +152,30 @@ func (s *Server) backfillAnalysis() {
 // analyzeTrack runs both passes and records the result. Failures are logged
 // and the track is marked as attempted so it isn't retried on every start.
 func (s *Server) analyzeTrack(trackID string) {
-	var rel string
-	if err := s.db.QueryRow(`SELECT file_path FROM tracks WHERE id = ?`, trackID).Scan(&rel); err != nil {
+	var rel, analyzedAt string
+	var edgesChecked int
+	if err := s.db.QueryRow(`SELECT file_path, COALESCE(analyzed_at, ''), edges_checked FROM tracks WHERE id = ?`, trackID).
+		Scan(&rel, &analyzedAt, &edgesChecked); err != nil {
 		return // deleted while queued
 	}
 	abs := filepath.Join(s.dataDir, rel)
 
 	ctx, cancel := context.WithTimeout(context.Background(), analysisTimeout)
 	defer cancel()
+
+	// First the silence at either end, so what's measured below is the
+	// audio as it will stay. Once per track, whatever the outcome: a file
+	// ffmpeg can't cut isn't tried again on every start.
+	if edgesChecked == 0 && autoTrimEnabled() {
+		trimmed, err := s.trimSilentEdges(ctx, trackID, rel)
+		if err != nil {
+			logErr("trim silence", fmt.Errorf("track %s: %w", trackID, err))
+		}
+		_, _ = s.db.Exec(`UPDATE tracks SET edges_checked = 1 WHERE id = ?`, trackID)
+		if !trimmed && analyzedAt != "" {
+			return // measured before, and the audio didn't change
+		}
+	}
 
 	var loudness *float64
 	if v, err := measureLoudness(ctx, abs); err == nil {
