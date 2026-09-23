@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type soundcloudSource struct{}
@@ -23,6 +24,8 @@ type soundcloudSource struct{}
 const (
 	scAPIBase     = "https://api-v2.soundcloud.com"
 	scSiteURL     = "https://soundcloud.com/"
+	scWidgetURL   = "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/293"
+	scRetryAfter  = 5 * time.Minute
 	scPageSize    = 20
 	scMaxPages    = 10
 	scUserAgent   = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"
@@ -30,18 +33,24 @@ const (
 )
 
 var (
-	scScriptRe     = regexp.MustCompile(`<script[^>]+src="(https://a-v2\.sndcdn\.com/assets/[^"]+\.js)"`)
-	scClientIDRe   = regexp.MustCompile(`client_id\s*:\s*"([0-9a-zA-Z]{32})"`)
-	scTrackIDRe    = regexp.MustCompile(`^[0-9]{1,20}$`)
-	scArtworkHost  = regexp.MustCompile(`^https://i[0-9]\.sndcdn\.com/`)
-	scArtworkLarge = regexp.MustCompile(`-large(\.[a-z]+)$`)
-	scMapURIRe     = regexp.MustCompile(`URI="([^"]+)"`)
+	scScriptRe       = regexp.MustCompile(`<script[^>]+src="(https://a-v2\.sndcdn\.com/assets/[^"]+\.js)"`)
+	scWidgetScriptRe = regexp.MustCompile(`<script[^>]+src="(https://widget\.sndcdn\.com/[^"]+\.js)"`)
+	scHydratedIDRe   = regexp.MustCompile(`"hydratable":"apiClient","data":\{"id":"([0-9a-zA-Z]{32})"`)
+	scClientIDRe     = regexp.MustCompile(`client_id\s*:[^,}]{0,100}`)
+	scQuotedIDRe     = regexp.MustCompile(`"([0-9a-zA-Z]{32})"`)
+	scTrackIDRe      = regexp.MustCompile(`^[0-9]{1,20}$`)
+	scArtworkHost    = regexp.MustCompile(`^https://i[0-9]\.sndcdn\.com/`)
+	scArtworkLarge   = regexp.MustCompile(`-large(\.[a-z]+)$`)
+	scMapURIRe       = regexp.MustCompile(`URI="([^"]+)"`)
 )
 
 var scClient struct {
 	sync.Mutex
-	id string
+	id       string
+	failedAt time.Time
 }
+
+var errSCRefused = &statusError{http.StatusBadGateway, "SoundCloud is turning down every client id it hands out right now — try again later"}
 
 func (soundcloudSource) key() string  { return "soundcloud" }
 func (soundcloudSource) name() string { return "SoundCloud" }
@@ -162,28 +171,48 @@ func scGet(ctx context.Context, client *http.Client, u string) (*http.Response, 
 	return client.Do(req)
 }
 
-func scClientID(ctx context.Context, refresh bool) (string, error) {
-	scClient.Lock()
-	defer scClient.Unlock()
-	if scClient.id != "" && !refresh {
-		return scClient.id, nil
+func scClientIDsIn(js string) []string {
+	var ids []string
+	for _, m := range scClientIDRe.FindAllString(js, -1) {
+		for _, q := range scQuotedIDRe.FindAllStringSubmatch(m, -1) {
+			ids = append(ids, q[1])
+		}
 	}
+	return ids
+}
+
+func scWidgetClientIDs(ctx context.Context) ([]string, error) {
+	page, err := scFetchText(ctx, scWidgetURL, 1<<20)
+	if err != nil {
+		return nil, fmt.Errorf("soundcloud widget: %w", err)
+	}
+	var ids []string
+	for _, m := range scWidgetScriptRe.FindAllStringSubmatch(page, -1) {
+		if js, err := scFetchText(ctx, m[1], 8<<20); err == nil {
+			ids = append(ids, scClientIDsIn(js)...)
+		}
+	}
+	return ids, nil
+}
+
+func scSiteClientIDs(ctx context.Context) ([]string, error) {
 	page, err := scFetchText(ctx, scSiteURL, 2<<20)
 	if err != nil {
-		return "", fmt.Errorf("soundcloud home page: %w", err)
+		return nil, fmt.Errorf("soundcloud home page: %w", err)
+	}
+	var ids []string
+	if m := scHydratedIDRe.FindStringSubmatch(page); m != nil {
+		ids = append(ids, m[1])
 	}
 	scripts := scScriptRe.FindAllStringSubmatch(page, -1)
 	for i := len(scripts) - 1; i >= 0; i-- {
-		js, err := scFetchText(ctx, scripts[i][1], 8<<20)
-		if err != nil {
-			continue
-		}
-		if m := scClientIDRe.FindStringSubmatch(js); m != nil {
-			scClient.id = m[1]
-			return scClient.id, nil
+		if js, err := scFetchText(ctx, scripts[i][1], 8<<20); err == nil {
+			if found := scClientIDsIn(js); len(found) > 0 {
+				return append(ids, found...), nil
+			}
 		}
 	}
-	return "", errors.New("soundcloud: no client id in the web app's scripts (the site changed?)")
+	return ids, nil
 }
 
 func scFetchText(ctx context.Context, u string, limit int64) (string, error) {
@@ -199,34 +228,79 @@ func scFetchText(ctx context.Context, u string, limit int64) (string, error) {
 	return string(b), err
 }
 
-func scAPI(ctx context.Context, rawURL string, q url.Values, out any) error {
-	for attempt := 0; attempt < 2; attempt++ {
-		id, err := scClientID(ctx, attempt > 0)
+func scCall(ctx context.Context, rawURL string, q url.Values, id string, out any) (bool, error) {
+	q.Set("client_id", id)
+	resp, err := scGet(ctx, metadataLookupClient, rawURL+"?"+q.Encode())
+	if err != nil {
+		return true, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return false, nil
+	case http.StatusNotFound:
+		return true, &statusError{http.StatusNotFound, "that track isn't on SoundCloud any more"}
+	default:
+		return true, fmt.Errorf("soundcloud: status %d", resp.StatusCode)
+	}
+}
+
+func scIDWorks(ctx context.Context, id string) bool {
+	var out struct{}
+	ok, err := scCall(ctx, scAPIBase+"/search/tracks", url.Values{"q": {"a"}, "limit": {"1"}}, id, &out)
+	return ok && err == nil
+}
+
+func scWorkingID(ctx context.Context, suspect string) (string, error) {
+	scClient.Lock()
+	defer scClient.Unlock()
+	if scClient.id != "" && scClient.id != suspect {
+		return scClient.id, nil
+	}
+	if suspect != "" && scIDWorks(ctx, suspect) {
+		scClient.id, scClient.failedAt = suspect, time.Time{}
+		return suspect, nil
+	}
+	if time.Since(scClient.failedAt) < scRetryAfter {
+		return "", errSCRefused
+	}
+	for _, find := range []func(context.Context) ([]string, error){scWidgetClientIDs, scSiteClientIDs} {
+		ids, err := find(ctx)
 		if err != nil {
-			return err
-		}
-		q.Set("client_id", id)
-		resp, err := scGet(ctx, metadataLookupClient, rawURL+"?"+q.Encode())
-		if err != nil {
-			return err
-		}
-		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			resp.Body.Close()
+			logErr("soundcloud client id", err)
 			continue
 		}
-		if resp.StatusCode == http.StatusNotFound {
-			resp.Body.Close()
-			return &statusError{http.StatusNotFound, "that track isn't on SoundCloud any more"}
+		for _, id := range ids {
+			if id != suspect && scIDWorks(ctx, id) {
+				scClient.id, scClient.failedAt = id, time.Time{}
+				return id, nil
+			}
 		}
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return fmt.Errorf("soundcloud: status %d", resp.StatusCode)
-		}
-		err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
-		resp.Body.Close()
+	}
+	scClient.id, scClient.failedAt = "", time.Now()
+	return "", errSCRefused
+}
+
+func scAPI(ctx context.Context, rawURL string, q url.Values, out any) error {
+	id, err := scWorkingID(ctx, "")
+	if err != nil {
 		return err
 	}
-	return errors.New("soundcloud refused the client id")
+	if ok, err := scCall(ctx, rawURL, q, id, out); ok {
+		return err
+	}
+	next, err := scWorkingID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if next != id {
+		if ok, err := scCall(ctx, rawURL, q, next, out); ok {
+			return err
+		}
+	}
+	return &statusError{http.StatusBadGateway, "SoundCloud refused that request (the track may be private or not available in this country)"}
 }
 
 func (soundcloudSource) search(ctx context.Context, query string, page int) ([]discoverResult, bool, error) {
