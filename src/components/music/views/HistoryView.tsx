@@ -91,11 +91,8 @@ function EventRow({ event, queue }: { event: PlayEvent; queue: PlayEvent[] }) {
   )
 }
 
-/** Listening history across every device, from the server. */
 export function HistoryView() {
   const [range, setRange] = useState<Range>("week")
-  // The result carries the range it answers, so "loading" is simply "the
-  // data on screen isn't for the range that's selected".
   const [result, setResult] = useState<{ range: Range; data: HistoryResponse | null; error: string | null } | null>(null)
   const navigate = useUIStore((s) => s.navigate)
 

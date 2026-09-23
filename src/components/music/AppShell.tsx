@@ -185,10 +185,6 @@ export function AppShell() {
   useKeyboardShortcuts()
   useSharedTrackLink(view, viewArg, initialized)
 
-  // Load the library, then put the last-played track back in the player bar
-  // (paused, at the saved position) so an accidentally closed tab, or another
-  // device, can resume. Restoring waits for fetchAll because that is where
-  // the media token arrives, and the restored stream URL needs it.
   useEffect(() => {
     if (initialized) return
     fetchAll()
@@ -198,7 +194,6 @@ export function AppShell() {
       })
   }, [initialized, fetchAll])
 
-  // scroll main area to top on view change
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 })
   }, [view, viewArg])
@@ -209,12 +204,10 @@ export function AppShell() {
       <OfflineBanner />
 
       <div className="flex min-h-0 flex-1">
-        {/* desktop sidebar */}
         <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950/70 md:flex">
           <SidebarContent />
         </aside>
 
-        {/* mobile nav sheet */}
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
           <SheetContent
             side="left"
@@ -225,7 +218,6 @@ export function AppShell() {
           </SheetContent>
         </Sheet>
 
-        {/* main scroll area */}
         <main ref={mainRef} className="relative min-w-0 flex-1 overflow-y-auto">
           {!initialized ? (
             <LibrarySkeleton />
@@ -245,17 +237,14 @@ export function AppShell() {
           )}
         </main>
 
-        {/* lyrics, docked on the right (desktop) */}
         <LyricsSidebar />
       </div>
 
-      {/* bottom stack: mobile tabs + persistent player */}
       <div className="shrink-0">
         <MobileTabBar />
         <PlayerBar />
       </div>
 
-      {/* global overlays */}
       <QueuePanel />
       <NowPlayingView />
       <ShortcutsDialog />
@@ -273,7 +262,6 @@ export function AppShell() {
   )
 }
 
-/** The review dialog opened from a track's "Look up metadata again". */
 function GlobalMetadataReview() {
   const tracks = useUIStore((s) => s.metadataReviewTracks)
   return (
@@ -287,13 +275,6 @@ function GlobalMetadataReview() {
   )
 }
 
-/**
- * A share link followed by someone signed in: the track is fetched as a
- * member, starts in the player, and the address becomes the home page (a
- * replace, not a push, so Back doesn't start it again). Browsers may refuse
- * to start audio on a page nobody has interacted with yet; the track is then
- * loaded and paused, and the toast's button — a real click — starts it.
- */
 function useSharedTrackLink(view: View, token: string | null, ready: boolean) {
   useEffect(() => {
     if (view !== "share" || !token || !ready) return
@@ -317,8 +298,6 @@ function useSharedTrackLink(view: View, token: string | null, ready: boolean) {
         }, 1200)
       })
       .catch((e: Error) => {
-        // A 401 has just signed this browser out: the address still holds
-        // the link, so the stand-alone player takes over from here.
         if (!alive || !useAuthStore.getState().token) return
         leaveLink()
         toast.error(e.message)

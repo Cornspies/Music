@@ -20,7 +20,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 
-/** Tracks stored on this device for playback without a connection. */
 export function OfflineView() {
   const supported = useOfflineStore((s) => s.supported)
   const tracks = useOfflineStore((s) => s.tracks)

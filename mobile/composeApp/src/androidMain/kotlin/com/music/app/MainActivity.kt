@@ -11,16 +11,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 
-/** Application context, set as soon as the activity exists. */
 internal lateinit var appContext: Context
 
 class MainActivity : ComponentActivity() {
 
-    // Android 13+ gates the media notification behind a runtime permission;
-    // without it playback still works, but the lock-screen controls and the
-    // notification do not appear. Asked once, on first launch.
     private val requestNotifications =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

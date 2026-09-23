@@ -38,13 +38,6 @@ import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc500
 import kotlinx.coroutines.launch
 
-/**
- * "Add to playlist" for the currently playing track.
- *
- * The sheet stays open after each tap so one track can go into several
- * playlists in a row, each showing a tick once it's in. Only your own
- * playlists are listed — playlists pinned from other people are read-only.
- */
 @Composable
 fun AddToPlaylistButton(track: Track, modifier: Modifier = Modifier) {
     val model = LocalAppModel.current
@@ -62,7 +55,6 @@ fun AddToPlaylistButton(track: Track, modifier: Modifier = Modifier) {
         AddToPlaylistSheet(track = track, onDismiss = { open = false })
     }
 
-    // Playlists may not have been fetched yet on a cold start.
     LaunchedEffect(open) {
         if (open && model.playlists == null) model.loadPlaylists()
     }

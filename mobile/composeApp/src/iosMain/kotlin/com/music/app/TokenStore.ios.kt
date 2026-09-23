@@ -40,14 +40,6 @@ import platform.posix.memcpy
 
 internal actual val defaultBaseUrl: String = "https://music.cornspies.com"
 
-/**
- * Token storage backed by the iOS Keychain.
- *
- * The JWT is a generic-password item marked AfterFirstUnlockThisDeviceOnly:
- * readable once the phone has been unlocked since boot (so background audio
- * keeps its session), never included in backups, never migrated to another
- * device. The server URL is not a secret and stays in NSUserDefaults.
- */
 @OptIn(ExperimentalForeignApi::class)
 actual class TokenStore {
     private val defaults = NSUserDefaults.standardUserDefaults
@@ -70,14 +62,11 @@ actual class TokenStore {
         defaults.setObject(url, forKey = "baseUrl")
     }
 
-    /** Older builds kept the token in user defaults; move it across once. */
     private fun migrateLegacyToken() {
         val legacy = defaults.stringForKey(LEGACY_KEY) ?: return
         if (keychainRead() == null) keychainWrite(legacy)
         defaults.removeObjectForKey(LEGACY_KEY)
     }
-
-    // ---- keychain -----------------------------------------------------------
 
     private fun baseQuery(): CFMutableDictionaryRef? {
         val dict = CFDictionaryCreateMutable(
@@ -89,8 +78,6 @@ actual class TokenStore {
         return dict
     }
 
-    // Kotlin Strings bridge to NSString when handed to Objective-C, so the
-    // CFBridgingRetain takes the String directly.
     private fun retained(s: String): CFTypeRef? = CFBridgingRetain(s)
 
     private fun keychainWrite(token: String) {
@@ -100,7 +87,6 @@ actual class TokenStore {
         CFDictionaryAddValue(query, kSecAttrAccessible, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
         val status = SecItemAdd(query, null)
         if (status != errSecSuccess) {
-            // Most likely a stale duplicate; clear and retry once.
             keychainDelete()
             SecItemAdd(query, null)
         }
@@ -117,9 +103,6 @@ actual class TokenStore {
             CFBridgingRelease(query)
             if (status == errSecItemNotFound || status != errSecSuccess) return@memScoped null
             val data = CFBridgingRelease(result.value) as? NSData ?: return@memScoped null
-            // Decoded by hand: an NSString built from the data is an
-            // NSString object, not a Kotlin String, so casting it to String
-            // always fails — which silently forgot the session on every launch.
             data.toByteArray().decodeToString()
         }
     }

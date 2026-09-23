@@ -47,7 +47,6 @@ import kotlin.time.Duration.Companion.days
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-/** The time windows the history can be narrowed to; null means everything. */
 private enum class HistoryRange(val label: String, val days: Int?) {
     DAY("Today", 1),
     WEEK("This week", 7),
@@ -55,17 +54,11 @@ private enum class HistoryRange(val label: String, val days: Int?) {
     ALL("All time", null),
 }
 
-/**
- * Listening history, newest first, straight from the server so it covers every
- * device. Opened from the profile.
- */
 @Composable
 fun HistoryScreen() {
     val model = LocalAppModel.current
 
     var range by remember { mutableStateOf(HistoryRange.WEEK) }
-    // The result remembers the range it answers, so "loading" is simply "what's
-    // on screen isn't for the range that's selected".
     var result by remember { mutableStateOf<Triple<HistoryRange, HistoryResponse?, String?>?>(null) }
     var reloadTick by remember { mutableStateOf(0) }
     val loading = result?.first != range
@@ -150,7 +143,6 @@ fun HistoryScreen() {
     }
 }
 
-/** "just now", "5 min ago", "3 h ago", "2 d ago", else the date. */
 private fun formatPlayedAt(iso: String): String {
     val then = runCatching { Instant.parse(iso) }.getOrNull() ?: return iso.take(10)
     val minutes = (Clock.System.now() - then).inWholeMinutes

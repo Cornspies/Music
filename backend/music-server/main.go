@@ -19,8 +19,6 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	// Flags default to the resolved config, so precedence ends up as
-	// flag > environment variable > .env file > built-in default.
 	port := flag.String("port", cfg.Port, "HTTP listen port (env: MUSIC_PORT)")
 	bind := flag.String("bind", cfg.BindAddress,
 		"address to listen on; empty means all interfaces (env: MUSIC_BIND)")
@@ -42,8 +40,6 @@ func main() {
 	} else {
 		log.Printf("music-server config: no .env file found, using environment and defaults")
 	}
-	// Say plainly which metadata sources are live: a missing API key is the
-	// most common reason for "why didn't it find my track?".
 	switch {
 	case cfg.MetadataLookupDisabled:
 		log.Printf("music-server metadata lookup: disabled")
@@ -53,21 +49,12 @@ func main() {
 		log.Printf("music-server metadata lookup: MusicBrainz, Deezer, iTunes " +
 			"(set MUSIC_YOUTUBE_API_KEY to add YouTube)")
 	}
-	// An empty bind address keeps the previous behaviour of listening on
-	// every interface. Set MUSIC_BIND=127.0.0.1 when a reverse proxy on the
-	// same host is the only thing that should reach the API — that restricts
-	// what can connect *in* without touching outgoing traffic, which the
-	// metadata lookups need.
 	addr := *bind + ":" + *port
 	log.Printf("music-server listening on %s (data: %s, pid: %d)", addr, abs, os.Getpid())
 	srv.StartBackgroundWork()
 	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: srv.Routes(),
-		// A client that opens a connection and never finishes sending its
-		// headers would otherwise hold a goroutine forever (Slowloris). The
-		// write side is left unbounded on purpose: streaming a whole album
-		// over a slow link is a legitimate multi-minute response.
+		Addr:              addr,
+		Handler:           srv.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}

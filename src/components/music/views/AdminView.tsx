@@ -85,7 +85,6 @@ function inviteExpiry(iso: string): string {
   return `expires in ${Math.max(1, Math.floor(ms / 60_000))} min`
 }
 
-/** Every share link that still works: what it points at, who made it, when it runs out. */
 function SharesSection() {
   const [shares, setShares] = useState<AdminShare[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -168,11 +167,6 @@ function SharesSection() {
   )
 }
 
-/**
- * Single-use invite links: one per friend, valid for a day by default, with
- * the record of who used which. Copy the link and send it; the sign-up page
- * fills the code in itself.
- */
 function InvitesSection() {
   const [invites, setInvites] = useState<Invite[] | null>(null)
   const [note, setNote] = useState("")
@@ -201,7 +195,6 @@ function InvitesSection() {
       setTimeout(() => setCopied((c) => (c === code ? null : c)), 2000)
       toast.success("Invite link copied")
     } catch {
-      // Clipboard blocked (http, permissions): show it so it can be selected.
       toast(url, { duration: 10_000 })
     }
   }
@@ -380,10 +373,6 @@ function InvitesSection() {
   )
 }
 
-/**
- * The lookup queue's status, and the admin's pause: while paused, new tracks
- * still join the queue but none are looked up.
- */
 function MetadataSection() {
   const { status, refresh } = useMetadataQueue()
   const [busy, setBusy] = useState(false)
@@ -427,7 +416,6 @@ function MetadataSection() {
   )
 }
 
-/** Server administration: who has an account, and whether more may join. */
 export function AdminView() {
   const me = useAuthStore((s) => s.user)
   const [users, setUsers] = useState<AdminUser[] | null>(null)
@@ -500,7 +488,6 @@ export function AdminView() {
       await admin.deleteUser(u.id)
       toast.success(`Deleted ${u.username} and their ${u.trackCount} upload${u.trackCount === 1 ? "" : "s"}`)
       await load()
-      // Their tracks are gone from the shared library.
       useLibraryStore.getState().fetchAll().catch(() => {})
     } catch (e) {
       toast.error((e as Error).message)

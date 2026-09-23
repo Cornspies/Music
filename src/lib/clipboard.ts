@@ -1,11 +1,3 @@
-/**
- * Copies text to the clipboard.
- *
- * navigator.clipboard needs a secure context, which a self-hosted instance
- * reached over plain http on a LAN won't have, so there's a fallback for
- * that case. Returns false when even that failed and the caller should show
- * the text instead.
- */
 export async function copyText(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {

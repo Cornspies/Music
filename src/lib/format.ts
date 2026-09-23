@@ -1,5 +1,3 @@
-// Formatting helpers + deterministic gradient picker.
-
 export function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "0:00"
   const s = Math.floor(sec)
@@ -50,7 +48,6 @@ export function formatRelativeDate(iso: string): string {
   return `${years} year${years === 1 ? "" : "s"} ago`
 }
 
-/** "in 5 days", "in 3 hours", "in 20 minutes" — for expiry times; "expired" once past. */
 export function formatTimeUntil(iso: string): string {
   const at = new Date(iso).getTime()
   if (!Number.isFinite(at)) return ""
@@ -63,7 +60,6 @@ export function formatTimeUntil(iso: string): string {
   return `in ${days} day${days === 1 ? "" : "s"}`
 }
 
-/** mm:ss countdown for sleep timer remaining seconds */
 export function formatCountdown(totalSec: number): string {
   const s = Math.max(0, Math.ceil(totalSec))
   const m = Math.floor(s / 60)
@@ -71,7 +67,6 @@ export function formatCountdown(totalSec: number): string {
 }
 
 
-// Warm dark gradient set (deterministic pick from seed string).
 const GRADIENTS = [
   "from-emerald-700/70 via-teal-900/60 to-zinc-950",
   "from-teal-700/70 via-zinc-900 to-zinc-950",

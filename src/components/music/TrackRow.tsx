@@ -15,16 +15,11 @@ import { TrackMenu } from "@/components/music/TrackMenu"
 interface TrackRowProps {
   track: Track
   index?: number
-  /** full list this row belongs to (becomes the play queue) */
   contextQueue?: Track[]
-  /** playlist mode: shows "Remove from this playlist" */
   onRemoveFromPlaylist?: (trackId: string) => void
 }
 
 export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: TrackRowProps) {
-  // Booleans, not the track object: with a long list only the row that
-  // starts or stops being current re-renders on a track change, not all of
-  // them.
   const isCurrent = usePlayerStore((s) => s.currentTrack?.id === track.id)
   const isPlaying = usePlayerStore((s) => s.isPlaying && s.currentTrack?.id === track.id)
 
@@ -56,7 +51,6 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         isCurrent && "bg-zinc-800/40"
       )}
     >
-      {/* index / play button / equalizer */}
       <div className="hidden w-6 shrink-0 items-center justify-center sm:flex">
         {isCurrent ? (
           <EqualizerIcon playing={isPlaying} />
@@ -80,7 +74,6 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         )}
       </div>
 
-      {/* cover */}
       <button
         type="button"
         onClick={(e) => {
@@ -94,7 +87,6 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         <CoverArt trackId={track.id} title={track.title} hasCover={track.hasCover} />
       </button>
 
-      {/* title + artist */}
       <div className="min-w-0 flex-1">
         <div
           className={cn(
@@ -109,8 +101,6 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
             <Loader2
               className="size-3 shrink-0 animate-spin text-emerald-500/80"
               aria-label="Looking up metadata"
-              // The online lookup hasn't been through this track yet; its
-              // tags may still be filled in.
             />
           )}
           <span className="truncate">
@@ -120,17 +110,14 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         </div>
       </div>
 
-      {/* album */}
       <div className="hidden w-40 shrink-0 truncate text-xs text-zinc-500 lg:block xl:w-52">
         {track.album || "—"}
       </div>
 
-      {/* plays */}
       <div className="hidden w-12 shrink-0 text-right text-xs tabular-nums text-zinc-600 md:block">
         {track.plays > 0 ? track.plays : "—"}
       </div>
 
-      {/* offline state: a quiet tick once stored, a spinner while it downloads */}
       {downloadJob ? (
         <span
           className="hidden shrink-0 items-center gap-1 text-[10px] tabular-nums text-sky-300 sm:flex"
@@ -146,13 +133,10 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         />
       ) : null}
 
-      {/* duration */}
       <div className="w-11 shrink-0 text-right text-xs tabular-nums text-zinc-500">
         {formatDuration(track.duration)}
       </div>
 
-      {/* uploader — quiet but legible: dimmed at rest so it reads as provenance
-          rather than another control, full strength when the row is hovered */}
       <div className="hidden w-7 shrink-0 justify-center sm:flex">
         {track.uploadedBy?.id ? (
           <UserAvatar
@@ -166,7 +150,6 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         ) : null}
       </div>
 
-      {/* favorite */}
       <button
         type="button"
         onClick={(e) => {
@@ -185,7 +168,6 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
         <Heart className={cn("size-4", track.isFavorite && "fill-current")} />
       </button>
 
-      {/* overflow menu */}
       <TrackMenu
         track={track}
         onRemoveFromPlaylist={onRemoveFromPlaylist}

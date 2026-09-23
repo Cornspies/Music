@@ -32,12 +32,6 @@ import com.music.app.api.Lyrics
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc400
 
-/**
- * A glance at the lyrics on the player: the line being sung with the next one
- * dimmed underneath, cross-fading as they advance (plain lyrics show their
- * first lines). Tapping opens [LyricsScreen]. Fixed height, so the layout
- * around it doesn't shift as lines change length.
- */
 @Composable
 fun LyricsStrip(
     lyrics: Lyrics,
@@ -51,7 +45,6 @@ fun LyricsStrip(
         for ((k, l) in synced.withIndex()) {
             if (l.t <= position + 0.15) i = k else break
         }
-        // Before the first line: show what's coming, dimmed.
         (synced.getOrNull(i)?.line?.ifBlank { "♪" } ?: "♪") to synced.getOrNull(i + 1)?.line
     } else {
         val lines = lyrics.plain.lines().filter { it.isNotBlank() }

@@ -25,8 +25,6 @@ const SORTS: { value: TrackSort; label: string }[] = [
   { value: "plays", label: "Most played" },
 ]
 
-// Rows are added in batches as the end of the list comes near, so a big
-// library doesn't render every row up front.
 const PAGE_ROWS = 50
 
 export function LibraryView() {
@@ -60,12 +58,6 @@ export function LibraryView() {
   const shown = filtered.slice(0, visible)
   const complete = shown.length >= filtered.length
 
-  // The next batch loads once the end of the list is within a screen or so
-  // of view. The page scrolls inside <main>, not the window, so that is the
-  // observer's root — otherwise the look-ahead margin would be clipped away.
-  // The observer is recreated after every batch: a new one reports straight
-  // away whether the end is still in reach (a tall screen, a short batch),
-  // which an existing one wouldn't, since nothing about it changed.
   useEffect(() => {
     const el = sentinelRef.current
     if (!el || complete) return
@@ -100,7 +92,6 @@ export function LibraryView() {
         </div>
       </header>
 
-      {/* toolbar */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <Select value={sort} onValueChange={onSortChange}>
           <SelectTrigger aria-label="Sort tracks" className="h-9 w-full border-zinc-700/80 bg-zinc-900/60 text-sm sm:w-44">
@@ -134,7 +125,6 @@ export function LibraryView() {
         </div>
       </div>
 
-      {/* list */}
       <div className="mt-4">
         {loading && tracks.length === 0 ? (
           <div className="flex flex-col gap-2">

@@ -9,11 +9,6 @@ import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
-/**
- * The Android builds this server has. There is no store to get a
- * self-hosted client from, so whoever runs the server drops APKs into its
- * APK directory and they show up here, newest first.
- */
 export function AndroidAppDialog() {
   const open = useUIStore((s) => s.androidAppOpen)
   const setOpen = useUIStore((s) => s.setAndroidAppOpen)

@@ -27,18 +27,8 @@ import (
 	"music-server/internal/config"
 )
 
-// metadataLookupTimeout bounds a whole online-lookup attempt (every source,
-// plus an artwork download), so a slow or unreachable network never holds an
-// upload response open for long.
 const metadataLookupTimeout = 15 * time.Second
 
-// Each individual HTTP call gets its own shorter timeout so one hung
-// request can't eat the entire budget on its own.
-// metadataLookupClient talks to third-party metadata providers and downloads
-// artwork from URLs those providers hand back. Those URLs are not ours, so the
-// client refuses to connect to private/loopback addresses: otherwise a hostile
-// or compromised provider response could redirect the server into its own
-// network (an SSRF), which is especially unwelcome on a self-hosted box.
 var metadataLookupClient = &http.Client{
 	Timeout: 5 * time.Second,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -48,10 +38,6 @@ var metadataLookupClient = &http.Client{
 		return nil
 	},
 	Transport: &http.Transport{
-		// Control runs after DNS resolution, for every connection the
-		// transport makes — including ones reached through a redirect —
-		// so a hostname that resolves to a private address is still
-		// rejected. This is the check that actually closes the SSRF.
 		DialContext: (&net.Dialer{
 			Timeout: 5 * time.Second,
 			Control: dialGuard,
@@ -59,7 +45,6 @@ var metadataLookupClient = &http.Client{
 	},
 }
 
-// dialGuard rejects connections to addresses that are not publicly routable.
 func dialGuard(network, address string, c syscall.RawConn) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
@@ -81,12 +66,6 @@ func dialGuard(network, address string, c syscall.RawConn) error {
 	return nil
 }
 
-// nonPublicNets are ranges net.IP doesn't count as private but that aren't
-// the public internet either: 100.64.0.0/10 is carrier-grade NAT — and the
-// range Tailscale hands its devices, so on a server in a tailnet it reaches
-// your other machines — 198.18.0.0/15 is for benchmarking, 192.0.0.0/24 is
-// protocol assignments, and 64:ff9b::/96 is NAT64, which can map onto
-// private IPv4 addresses.
 var nonPublicNets = func() []*net.IPNet {
 	var out []*net.IPNet
 	for _, cidr := range []string{"100.64.0.0/10", "198.18.0.0/15", "192.0.0.0/24", "64:ff9b::/96", "64:ff9b:1::/48"} {
@@ -99,35 +78,23 @@ var nonPublicNets = func() []*net.IPNet {
 	return out
 }()
 
-// acceptScoreThreshold is the minimum confidence (0-1) a candidate needs
-// before we'll auto-apply it at upload time. Below this, enrichment is a
-// no-op and the file keeps whatever metadata it already had — the user can
-// still pick any candidate manually from the review dialog afterwards.
 const acceptScoreThreshold = 0.5
 
-// metadataCandidate is a normalized result from any of the lookup sources.
 type metadataCandidate struct {
 	title, artist, album, genre string
 	year                        int
 	durationSec                 float64
 	artworkURL                  string
-	// coverArtArchiveReleaseID is set instead of artworkURL for MusicBrainz
-	// results, which don't carry artwork directly — the Cover Art Archive
-	// is queried lazily, only when a candidate is actually applied.
-	coverArtArchiveReleaseID string
-	source                   string
+	coverArtArchiveReleaseID    string
+	source                      string
 }
 
-// scoredCandidate pairs a candidate with its confidence and a stable ID the
-// frontend can send back to apply it.
 type scoredCandidate struct {
 	metadataCandidate
 	id    string
 	score float64
 }
 
-// artURL resolves the image URL for a candidate, expanding a MusicBrainz
-// release ID into a Cover Art Archive URL when needed.
 func (c metadataCandidate) artURL() string {
 	if c.artworkURL != "" {
 		return c.artworkURL
@@ -149,27 +116,13 @@ func metadataLookupDisabled() bool {
 	return config.MetadataLookupDisabled()
 }
 
-// lookupOutcome reports how much of a lookup actually happened. A provider
-// that errors or is skipped while rate-limited contributes nothing, and the
-// caller gets a short list that looks exactly like a complete one — so it
-// needs to be told the difference before caching the result.
 type lookupOutcome struct {
-	// failed counts providers that returned an error, including the ones
-	// skipped because they are cooling down from a rate limit.
-	failed int
-	// cancelled is true when the shared deadline expired, or the client hung
-	// up, while providers were still in flight.
+	failed    int
 	cancelled bool
 }
 
-// degraded reports whether a retry could reasonably turn up more results.
 func (o lookupOutcome) degraded() bool { return o.failed > 0 || o.cancelled }
 
-// lookupCandidates searches every configured provider and returns all
-// candidates scored against what we know about the file, best first. Errors
-// from an individual provider are logged and skipped — one dead source never
-// prevents the others from contributing — and reported in the outcome, which
-// says whether every provider was actually heard from.
 func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName string) ([]scoredCandidate, lookupOutcome) {
 	query, wantArtist, wantTitle := buildSearchPlan(meta, fallbackName)
 	if query == "" {
@@ -187,13 +140,6 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 		{"YouTube", searchYouTube},
 	}
 
-	// Query every provider at once rather than one after another. They share a
-	// single deadline, so sequentially the slowest one starved the rest: with
-	// MusicBrainz first, its rate-limit wait plus retries could burn most of the
-	// budget and iTunes or YouTube would simply never be asked, which is why
-	// suggestions sometimes arrived missing a provider. In parallel the whole
-	// lookup costs about as long as the slowest single provider instead of the
-	// sum of all of them.
 	results := make([][]metadataCandidate, len(sources))
 	var failed atomic.Int32
 	var wg sync.WaitGroup
@@ -205,8 +151,6 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 			cands, err := src.search(ctx, query)
 			if err != nil {
 				failed.Add(1)
-				// Rate limiting is an expected, self-healing condition, not a
-				// failure worth an ERROR line — the other providers cover it.
 				if errors.Is(err, errMusicBrainzBusy) {
 					log.Printf("metadata lookup (%s): %v", src.name, err)
 				} else {
@@ -221,8 +165,6 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 
 	outcome := lookupOutcome{failed: int(failed.Load()), cancelled: ctx.Err() != nil}
 
-	// Flattened in the order the providers are declared, so the result is the
-	// same on every run regardless of which one answered first.
 	var out []scoredCandidate
 	seen := map[string]bool{}
 	for _, cands := range results {
@@ -247,10 +189,6 @@ func lookupCandidates(ctx context.Context, meta fileMetadata, fallbackName strin
 	return out, outcome
 }
 
-// applyCandidate copies fields from a candidate into meta. When overwrite is
-// false only empty fields are filled (the automatic upload path); when true
-// every non-empty candidate field wins (the user explicitly picked it).
-// It returns the names of the fields that changed.
 func applyCandidate(ctx context.Context, meta *fileMetadata, c metadataCandidate, overwrite bool) []string {
 	filled := []string{}
 	if c.title != "" && (overwrite || meta.title == "") {
@@ -286,13 +224,6 @@ func applyCandidate(ctx context.Context, meta *fileMetadata, c metadataCandidate
 	return filled
 }
 
-// buildSearchPlan decides what to search for (query) and what we'll treat
-// as ground truth when scoring results (wantArtist/wantTitle). It prefers
-// real tags for ground truth, but will still use a filename-derived guess
-// to widen the search query — e.g. a title tag with no artist tag still
-// benefits from a filename-derived artist hint in the query, without that
-// guess being trusted for scoring. If there are no tags at all, the
-// filename guess becomes the ground truth too, since it's all we have.
 func buildSearchPlan(meta fileMetadata, fallbackName string) (query, wantArtist, wantTitle string) {
 	wantArtist, wantTitle = meta.artist, meta.title
 	fnArtist, fnTitle, fnOK := splitArtistTitle(fallbackName)
@@ -323,13 +254,11 @@ func buildSearchPlan(meta fileMetadata, fallbackName string) (query, wantArtist,
 
 var filenameSepRe = regexp.MustCompile(`\s*[-–—_]\s*`)
 
-// splitArtistTitle tries to pull "Artist" and "Title" out of a filename like
-// "Daft Punk - One More Time.mp3" or "01 - Daft Punk - One More Time.flac".
 func splitArtistTitle(fallbackName string) (artist, title string, ok bool) {
 	name := cleanupFilename(strings.TrimSuffix(fallbackName, filepath.Ext(fallbackName)))
 	parts := filenameSepRe.Split(name, -1)
 	if len(parts) > 0 && isTrackNumber(parts[0]) {
-		parts = parts[1:] // drop a leading track-number part, e.g. "01 - ..."
+		parts = parts[1:]
 	}
 	if len(parts) < 2 {
 		return "", "", false
@@ -360,14 +289,6 @@ func cleanupFilename(name string) string {
 	return strings.Join(strings.Fields(name), " ")
 }
 
-// scoreCandidate rates how confident we should be that a candidate is
-// actually the same song as what we're looking for, from 0 to 1. Text
-// similarity (title/artist token overlap) carries most of the weight;
-// duration proximity is a secondary signal used when we know the file's real
-// length (e.g. it breaks ties between a studio and live take of the same
-// song). A single generic word as the only title signal (e.g. "Intro") is
-// deliberately dampened, since it matches too many unrelated tracks to be
-// trusted on its own.
 func scoreCandidate(c metadataCandidate, wantArtist, wantTitle, rawQuery string, knownDurationSec float64) float64 {
 	var textScore float64
 	switch {
@@ -384,17 +305,13 @@ func scoreCandidate(c metadataCandidate, wantArtist, wantTitle, rawQuery string,
 		textScore = jaccard(tokenSet(rawQuery), tokenSet(c.artist+" "+c.title))
 	}
 
-	durationScore := 0.5 // neutral when we can't check either side
+	durationScore := 0.5
 	if knownDurationSec > 0 && c.durationSec > 0 {
 		diff := math.Abs(c.durationSec - knownDurationSec)
 		durationScore = math.Max(0, 1-diff/20)
 	}
 	score := 0.75*textScore + 0.25*durationScore
 
-	// YouTube titles are free-text video names, not curated metadata, so even
-	// a good-looking match is less trustworthy than one from a music
-	// database. Discount it so it rarely wins auto-apply on its own, while
-	// still being offered to the user as a pickable option.
 	if c.source == "YouTube" {
 		score *= 0.9
 	}
@@ -452,8 +369,6 @@ func parseReleaseYear(releaseDate string) int {
 	return 0
 }
 
-// ---- iTunes Search API (https://itunes.apple.com/search) — no key needed ----
-
 const itunesSearchURL = "https://itunes.apple.com/search"
 
 type itunesSearchResponse struct {
@@ -501,8 +416,6 @@ func searchItunes(ctx context.Context, query string) ([]metadataCandidate, error
 	return out, nil
 }
 
-// ---- Deezer Search API (https://api.deezer.com/search) — no key needed ----
-
 const deezerSearchURL = "https://api.deezer.com/search"
 
 type deezerSearchResponse struct {
@@ -517,7 +430,7 @@ type deezerSearchResponse struct {
 			CoverBig string `json:"cover_big"`
 			CoverMed string `json:"cover_medium"`
 		} `json:"album"`
-		Duration int `json:"duration"` // seconds
+		Duration int `json:"duration"`
 	} `json:"data"`
 }
 
@@ -556,30 +469,14 @@ func searchDeezer(ctx context.Context, query string) ([]metadataCandidate, error
 	return out, nil
 }
 
-// ---- MusicBrainz recording search (https://musicbrainz.org/ws/2/recording) ----
-// Free and keyless, but their usage policy asks for a descriptive
-// User-Agent and at most ~1 request/second. MusicBrainz answers with 503
-// (not 429) when you exceed that, so a 503 here is almost always a rate
-// limit rather than an outage — mbThrottle paces requests, and a 503 is
-// retried with backoff before the source is temporarily given up on.
-
-// var rather than const so tests can point it at a stub server.
 var musicbrainzSearchURL = "https://musicbrainz.org/ws/2/recording"
 
 const (
-	// Slightly above 1/sec: MusicBrainz measures the rate on their side,
-	// so the extra margin absorbs clock and network jitter that would
-	// otherwise read as a burst.
-	mbMinInterval = 1100 * time.Millisecond
-	mbMaxAttempts = 3
-	// After exhausting retries, stop querying MusicBrainz entirely for a
-	// while. Hammering a rate-limited endpoint only deepens the limit,
-	// and the other providers still cover the lookup meanwhile.
+	mbMinInterval      = 1100 * time.Millisecond
+	mbMaxAttempts      = 3
 	mbCooldownDuration = 60 * time.Second
 )
 
-// errMusicBrainzBusy marks a rate-limit outcome so the caller can log it as
-// an expected condition rather than a hard failure.
 var errMusicBrainzBusy = errors.New("musicbrainz is rate-limiting requests; skipping this source temporarily")
 
 var mbThrottleState struct {
@@ -588,14 +485,6 @@ var mbThrottleState struct {
 	cooldownUntil time.Time
 }
 
-// mbThrottle waits until it's safe to issue the next MusicBrainz request,
-// serializing callers so concurrent uploads can't burst past the limit.
-// It returns ctx.Err() if the caller's deadline passes while waiting.
-//
-// The slot is claimed while the lock is held and waited for after releasing
-// it: sleeping with the mutex held made every other MusicBrainz caller — and
-// mbInCooldown, which shares the mutex — block on the sleeper rather than on
-// the rate limit itself.
 func mbThrottle(ctx context.Context) error {
 	mbThrottleState.mu.Lock()
 	slot := mbThrottleState.last.Add(mbMinInterval)
@@ -629,8 +518,6 @@ func mbStartCooldown() {
 	mbThrottleState.cooldownUntil = time.Now().Add(mbCooldownDuration)
 }
 
-// mbRetryDelay honours a Retry-After header when the server sends one,
-// otherwise falls back to exponential backoff (1s, 2s, ...).
 func mbRetryDelay(resp *http.Response, attempt int) time.Duration {
 	if ra := strings.TrimSpace(resp.Header.Get("Retry-After")); ra != "" {
 		if secs, err := strconv.Atoi(ra); err == nil && secs >= 0 && secs <= 60 {
@@ -643,7 +530,7 @@ func mbRetryDelay(resp *http.Response, attempt int) time.Duration {
 type musicbrainzSearchResponse struct {
 	Recordings []struct {
 		Title        string `json:"title"`
-		Length       int    `json:"length"` // ms
+		Length       int    `json:"length"`
 		ArtistCredit []struct {
 			Name string `json:"name"`
 		} `json:"artist-credit"`
@@ -655,9 +542,6 @@ type musicbrainzSearchResponse struct {
 	} `json:"recordings"`
 }
 
-// musicbrainzRequest performs the search, retrying when MusicBrainz reports
-// that we're going too fast. Their rate limiter answers 503 (429 is accepted
-// here too in case that changes); anything else is returned as a real error.
 func musicbrainzRequest(ctx context.Context, query string) (*musicbrainzSearchResponse, error) {
 	q := url.Values{"query": {query}, "fmt": {"json"}, "limit": {"5"}}
 
@@ -670,7 +554,6 @@ func musicbrainzRequest(ctx context.Context, query string) (*musicbrainzSearchRe
 		if err != nil {
 			return nil, err
 		}
-		// MusicBrainz's usage policy requires an identifying User-Agent.
 		req.Header.Set("User-Agent", "Music-SelfHosted-MusicPlayer/1.0 ( self-hosted )")
 
 		resp, err := metadataLookupClient.Do(req)
@@ -710,10 +593,6 @@ func musicbrainzRequest(ctx context.Context, query string) (*musicbrainzSearchRe
 }
 
 func searchMusicBrainz(ctx context.Context, query string) ([]metadataCandidate, error) {
-	// Still cooling down from a previous rate limit — skip quietly rather
-	// than spending part of the lookup budget on a near-certain 503. This is
-	// reported as an error so the result is not cached as a complete one:
-	// the cooldown lifts long before a 30-minute cache entry would.
 	if mbInCooldown() {
 		return nil, errMusicBrainzBusy
 	}
@@ -743,30 +622,14 @@ func searchMusicBrainz(ctx context.Context, query string) ([]metadataCandidate, 
 	return out, nil
 }
 
-// ---- YouTube Data API v3 ----------------------------------------------------
-//
-// Unlike the other three, YouTube has no keyless public search endpoint, so
-// this source stays disabled unless MUSIC_YOUTUBE_API_KEY is set (free to create
-// at https://console.cloud.google.com — enable "YouTube Data API v3").
-// Results are video titles rather than curated metadata, so they're parsed
-// heuristically and scored with a penalty; they're most useful as a manual
-// fallback for tracks the music databases simply don't have.
-
 const (
 	youtubeSearchURL = "https://www.googleapis.com/youtube/v3/search"
 	youtubeVideosURL = "https://www.googleapis.com/youtube/v3/videos"
 
-	// How many videos one search asks for. The API allows 1-50 per call and
-	// charges the same 100 quota units regardless, so this trades only
-	// dialog noise for coverage, never quota. The videos call that fetches
-	// durations also takes up to 50 IDs, so one search never needs a second
-	// page of either.
 	youtubeDefaultMaxResults = 15
 	youtubeMaxResultsCap     = 50
 )
 
-// youtubeMaxResults resolves MUSIC_YOUTUBE_MAX_RESULTS, clamped to what the
-// API accepts, falling back to the default when unset or unparseable.
 func youtubeMaxResults() int {
 	raw := config.Value("MUSIC_YOUTUBE_MAX_RESULTS")
 	if raw == "" {
@@ -803,7 +666,7 @@ type youtubeVideosResponse struct {
 	Items []struct {
 		ID             string `json:"id"`
 		ContentDetails struct {
-			Duration string `json:"duration"` // ISO-8601, e.g. "PT3M32S"
+			Duration string `json:"duration"`
 		} `json:"contentDetails"`
 	} `json:"items"`
 }
@@ -811,13 +674,13 @@ type youtubeVideosResponse struct {
 func searchYouTube(ctx context.Context, query string) ([]metadataCandidate, error) {
 	apiKey := config.YouTubeAPIKey()
 	if apiKey == "" {
-		return nil, nil // not configured — silently skip this source
+		return nil, nil
 	}
 
 	q := url.Values{
 		"part":            {"snippet"},
 		"type":            {"video"},
-		"videoCategoryId": {"10"}, // "Music"
+		"videoCategoryId": {"10"},
 		"maxResults":      {strconv.Itoa(youtubeMaxResults())},
 		"q":               {query},
 		"key":             {apiKey},
@@ -845,8 +708,6 @@ func searchYouTube(ctx context.Context, query string) ([]metadataCandidate, erro
 			ids = append(ids, it.ID.VideoID)
 		}
 	}
-	// Durations live on a different endpoint; one batched call covers all
-	// hits. A failure here is non-fatal — we just lose the duration signal.
 	durations := map[string]float64{}
 	if len(ids) > 0 {
 		if d, err := youtubeDurations(ctx, apiKey, ids); err != nil {
@@ -903,7 +764,6 @@ func youtubeDurations(ctx context.Context, apiKey string, ids []string) (map[str
 
 var iso8601DurationRe = regexp.MustCompile(`^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$`)
 
-// parseISO8601Duration handles the subset YouTube emits, e.g. "PT3M32S".
 func parseISO8601Duration(s string) float64 {
 	m := iso8601DurationRe.FindStringSubmatch(strings.TrimSpace(s))
 	if m == nil {
@@ -919,18 +779,10 @@ func parseISO8601Duration(s string) float64 {
 	return atoi(m[1])*86400 + atoi(m[2])*3600 + atoi(m[3])*60 + atoi(m[4])
 }
 
-// youtubeNoiseRe strips the promotional clutter that fills video titles —
-// "(Official Music Video)", "[HD]", "(Lyrics)", "(Audio)" and friends.
 var youtubeNoiseRe = regexp.MustCompile(`(?i)[\(\[][^\)\]]*(official|lyric|audio|video|hd|hq|4k|remaster|visualizer|mv|m/v|full album|free download|explicit|clean)[^\)\]]*[\)\]]`)
 
-// youtubeChannelSuffixRe strips "- Topic" from auto-generated artist
-// channels, which are otherwise a very reliable artist signal.
 var youtubeChannelSuffixRe = regexp.MustCompile(`(?i)\s*-\s*topic\s*$`)
 
-// parseYouTubeTitle turns a video title into an (artist, title) guess.
-// "Daft Punk - One More Time (Official Video)" → ("Daft Punk", "One More Time").
-// When the title has no separator, the channel name is used as the artist,
-// which works well for official artist and "- Topic" channels.
 func parseYouTubeTitle(videoTitle, channelTitle string) (artist, title string) {
 	clean := youtubeNoiseRe.ReplaceAllString(videoTitle, " ")
 	clean = strings.Join(strings.Fields(clean), " ")
@@ -949,9 +801,7 @@ func parseYouTubeTitle(videoTitle, channelTitle string) (artist, title string) {
 	return channel, clean
 }
 
-// ---- artwork download, shared by all sources ----
-
-const maxArtworkBytes = 8 << 20 // 8 MB
+const maxArtworkBytes = 8 << 20
 
 func fetchArtwork(ctx context.Context, artworkURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artworkURL, nil)

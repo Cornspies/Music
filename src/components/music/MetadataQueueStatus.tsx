@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils"
 import { fetchMetadataQueue } from "@/lib/api"
 import type { MetadataQueueStatus as Status } from "@/lib/types"
 
-/** The server's lookup queue, polled every few seconds while mounted. */
 export function useMetadataQueue() {
   const [status, setStatus] = useState<Status | null>(null)
   const alive = useRef(false)
@@ -36,18 +35,11 @@ export function useMetadataQueue() {
 
 const trackCount = (n: number) => `${n} track${n === 1 ? "" : "s"}`
 
-/**
- * One line on the server's metadata lookup queue — how many tracks are
- * waiting, which one is being looked up, and whether it's held up by a
- * provider's rate limit or an admin's pause. Polls while mounted; renders
- * nothing when idle unless `showIdle` asks for it.
- */
 export function MetadataQueueStatus({ className, showIdle = false }: { className?: string; showIdle?: boolean }) {
   const { status } = useMetadataQueue()
   return <MetadataQueueLine status={status} className={className} showIdle={showIdle} />
 }
 
-/** The line itself, for a caller that polls the queue on its own. */
 export function MetadataQueueLine({
   status,
   className,

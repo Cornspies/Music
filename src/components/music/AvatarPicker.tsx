@@ -18,22 +18,14 @@ import {
 
 const MAX_BYTES = 8 * 1024 * 1024
 
-/**
- * The signed-in user's avatar in the sidebar, doubling as the control for
- * changing or clearing it. Uploading refreshes the library so the new picture
- * appears next to that user's tracks immediately.
- */
 export function AvatarPicker() {
   const user = useAuthStore((s) => s.user)
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  /** File chosen but not yet framed and uploaded. */
   const [pending, setPending] = useState<File | null>(null)
 
   if (!user) return null
 
-  // Picking a file opens the crop dialog; the upload happens once the user
-  // has framed it.
   const handleFile = (file: File | undefined) => {
     if (!file) return
     if (file.size > MAX_BYTES) {
@@ -50,7 +42,6 @@ export function AvatarPicker() {
     try {
       const updated = await uploadAvatar(file, crop)
       useAuthStore.setState({ user: updated })
-      // Track rows carry the uploader's avatar flag, so refresh them too.
       useLibraryStore.getState().fetchAll().catch(() => {})
       toast.success("Avatar updated")
       setPending(null)

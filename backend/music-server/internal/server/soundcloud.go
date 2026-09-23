@@ -18,39 +18,14 @@ import (
 	"sync"
 )
 
-// SoundCloud — Creative Commons tracks only.
-//
-// Artists on SoundCloud choose a licence per track. Those who pick a
-// Creative Commons one (or put the track into the public domain) allow it to
-// be copied, so keeping it in a library is fine; the "BY" part asks for
-// credit, which the track's artist and the licence badge in the results
-// give. Everything else on SoundCloud is all-rights-reserved and is never
-// offered, searched or fetched here: search asks SoundCloud for shareable
-// tracks only, and the licence is checked again before every download, so
-// a hand-made request for any other track is refused.
-//
-// SoundCloud has no open API for new applications, so this talks to the one
-// its own web app uses (api-v2), with the public client id the web app
-// ships in its scripts — found and cached the way yt-dlp does it, and looked
-// up again whenever the API stops accepting it. Like NCS, this is a place
-// that can break when someone else changes their website.
-//
-// Audio: the 160 kbit/s AAC stream where SoundCloud has one (HLS; its
-// fragmented-MP4 segments are joined, and remuxed into an ordinary .m4a when
-// ffmpeg is there), otherwise the 128 kbit/s MP3. The artist's original
-// upload would be better still, but SoundCloud only hands that to signed-in
-// accounts.
-
 type soundcloudSource struct{}
 
 const (
-	scAPIBase  = "https://api-v2.soundcloud.com"
-	scSiteURL  = "https://soundcloud.com/"
-	scPageSize = 20
-	scMaxPages = 10
-	// A browser's user agent: the web app's API answers the web app.
-	scUserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"
-	// Caps on what one HLS playlist may ask for.
+	scAPIBase     = "https://api-v2.soundcloud.com"
+	scSiteURL     = "https://soundcloud.com/"
+	scPageSize    = 20
+	scMaxPages    = 10
+	scUserAgent   = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"
 	scMaxSegments = 3000
 )
 
@@ -71,22 +46,18 @@ var scClient struct {
 func (soundcloudSource) key() string  { return "soundcloud" }
 func (soundcloudSource) name() string { return "SoundCloud" }
 
-// coverAllowed limits the artwork proxy to SoundCloud's image CDN.
 func (soundcloudSource) coverAllowed(u string) bool { return scArtworkHost.MatchString(u) }
 
-// scIsCreativeCommons says whether a SoundCloud licence lets the track be
-// copied: any Creative Commons variant, or the public-domain dedication.
 func scIsCreativeCommons(license string) bool {
 	return strings.HasPrefix(license, "cc-") || license == "no-rights-reserved"
 }
 
-// scTrack is the part of api-v2's track object this uses.
 type scTrack struct {
 	ID                 int64  `json:"id"`
 	Title              string `json:"title"`
 	Genre              string `json:"genre"`
 	License            string `json:"license"`
-	Duration           int64  `json:"duration"` // milliseconds
+	Duration           int64  `json:"duration"`
 	ArtworkURL         string `json:"artwork_url"`
 	PermalinkURL       string `json:"permalink_url"`
 	ReleaseDate        string `json:"release_date"`
@@ -124,8 +95,6 @@ func (t *scTrack) artist() string {
 	return strings.TrimSpace(t.User.Username)
 }
 
-// title drops a leading "Artist - " that uploads often carry in the title
-// itself, when it names the same artist.
 func (t *scTrack) title() string {
 	title := strings.TrimSpace(t.Title)
 	if a := t.artist(); a != "" {
@@ -149,8 +118,6 @@ func (t *scTrack) year() int {
 	return 0
 }
 
-// cover is the 500-pixel artwork, or the uploader's picture when the track
-// has none.
 func (t *scTrack) cover() string {
 	art := t.ArtworkURL
 	if art == "" {
@@ -159,8 +126,6 @@ func (t *scTrack) cover() string {
 	return scArtworkLarge.ReplaceAllString(art, "-t500x500$1")
 }
 
-// fullStream reports whether the whole track can be streamed, not just a
-// preview.
 func (t *scTrack) fullStream() bool {
 	if t.Policy == "BLOCK" || !t.Streamable {
 		return false
@@ -188,8 +153,6 @@ func (t *scTrack) result() discoverResult {
 	}
 }
 
-// ---- the API -------------------------------------------------------------------
-
 func scGet(ctx context.Context, client *http.Client, u string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
@@ -199,9 +162,6 @@ func scGet(ctx context.Context, client *http.Client, u string) (*http.Response, 
 	return client.Do(req)
 }
 
-// scClientID returns the web app's client id, finding it again when refresh
-// is set (the API refused the cached one) or none is known yet: the last
-// script on the home page that mentions it has it.
 func scClientID(ctx context.Context, refresh bool) (string, error) {
 	scClient.Lock()
 	defer scClient.Unlock()
@@ -239,8 +199,6 @@ func scFetchText(ctx context.Context, u string, limit int64) (string, error) {
 	return string(b), err
 }
 
-// scAPI calls api-v2 and decodes the answer into out. A refused client id
-// is looked up again once.
 func scAPI(ctx context.Context, rawURL string, q url.Values, out any) error {
 	for attempt := 0; attempt < 2; attempt++ {
 		id, err := scClientID(ctx, attempt > 0)
@@ -271,8 +229,6 @@ func scAPI(ctx context.Context, rawURL string, q url.Values, out any) error {
 	return errors.New("soundcloud refused the client id")
 }
 
-// ---- search ----------------------------------------------------------------------
-
 func (soundcloudSource) search(ctx context.Context, query string, page int) ([]discoverResult, bool, error) {
 	if page > scMaxPages {
 		return nil, false, nil
@@ -282,9 +238,7 @@ func (soundcloudSource) search(ctx context.Context, query string, page int) ([]d
 		NextHref   string    `json:"next_href"`
 	}
 	q := url.Values{
-		"q": {query},
-		// SoundCloud's own filter: tracks whose licence allows sharing,
-		// which is every Creative Commons variant and the public domain.
+		"q":              {query},
 		"filter.license": {"to_share"},
 		"limit":          {strconv.Itoa(scPageSize)},
 		"offset":         {strconv.Itoa((page - 1) * scPageSize)},
@@ -295,8 +249,6 @@ func (soundcloudSource) search(ctx context.Context, query string, page int) ([]d
 	results := []discoverResult{}
 	for i := range out.Collection {
 		t := &out.Collection[i]
-		// Checked here too rather than trusting the filter alone, and
-		// previews (full tracks only for paying listeners) left out.
 		if !scIsCreativeCommons(t.License) || !t.fullStream() {
 			continue
 		}
@@ -304,8 +256,6 @@ func (soundcloudSource) search(ctx context.Context, query string, page int) ([]d
 	}
 	return results, out.NextHref != "" && page < scMaxPages, nil
 }
-
-// ---- download --------------------------------------------------------------------
 
 func (soundcloudSource) fetch(ctx context.Context, id string) (*sourceDownload, error) {
 	if !scTrackIDRe.MatchString(id) {
@@ -341,7 +291,7 @@ func (soundcloudSource) fetch(ctx context.Context, id string) (*sourceDownload, 
 		size = fi.Size()
 	}
 	title, artist := t.title(), t.artist()
-	album := title // singles, like NCS: the title keeps the Albums view sensible
+	album := title
 	if t.PublisherMetadata != nil && strings.TrimSpace(t.PublisherMetadata.AlbumTitle) != "" {
 		album = strings.TrimSpace(t.PublisherMetadata.AlbumTitle)
 	}
@@ -360,8 +310,6 @@ func (soundcloudSource) fetch(ctx context.Context, id string) (*sourceDownload, 
 	}, nil
 }
 
-// scDownloadAudio saves the best full-length stream into dir and returns
-// its path and extension: the AAC stream when there is one, else the MP3.
 func scDownloadAudio(ctx context.Context, t *scTrack, dir string) (string, string, error) {
 	var aac, mp3 *scTranscoding
 	for i := range t.Media.Transcodings {
@@ -381,7 +329,7 @@ func scDownloadAudio(ctx context.Context, t *scTrack, dir string) (string, strin
 		if err == nil {
 			return path, ".m4a", nil
 		}
-		logErr("soundcloud aac stream", err) // the MP3 is the fallback
+		logErr("soundcloud aac stream", err)
 	}
 	if mp3 == nil {
 		return "", "", &statusError{http.StatusBadGateway, "SoundCloud offers no stream this server can fetch for that track"}
@@ -397,7 +345,6 @@ func scDownloadAudio(ctx context.Context, t *scTrack, dir string) (string, strin
 	return path, ".mp3", nil
 }
 
-// scResolve turns a transcoding into the signed URL of the stream itself.
 func scResolve(ctx context.Context, t *scTrack, tc *scTranscoding) (string, error) {
 	var out struct {
 		URL string `json:"url"`
@@ -415,10 +362,6 @@ func scResolve(ctx context.Context, t *scTrack, tc *scTranscoding) (string, erro
 	return out.URL, nil
 }
 
-// scDownloadHLS fetches an HLS playlist of fragmented-MP4 segments and joins
-// the initialisation segment and the media segments into one file — itself
-// a valid fragmented MP4 — then remuxes it into an ordinary .m4a when ffmpeg
-// is available, so every player seeks in it without trouble.
 func scDownloadHLS(ctx context.Context, t *scTrack, tc *scTranscoding, dir string) (string, error) {
 	playlistURL, err := scResolve(ctx, t, tc)
 	if err != nil {
@@ -492,13 +435,12 @@ func scDownloadHLS(ctx context.Context, t *scTrack, tc *scTranscoding, dir strin
 		"-i", joined, "-map", "0:a:0", "-c", "copy", "-movflags", "+faststart", remuxed)
 	if msg, err := cmd.CombinedOutput(); err != nil {
 		logErr("soundcloud remux", fmt.Errorf("%v: %s", err, strings.TrimSpace(string(msg))))
-		return joined, nil // the joined file plays too
+		return joined, nil
 	}
 	os.Remove(joined)
 	return remuxed, nil
 }
 
-// scSaveURL downloads u into path, at most limit bytes.
 func scSaveURL(ctx context.Context, u, path string, limit int64) error {
 	f, err := os.Create(path)
 	if err != nil {
@@ -511,7 +453,6 @@ func scSaveURL(ctx context.Context, u, path string, limit int64) error {
 	return err
 }
 
-// scAppendURL appends the body of u to w, refusing more than limit bytes.
 func scAppendURL(ctx context.Context, u string, w io.Writer, limit int64) (int64, error) {
 	if limit <= 0 {
 		return 0, &statusError{http.StatusBadGateway, "the file is larger than this server accepts"}

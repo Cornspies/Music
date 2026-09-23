@@ -6,7 +6,6 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-/** "3:45" / "1:02:03" — track durations and seek-bar labels. */
 fun formatDuration(totalSeconds: Double): String {
     val s = totalSeconds.coerceAtLeast(0.0).toLong()
     val h = s / 3600
@@ -20,7 +19,6 @@ fun formatDuration(totalSeconds: Double): String {
     }
 }
 
-/** "12h 34m" / "5m" — aggregate listening time (stats, playlists, albums). */
 fun formatTotalDuration(seconds: Double): String {
     val s = seconds.coerceAtLeast(0.0).toLong()
     val h = s / 3600
@@ -33,7 +31,6 @@ fun formatTotalDuration(seconds: Double): String {
     }
 }
 
-/** "3.4 MB" / "812 KB" — file sizes (locale-independent, one decimal max). */
 fun formatBytes(bytes: Long): String = when {
     bytes < 0L -> "—"
     bytes < 1_000_000L -> "${bytes / 1_000} KB"
@@ -47,7 +44,6 @@ fun formatBytes(bytes: Long): String = when {
     }
 }
 
-/** "in 6 days", "in 3 hours", "in 20 minutes" — for expiry times; "expired" once past. */
 fun formatTimeUntil(iso: String): String {
     val at = runCatching { Instant.parse(iso) }.getOrNull() ?: return ""
     val minutes = (at - Clock.System.now()).inWholeMinutes

@@ -63,7 +63,6 @@ import com.music.app.ui.theme.lyricsSurface
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/** A line is current from its own time until the next one starts. */
 private fun activeIndex(lines: List<LyricLine>, position: Double): Int {
     var idx = -1
     for ((i, l) in lines.withIndex()) {
@@ -79,14 +78,6 @@ private fun sourceLabel(source: String): String = when (source) {
     else -> ""
 }
 
-/**
- * Full-screen lyrics, the way Spotify does it: the page takes the cover's
- * colour, the words are big and bold with the line being sung in white and
- * the rest translucent, and a small player stays at the bottom so nothing
- * has to be left to pause or skip. Synced lyrics follow playback (a manual
- * scroll pauses that for a few seconds) and tapping a line seeks to it.
- * Follows the track, so skipping while open swaps the words.
- */
 @Composable
 fun LyricsScreen(track: Track, onClose: () -> Unit) {
     val model = LocalAppModel.current
@@ -99,7 +90,6 @@ fun LyricsScreen(track: Track, onClose: () -> Unit) {
     val synced = lyrics?.synced?.takeIf { it.isNotEmpty() }
     val current = if (synced != null) activeIndex(synced, position) else -1
 
-    // The colour eases over when the track changes rather than snapping.
     val surface by animateColorAsState(lyricsSurface(track.coverColor), tween(500), label = "lyrics surface")
     val dim = Color.White.copy(alpha = 0.45f)
 
@@ -109,7 +99,6 @@ fun LyricsScreen(track: Track, onClose: () -> Unit) {
             .background(Brush.verticalGradient(listOf(surface, surface.copy(red = surface.red * 0.55f, green = surface.green * 0.55f, blue = surface.blue * 0.55f))))
             .systemBarsPadding(),
     ) {
-        // ---- header: close, small cover, who's playing ----
         Row(
             Modifier
                 .fillMaxWidth()
@@ -140,7 +129,6 @@ fun LyricsScreen(track: Track, onClose: () -> Unit) {
             }
         }
 
-        // ---- the words ----
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 lyrics == null -> Centered("Loading lyrics…", dim)
@@ -169,7 +157,6 @@ fun LyricsScreen(track: Track, onClose: () -> Unit) {
             )
         }
 
-        // ---- mini player ----
         val duration = track.duration
         var dragValue by remember { mutableStateOf<Double?>(null) }
         val shown = dragValue ?: position
@@ -232,8 +219,6 @@ fun LyricsScreen(track: Track, onClose: () -> Unit) {
 private fun SyncedLines(lines: List<LyricLine>, current: Int, dim: Color, onSeek: (Double) -> Unit) {
     val listState = rememberLazyListState()
 
-    // Follow playback, unless the reader is scrolling on their own: a manual
-    // scroll pauses the auto-follow for a few seconds.
     var lastUserScroll by remember { mutableLongStateOf(0L) }
     var following by remember { mutableStateOf(false) }
     LaunchedEffect(listState) {
@@ -244,7 +229,6 @@ private fun SyncedLines(lines: List<LyricLine>, current: Int, dim: Color, onSeek
     LaunchedEffect(current) {
         if (current < 0) return@LaunchedEffect
         if (Clock.System.now().toEpochMilliseconds() - lastUserScroll < 4000) return@LaunchedEffect
-        // Keep the line about a third of the way down the screen.
         val viewport = listState.layoutInfo.viewportSize.height
         following = true
         try {

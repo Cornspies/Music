@@ -12,7 +12,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-/** Edge of the square preview, in CSS pixels. */
 const FRAME = 288
 
 interface Props {
@@ -22,26 +21,13 @@ interface Props {
   onConfirm: (crop: AvatarCrop) => void
 }
 
-/**
- * Lets the user frame their picture before it becomes an avatar.
- *
- * Only the rectangle is computed here — the pixels are cropped server-side,
- * which already decodes and re-encodes the image anyway. That keeps this
- * component to arithmetic and avoids a second, subtly different resize on the
- * client.
- *
- * The crop is expressed as fractions of the source image, so it doesn't matter
- * that the preview is displayed at some arbitrary size.
- */
 export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
   const [url, setUrl] = useState<string | null>(null)
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
   const [zoom, setZoom] = useState(1)
-  // Top-left of the scaled image relative to the frame, in CSS pixels.
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null)
 
-  // Object URLs must be revoked or the file stays in memory for the session.
   useEffect(() => {
     if (!file) {
       setUrl(null)
@@ -55,12 +41,10 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
     return () => URL.revokeObjectURL(objectUrl)
   }, [file])
 
-  // Scale at which the image exactly covers the frame; zoom multiplies this.
   const baseScale = natural ? FRAME / Math.min(natural.w, natural.h) : 1
   const drawnW = natural ? natural.w * baseScale * zoom : 0
   const drawnH = natural ? natural.h * baseScale * zoom : 0
 
-  /** Keeps the frame fully covered, so there is never a blank edge. */
   const clamp = useCallback(
     (next: { x: number; y: number }) => ({
       x: Math.min(0, Math.max(FRAME - drawnW, next.x)),
@@ -94,7 +78,6 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
     if (!natural) return
     const scale = baseScale * zoom
     const shorter = Math.min(natural.w, natural.h)
-    // Convert the visible square back into source-image coordinates.
     onConfirm({
       x: -offset.x / scale / natural.w,
       y: -offset.y / scale / natural.h,
@@ -119,7 +102,6 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
             onPointerCancel={onPointerUp}
           >
             {url ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={url}
                 alt="Your new avatar"
@@ -127,7 +109,6 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
                 onLoad={(e) => {
                   const el = e.currentTarget
                   setNatural({ w: el.naturalWidth, h: el.naturalHeight })
-                  // Start centred.
                   const s = FRAME / Math.min(el.naturalWidth, el.naturalHeight)
                   setOffset({
                     x: (FRAME - el.naturalWidth * s) / 2,

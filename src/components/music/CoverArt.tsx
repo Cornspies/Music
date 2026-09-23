@@ -15,11 +15,6 @@ interface CoverArtProps {
   initialsClassName?: string
 }
 
-/**
- * Cover art with graceful fallback: server cover when hasCover (onError →
- * gradient), otherwise a deterministic warm dark gradient with initials/icon
- * and a subtle top-light sheen. Size is controlled by the parent (className).
- */
 export function CoverArt({
   trackId,
   title,
@@ -40,7 +35,6 @@ export function CoverArt({
           loading="lazy"
           className="aspect-square w-full rounded-md bg-zinc-800/80 object-cover shadow-md"
         />
-        {/* top-light sheen for depth */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 rounded-md bg-linear-to-br from-white/10 via-transparent to-black/20 mix-blend-overlay"
@@ -59,7 +53,6 @@ export function CoverArt({
         className
       )}
     >
-      {/* subtle sheen + inner vignette */}
       <div className="pointer-events-none absolute inset-0 bg-linear-to-br from-white/[0.07] via-transparent to-black/30" />
       <div className="pointer-events-none absolute -right-3 -bottom-4 size-1/2 rounded-full bg-black/20 blur-md" />
       {initials ? (

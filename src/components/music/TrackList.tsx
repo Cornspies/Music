@@ -7,13 +7,11 @@ import { TrackRow } from "@/components/music/TrackRow"
 
 interface TrackListProps {
   tracks: Track[]
-  /** playlist mode: pass a remover to show "Remove from this playlist" */
   onRemoveFromPlaylist?: (trackId: string) => void
   emptyIcon?: LucideIcon
   emptyTitle?: string
   emptySubtitle?: string
   emptyAction?: ReactNode
-  /** rows to render initially (low-resource cap), default all */
   limit?: number
 }
 

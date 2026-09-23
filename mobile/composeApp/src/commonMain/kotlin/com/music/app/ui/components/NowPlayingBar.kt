@@ -25,10 +25,6 @@ import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
 import com.music.app.Screen
 
-/**
- * Mini player shown above the bottom tab bar whenever a track is loaded
- * (hidden on the full Now Playing screen). Tapping it opens the full player.
- */
 @Composable
 fun NowPlayingBar() {
     val model = LocalAppModel.current

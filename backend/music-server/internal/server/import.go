@@ -13,70 +13,39 @@ import (
 	"github.com/google/uuid"
 )
 
-// Playlist import: paste a playlist link from a catalogue that has them
-// (YouTube, through yt-dlp) and every track comes into the library, into a
-// playlist of the same name. Fifty tracks take a few minutes, so an import
-// is a background job the clients poll: it lists the playlist, then goes
-// through the entries one by one — a track already in the library is only
-// linked into the playlist, anything else is fetched and ingested like a
-// single "Add". One entry failing doesn't stop the rest. Jobs live in
-// memory: a restart ends a running import, and running it again picks up
-// where it left off, since existing tracks are skipped and the playlist is
-// reused by name.
-
-// playlistSource is a catalogue whose links can point at whole playlists.
 type playlistSource interface {
 	source
-	// playlistID extracts the playlist id from a link; "" when the link
-	// isn't a playlist on this catalogue.
 	playlistID(raw string) string
-	// listPlaylist returns the playlist's title and its entries, in order.
 	listPlaylist(ctx context.Context, id string) (catalogPlaylist, error)
 }
 
-// catalogPlaylist is a listed playlist: its playable entries, and how many
-// it has in all when the listing was cut short (Total > len(Entries)).
 type catalogPlaylist struct {
 	Title   string
 	Total   int
 	Entries []discoverResult
 }
 
-// PlaylistImport is an import job as the clients see it.
 type PlaylistImport struct {
-	ID     string `json:"id"`
-	Source string `json:"source"`
-	// ListID is the catalogue's id for the playlist being imported.
-	ListID string `json:"listId"`
-	// Title is the playlist's name, known once it has been listed.
-	Title string `json:"title"`
-	// State: queued, listing, running, done, cancelled or failed.
-	State string `json:"state"`
-	// Total entries; Done of them handled so far, as Added (fetched),
-	// Existing (already in the library) or Failed.
-	Total    int `json:"total"`
-	Done     int `json:"done"`
-	Added    int `json:"added"`
-	Existing int `json:"existing"`
-	Failed   int `json:"failed"`
-	// Current is the title being fetched right now.
-	Current string `json:"current,omitempty"`
-	// PlaylistID is the library playlist the tracks go into.
-	PlaylistID string `json:"playlistId,omitempty"`
-	// Error is why the whole import stopped, when it did.
-	Error    string          `json:"error,omitempty"`
-	Failures []ImportFailure `json:"failures"`
-	// ExistingTracks are the entries that were in the library already (the
-	// same video, added before) and were only linked into the playlist.
-	ExistingTracks []ImportExisting `json:"existingTracks"`
-	// PossibleDuplicates are entries that were added although a track in
-	// the library looks like the same song — for someone to go through.
+	ID                 string            `json:"id"`
+	Source             string            `json:"source"`
+	ListID             string            `json:"listId"`
+	Title              string            `json:"title"`
+	State              string            `json:"state"`
+	Total              int               `json:"total"`
+	Done               int               `json:"done"`
+	Added              int               `json:"added"`
+	Existing           int               `json:"existing"`
+	Failed             int               `json:"failed"`
+	Current            string            `json:"current,omitempty"`
+	PlaylistID         string            `json:"playlistId,omitempty"`
+	Error              string            `json:"error,omitempty"`
+	Failures           []ImportFailure   `json:"failures"`
+	ExistingTracks     []ImportExisting  `json:"existingTracks"`
 	PossibleDuplicates []ImportDuplicate `json:"possibleDuplicates"`
 	StartedAt          string            `json:"startedAt"`
 	FinishedAt         string            `json:"finishedAt,omitempty"`
 }
 
-// ImportDuplicate pairs an added track with the one it may duplicate.
 type ImportDuplicate struct {
 	Title          string `json:"title"`
 	TrackID        string `json:"trackId"`
@@ -85,13 +54,11 @@ type ImportDuplicate struct {
 	ExistingArtist string `json:"existingArtist"`
 }
 
-// ImportFailure is one entry that couldn't be added.
 type ImportFailure struct {
 	Title  string `json:"title"`
 	Reason string `json:"reason"`
 }
 
-// ImportExisting is one entry whose video was in the library already.
 type ImportExisting struct {
 	Title   string `json:"title"`
 	TrackID string `json:"trackId"`
@@ -106,7 +73,6 @@ const (
 	importCancelled = "cancelled"
 	importFailed    = "failed"
 
-	// Finished imports stay visible for a while, then go.
 	importRetention = time.Hour
 	importListTime  = 90 * time.Second
 	importFetchTime = 3 * time.Minute
@@ -174,8 +140,6 @@ func (s *Server) startImportWorker() {
 	}()
 }
 
-// userImports lists a user's jobs, newest first, dropping finished ones
-// that have aged out.
 func userImports(userID string) []PlaylistImport {
 	imports.Lock()
 	defer imports.Unlock()
@@ -190,7 +154,7 @@ func userImports(userID string) []PlaylistImport {
 			out = append(out, snap)
 		}
 	}
-	for i := 1; i < len(out); i++ { // insertion sort: a handful of jobs at most
+	for i := 1; i < len(out); i++ {
 		for k := i; k > 0 && out[k].StartedAt > out[k-1].StartedAt; k-- {
 			out[k], out[k-1] = out[k-1], out[k]
 		}
@@ -198,9 +162,6 @@ func userImports(userID string) []PlaylistImport {
 	return out
 }
 
-// handleStartImport: POST /api/discover/import {"source":"youtube","url":"…"}.
-// Answers 202 with the job; 200 with the running one when this playlist is
-// already being imported for the caller.
 func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 	if discoverDisabled() {
 		writeErr(w, http.StatusNotFound, "discover is disabled on this server")
@@ -253,14 +214,10 @@ func (s *Server) handleStartImport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, job.snapshot())
 }
 
-// handleListImports: GET /api/discover/imports — the caller's imports,
-// running and recently finished.
 func (s *Server) handleListImports(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, userImports(userFrom(r).ID))
 }
 
-// handleCancelImport: DELETE /api/discover/imports/{id} — stops after the
-// entry in progress; what came in stays.
 func (s *Server) handleCancelImport(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	imports.Lock()
@@ -286,7 +243,7 @@ func (s *Server) handleCancelImport(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) runImport(job *importJob) {
 	if !job.active() {
-		return // cancelled while queued
+		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	job.update(func(p *PlaylistImport) { p.State = importListing })
@@ -337,7 +294,6 @@ func (s *Server) runImport(job *importJob) {
 			}
 			var status *statusError
 			if errors.As(err, &status) && status.code == http.StatusInsufficientStorage {
-				// Every further download would fail the same way.
 				job.finish(importFailed, status.msg)
 				return
 			}
@@ -374,11 +330,6 @@ func (s *Server) runImport(job *importJob) {
 		snap.Title, snap.Added, len(snap.PossibleDuplicates), snap.Existing, snap.Failed)
 }
 
-// importEntry makes sure one entry is in the library: the existing track
-// when the very same video was added before (why says so), or a fresh
-// download. A download that looks like a song already in the library still
-// goes ahead — a wrong guess would lose someone a song — but the lookalike
-// is returned so the import can point it out.
 func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResult) (id string, added bool, why string, lookalike *Track, err error) {
 	var existing string
 	if err := s.db.QueryRow(`SELECT id FROM tracks WHERE source = ? AND source_id = ?`, job.src.key(), e.ID).Scan(&existing); err == nil {
@@ -399,11 +350,6 @@ func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResu
 	return id, true, "", lookalike, nil
 }
 
-// sameSongInLibrary looks for a track that is the same song as a listing
-// entry — an upload of it, or another video of it — the way the upload
-// duplicate check does, but forgiving the noise of a video title. The
-// artist is trusted only when the title itself names one ("Artist - Title");
-// a channel name is a hint, never a veto.
 func (s *Server) sameSongInLibrary(userID string, e discoverResult) *Track {
 	artist, title := parseYouTubeTitle(e.Title, "")
 	title = trimDefault(title, e.Title)
@@ -416,9 +362,6 @@ func (s *Server) sameSongInLibrary(userID string, e discoverResult) *Track {
 	return &matches[0].Track
 }
 
-// playlistForImport returns the user's playlist of that name, creating it
-// when there is none — so importing the same list again fills in what's
-// missing rather than making "Name (2)".
 func (s *Server) playlistForImport(userID, name string) (string, error) {
 	if len(name) > 100 {
 		name = strings.TrimSpace(name[:100])
@@ -433,7 +376,6 @@ func (s *Server) playlistForImport(userID, name string) (string, error) {
 	return id, err
 }
 
-// linkIntoPlaylist appends the track unless it is in the playlist already.
 func (s *Server) linkIntoPlaylist(playlistID, trackID string) error {
 	var already int
 	if err := s.db.QueryRow(`SELECT COUNT(1) FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?`, playlistID, trackID).Scan(&already); err != nil {
@@ -447,8 +389,6 @@ func (s *Server) linkIntoPlaylist(playlistID, trackID string) error {
 	return err
 }
 
-// friendlyImportError keeps the messages meant for people (statusError)
-// and hides the rest behind fallback.
 func friendlyImportError(err error, fallback string) string {
 	var status *statusError
 	if errors.As(err, &status) {

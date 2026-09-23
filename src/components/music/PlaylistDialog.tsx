@@ -17,7 +17,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-/** Create or rename a playlist (also handles "add pending track on create"). */
 export function PlaylistDialog() {
   const dialog = useUIStore((s) => s.playlistDialog)
   const openPlaylistDialog = useUIStore((s) => s.openPlaylistDialog)

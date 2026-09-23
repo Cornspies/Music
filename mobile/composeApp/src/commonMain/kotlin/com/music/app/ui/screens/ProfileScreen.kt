@@ -62,11 +62,6 @@ import com.music.app.ui.components.SyncSettings
 import com.music.app.ui.theme.Emerald
 import kotlinx.coroutines.launch
 
-/**
- * The signed-in user's page: picture, account, download preferences and the
- * way out. Opened from the avatar in the Home header. Anything that is a
- * setting rather than a piece of the library belongs here.
- */
 @Composable
 fun ProfileScreen() {
     val model = LocalAppModel.current
@@ -83,7 +78,6 @@ fun ProfileScreen() {
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
-        // ---- header ----
         Row(
             Modifier
                 .fillMaxWidth()
@@ -101,7 +95,6 @@ fun ProfileScreen() {
             )
         }
 
-        // ---- identity ----
         Column(
             Modifier
                 .fillMaxWidth()
@@ -137,7 +130,6 @@ fun ProfileScreen() {
             )
         }
 
-        // ---- listening ----
         SectionCard("Listening") {
             SettingRow(
                 icon = Icons.Filled.History,
@@ -146,7 +138,6 @@ fun ProfileScreen() {
             )
         }
 
-        // ---- library ----
         SectionCard("Library") {
             SettingRow(
                 icon = Icons.Filled.ContentCopy,
@@ -162,7 +153,6 @@ fun ProfileScreen() {
             )
         }
 
-        // ---- account ----
         SectionCard("Account") {
             SettingRow(
                 icon = Icons.Filled.Badge,
@@ -189,7 +179,6 @@ fun ProfileScreen() {
             )
         }
 
-        // ---- download preferences ----
         SectionCard("Download preferences", icon = Icons.Filled.Storage) {
             DownloadQualitySetting()
             SyncSettings()
@@ -305,7 +294,6 @@ private fun SettingRow(
     }
 }
 
-/** A setting that is on or off; the whole row toggles it. */
 @Composable
 private fun SwitchRow(
     icon: ImageVector,
@@ -327,7 +315,6 @@ private fun SwitchRow(
     }
 }
 
-/** Current + new password; the server revokes every other session on success. */
 @Composable
 private fun ChangePasswordDialog(onDismiss: () -> Unit) {
     val model = LocalAppModel.current
@@ -428,7 +415,6 @@ private fun ChangePasswordDialog(onDismiss: () -> Unit) {
     )
 }
 
-/** New sign-in name; the current password confirms it. */
 @Composable
 private fun RenameAccountDialog(onDismiss: () -> Unit) {
     val model = LocalAppModel.current
@@ -507,7 +493,6 @@ private fun RenameAccountDialog(onDismiss: () -> Unit) {
     )
 }
 
-/** Deletes the account after the password; the uploaded music stays on the server. */
 @Composable
 private fun DeleteAccountDialog(onDismiss: () -> Unit) {
     val model = LocalAppModel.current
@@ -547,7 +532,6 @@ private fun DeleteAccountDialog(onDismiss: () -> Unit) {
                         busy = true
                         error = null
                         try {
-                            // Signs out on success, which takes this screen away.
                             model.deleteAccount(password)
                         } catch (e: Exception) {
                             error = friendlyError(e)

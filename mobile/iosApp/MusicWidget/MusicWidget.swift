@@ -1,22 +1,6 @@
 import WidgetKit
 import SwiftUI
 
-// Home-screen "now playing" widget.
-//
-// The Kotlin player (composeApp/src/iosMain/.../PlayerController.ios.kt)
-// writes the current title/artist into the shared app group whenever a track
-// starts; this reads it back. Tapping the widget opens the app — WidgetKit
-// can't drive playback directly, and the lock screen already has the
-// transport controls via MPNowPlayingInfoCenter.
-//
-// One-time setup (Xcode):
-//   1. File → New → Target → Widget Extension, name it "MusicWidget", untick
-//      "Include Configuration Intent", and replace its generated Swift file
-//      with this one.
-//   2. Add the App Groups capability to BOTH the iosApp and MusicWidget
-//      targets with the group "group.com.music.app" (matches
-//      WIDGET_APP_GROUP in PlayerController.ios.kt).
-
 private let appGroup = "group.com.music.app"
 
 struct NowPlayingEntry: TimelineEntry {
@@ -36,8 +20,6 @@ struct NowPlayingProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<NowPlayingEntry>) -> Void) {
-        // The app asks WidgetCenter to reload when the track changes; a slow
-        // periodic refresh covers the case where it didn't.
         let next = Calendar.current.date(byAdding: .minute, value: 15, to: .now) ?? .now
         completion(Timeline(entries: [read()], policy: .after(next)))
     }

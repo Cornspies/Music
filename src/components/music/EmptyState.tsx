@@ -14,7 +14,6 @@ interface EmptyStateProps {
   className?: string
 }
 
-/** Reusable empty state block (icon, title, subtitle, optional action). */
 export function EmptyState({
   icon: Icon,
   title,

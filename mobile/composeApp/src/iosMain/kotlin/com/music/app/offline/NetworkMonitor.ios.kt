@@ -9,10 +9,6 @@ import platform.Network.nw_path_monitor_start
 import platform.darwin.dispatch_get_main_queue
 import kotlin.concurrent.Volatile
 
-/**
- * NWPathMonitor keeps [expensive] current; iOS marks cellular and personal
- * hotspots as expensive, which is what "metered" means here.
- */
 @OptIn(ExperimentalForeignApi::class)
 actual object NetworkMonitor {
     @Volatile private var expensive = false
@@ -26,7 +22,6 @@ actual object NetworkMonitor {
     }
 
     actual fun isMetered(): Boolean {
-        // Touching the property makes sure the lazy monitor has started.
         monitor.hashCode()
         return expensive
     }

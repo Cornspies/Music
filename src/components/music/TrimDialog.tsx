@@ -15,14 +15,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 
-/**
- * Cut the start and end of a track — the seconds of silence a rip tends to
- * carry, or the applause on a live recording. The waveform shows what goes
- * (shaded) and what stays; "Detect silence" fills the cut points from the
- * server's analysis; each end can be previewed. The cut is a stream copy on
- * the server and the original is kept, so it can be undone. Synced lyrics
- * move along with a cut at the start unless the switch says otherwise.
- */
 export function TrimDialog() {
   const track = useUIStore((s) => s.trimTrack)
   const close = () => useUIStore.getState().setTrimTrack(null)
@@ -52,8 +44,6 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     fetchWaveform(track.id, track.updatedAt).then((p) => {
       if (alive) setPeaks(p)
     })
-    // Only synced lyrics care about the cut, so the switch appears only for
-    // tracks that have some.
     fetchLyrics(track.id)
       .then((l) => {
         if (alive) setHasSyncedLyrics(!!l.synced && l.synced.length > 0)
@@ -64,7 +54,6 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     }
   }, [track.id, track.updatedAt])
 
-  // One preview element, stopped when the dialog goes away.
   useEffect(() => {
     const el = new Audio()
     el.preload = "none"
@@ -80,7 +69,6 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     setPreviewing(null)
   }
 
-  /** Plays a few seconds from the start cut, or the few seconds up to the end cut. */
   const preview = (which: "start" | "end") => {
     const el = audioRef.current
     if (!el) return
@@ -88,7 +76,6 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
       stopPreview()
       return
     }
-    // The main player would fight for the audio output.
     const player = usePlayerStore.getState()
     if (player.isPlaying) player.togglePlay()
     const from = which === "start" ? start : Math.max(start, end - PREVIEW_SECONDS)
@@ -127,8 +114,6 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     try {
       const updated = await trimTrack(track.id, start, end, shiftLyrics)
       toast.success(`Cut to ${formatDuration(updated.duration)}`)
-      // The cut file is analysed again in the background, so the library is
-      // followed for a while: the new waveform appears when it is ready.
       useLibraryStore.getState().followAnalysis(updated.id)
       onClose()
     } catch (e) {
@@ -169,7 +154,6 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
         </DialogDescription>
       </DialogHeader>
 
-      {/* waveform with the cut regions shaded */}
       <div className="relative h-24 w-full overflow-hidden rounded-lg bg-zinc-900">
         {peaks ? (
           <svg viewBox={`0 0 ${peaks.length} 100`} preserveAspectRatio="none" className="absolute inset-0 size-full">

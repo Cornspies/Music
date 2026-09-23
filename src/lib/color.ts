@@ -1,5 +1,3 @@
-/** Colour helpers for surfaces painted with a track's cover colour. */
-
 function parseHex(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
   if (!m) return null
@@ -15,11 +13,6 @@ function luminance([r, g, b]: [number, number, number]): number {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 }
 
-/**
- * The cover colour made safe as a background for white text: bright colours
- * are darkened, near-black ones lifted, so the result always sits in a
- * readable mid-dark band while keeping the hue.
- */
 export function lyricsSurface(coverColor: string | undefined): [number, number, number] {
   const rgb = parseHex(coverColor ?? "") ?? [63, 63, 70] // zinc-700
   const lum = luminance(rgb)
@@ -34,7 +27,6 @@ export function lyricsSurface(coverColor: string | undefined): [number, number, 
   return rgb
 }
 
-/** A top-to-bottom gradient from the surface colour into a darker shade of it. */
 export function lyricsGradient(coverColor: string | undefined): string {
   const top = lyricsSurface(coverColor)
   const bottom: [number, number, number] = [top[0] * 0.55, top[1] * 0.55, top[2] * 0.55]

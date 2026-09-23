@@ -2,23 +2,11 @@
 
 import type { View } from "@/stores/ui"
 
-/**
- * URL <-> view mapping.
- *
- * Navigation is driven by the History API rather than Next's router: the whole
- * app is one client component holding the audio element and player state, so a
- * router push (which re-runs the route tree) risks interrupting playback. The
- * optional catch-all route at app/[[...slug]]/page.tsx makes every one of these
- * paths serve the app, so deep links and refreshes work too.
- */
-
 export interface Route {
   view: View
-  /** playlist id, artist name, or JSON album key — matches UIState.viewArg */
   arg: string | null
 }
 
-/** Album viewArg is a JSON {name, artist}; in the URL it's two readable segments. */
 function encodeAlbumArg(arg: string | null): string[] {
   if (!arg) return []
   try {
@@ -100,22 +88,17 @@ export function pathToRoute(pathname: string): Route {
     case "duplicates":
       return { view: "duplicates", arg: null }
     case "s":
-      // A share link: one track, playable without an account.
       return parts[1] ? { view: "share", arg: parts[1] } : { view: "home", arg: null }
     case "admin":
       return { view: "admin", arg: null }
     case "login":
     case "register":
-      // The auth screen's own addresses. Signed in, they just mean home;
-      // signed out, AuthView reads the path (and ?invite=) itself.
       return { view: "home", arg: null }
     default:
-      // Unknown path — show home rather than a dead end.
       return { view: "home", arg: null }
   }
 }
 
-/** A malformed %-sequence shouldn't throw and blank the app. */
 function safeDecode(segment: string): string {
   try {
     return decodeURIComponent(segment)

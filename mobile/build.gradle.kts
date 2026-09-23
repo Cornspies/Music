@@ -1,6 +1,3 @@
-// Plugins are declared once here (without applying them) so every module
-// resolves the same AGP/Kotlin versions from the catalog; the modules then
-// apply the ones they need.
 plugins {
     alias(libs.plugins.androidApplication) apply false
     alias(libs.plugins.androidKmpLibrary) apply false

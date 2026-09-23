@@ -2,12 +2,6 @@ package com.music.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/**
- * The cover colour made safe as a background for white text: bright colours
- * are darkened, near-black ones lifted, so the result always sits in a
- * readable mid-dark band while keeping the hue. Falls back to a neutral
- * grey when the server hasn't computed a colour (yet).
- */
 fun lyricsSurface(coverColor: String): Color {
     val hex = coverColor.trim().removePrefix("#")
     val n = hex.takeIf { it.length == 6 }?.toIntOrNull(16)

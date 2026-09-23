@@ -78,17 +78,6 @@ import com.music.app.ui.theme.Zinc500
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/**
- * Full-screen player.
- *
- * Swipe down anywhere to close; swipe the cover left or right to skip to the
- * next or previous track. When the track has lyrics, the line being sung sits
- * under the art and opens them full-screen. Laid out top to bottom with no scrolling: the cover takes whatever height is
- * left after everything else has been placed, so on a short phone it simply
- * shrinks rather than pushing the controls off the bottom. The waveform (when
- * the server has analysed the track) is the seek bar itself — tap or drag it;
- * a plain slider stands in until then.
- */
 @Composable
 fun NowPlayingScreen() {
     val model = LocalAppModel.current
@@ -110,7 +99,6 @@ private fun NowPlayingContent(track: Track) {
     val isPlaying by model.player.isPlaying.collectAsState()
     val position by model.player.positionSec.collectAsState()
 
-    // While the finger is down the bar follows it, not the player.
     var dragValue by remember { mutableStateOf<Double?>(null) }
     val duration = track.duration
     val shownPosition = dragValue ?: position
@@ -118,17 +106,10 @@ private fun NowPlayingContent(track: Track) {
     LaunchedEffect(track.id, track.hasWaveform) { model.loadWaveform(track) }
     val waveform = model.waveformFor(track)
 
-    // Swipe down to close, the way every full-screen player does: the content
-    // follows the finger, and past a third of the screen letting go dismisses
-    // it; short of that it springs back. Only vertical drags are claimed, so
-    // scrubbing the waveform sideways still works.
     val scope = rememberCoroutineScope()
     val dragOffset = remember { Animatable(0f) }
     val dismissThresholdPx = with(LocalDensity.current) { 140.dp.toPx() }
 
-    // Swipe the cover sideways to skip: left for the next track, right for the
-    // previous one. The art follows the finger, slides off the edge, and the
-    // new track's art slides in from the opposite side.
     val coverOffset = remember { Animatable(0f) }
     val skipThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
     var skipping by remember { mutableStateOf(false) }
@@ -136,8 +117,6 @@ private fun NowPlayingContent(track: Track) {
     LaunchedEffect(track.id) { model.loadLyrics(track) }
     val lyrics = model.lyricsFor(track)?.takeIf { it.found && !(it.instrumental && it.plain.isBlank()) }
 
-    // The background travels with the content, so what's underneath shows
-    // through as the player slides away.
     Column(
         Modifier
             .fillMaxSize()
@@ -161,7 +140,6 @@ private fun NowPlayingContent(track: Track) {
                     },
                     onVerticalDrag = { change, dy ->
                         change.consume()
-                        // Upward drags do nothing; downward ones track the finger.
                         scope.launch { dragOffset.snapTo((dragOffset.value + dy).coerceAtLeast(0f)) }
                     },
                 )
@@ -169,7 +147,6 @@ private fun NowPlayingContent(track: Track) {
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // ---- header: collapse chevron, nothing else competing for height ----
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -185,7 +162,6 @@ private fun NowPlayingContent(track: Track) {
             )
         }
 
-        // ---- cover: a true square, as large as the leftover room allows ----
         BoxWithConstraints(
             Modifier
                 .weight(1f)
@@ -193,10 +169,6 @@ private fun NowPlayingContent(track: Track) {
                 .padding(vertical = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
-            // Measured explicitly rather than with aspectRatio(): inside a
-            // weighted slot the constraints are tight, and aspectRatio can't
-            // make a square out of those — the art ended up stretched and
-            // cropped.
             val edge = minOf(maxWidth, maxHeight)
             val widthPx = constraints.maxWidth.toFloat()
             CoverImage(
@@ -243,15 +215,11 @@ private fun NowPlayingContent(track: Track) {
             )
         }
 
-        // ---- lyrics: the line being sung, right under the art; tap for the
-        // full-screen view. Absent when the track has none, and the cover
-        // takes the room back.
         if (lyrics != null) {
             LyricsStrip(lyrics, position = position, onClick = { lyricsOpen = true })
             Spacer(Modifier.height(10.dp))
         }
 
-        // ---- title / artist with the heart alongside, not below ----
         Row(
             Modifier
                 .fillMaxWidth()
@@ -286,12 +254,8 @@ private fun NowPlayingContent(track: Track) {
 
         Spacer(Modifier.height(8.dp))
 
-        // ---- seek ----
         SeekBar(
             waveform = waveform,
-            // A track the server has analysed gets a waveform-shaped
-            // placeholder while its peaks arrive, not the slider: swapping
-            // slider → waveform a moment after every skip looked like a glitch.
             expectWaveform = track.hasWaveform,
             position = shownPosition,
             duration = duration,
@@ -309,7 +273,6 @@ private fun NowPlayingContent(track: Track) {
 
         Spacer(Modifier.height(8.dp))
 
-        // ---- one row of controls: shuffle · prev · play · next · repeat ----
         Row(
             Modifier
                 .fillMaxWidth()
@@ -373,7 +336,6 @@ private fun NowPlayingContent(track: Track) {
         }
     }
 
-    // Full-screen lyrics slide up over the player and take the cover's colour.
     AnimatedVisibility(
         visible = lyricsOpen,
         enter = slideInVertically(tween(260)) { it } + fadeIn(tween(200)),
@@ -383,13 +345,6 @@ private fun NowPlayingContent(track: Track) {
     }
 }
 
-/**
- * The waveform as a seek bar: tap anywhere to jump, drag to scrub. Without a
- * waveform, a standard slider does the same job at the same height so the
- * layout doesn't jump when the analysis arrives. With [expectWaveform] but no
- * peaks yet, a flat bar of the same shape stands in until they load.
- */
-/** Low, even bars: what a waveform looks like before its peaks have arrived. */
 private val PLACEHOLDER_PEAKS: List<Int> = List(200) { 6 }
 
 @Composable

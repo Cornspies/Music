@@ -50,12 +50,6 @@ import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc800
 import kotlinx.coroutines.launch
 
-/**
- * Tracks that look like the same song — same title and artist, or same
- * title and length — grouped, oldest first, with what tells them apart
- * (format, size, where they came from, plays) under each, and a bin for
- * the copies that can go. Groups shrink as tracks are deleted.
- */
 @Composable
 fun DuplicatesScreen() {
     val model = LocalAppModel.current
@@ -70,7 +64,6 @@ fun DuplicatesScreen() {
         }
     }
 
-    // A deleted track leaves its group; a group of one is no longer a group.
     val alive = model.tracks?.map { it.id }?.toSet()
     val groups = result?.first?.map { g ->
         if (alive == null) g else g.copy(tracks = g.tracks.filter { it.id in alive })
@@ -197,7 +190,6 @@ private fun DuplicateGroupCard(group: DuplicateGroup) {
     }
 }
 
-/** What tells two copies apart. */
 private fun describe(t: Track): String = buildList {
     add(formatLabel(t.mimeType))
     if (t.fileSize > 0) add(formatBytes(t.fileSize))

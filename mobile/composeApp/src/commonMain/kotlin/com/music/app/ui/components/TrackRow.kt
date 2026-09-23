@@ -50,32 +50,19 @@ import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc500
 import kotlinx.coroutines.launch
 
-/**
- * A single track row: cover, title, artist · duration, optional trailing slot
- * (e.g. remove-from-playlist), and the favorite heart. Tapping the row plays it now
- * with [context] as the queue.
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TrackRow(
     track: Track,
     context: List<Track>,
     modifier: Modifier = Modifier,
-    /**
-     * False hides the uploader, download and favourite controls: for lists
-     * like the history, where the row is a record of a play rather than a
-     * place to manage the track.
-     */
     showActions: Boolean = true,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val model = LocalAppModel.current
-    // Long-press: the track's own actions. Sharing is for everyone; only the
-    // uploader (or an admin) can change its details.
     val mine = model.user?.let { it.id == track.uploadedBy.id || it.isAdmin } == true
     var menuOpen by remember { mutableStateOf(false) }
     var reviewOpen by remember { mutableStateOf(false) }
-    // Share link: made on demand, copied to the clipboard, reported once.
     var sharing by remember(track.id) { mutableStateOf(false) }
     var shareMessage by remember(track.id) { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboard.current
@@ -108,7 +95,6 @@ fun TrackRow(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (lookingUp) {
-                        // The online lookup hasn't been through this track yet.
                         CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp, color = Emerald)
                         Spacer(Modifier.width(6.dp))
                     }
@@ -122,8 +108,6 @@ fun TrackRow(
                 }
             }
             if (trailing != null) trailing()
-            // Uploader — the library is shared, so this shows who contributed the
-            // file. Kept small and slightly dimmed: provenance, not a control.
             if (showActions && track.uploadedBy.id.isNotEmpty()) {
                 UserAvatar(
                     userId = track.uploadedBy.id,
@@ -154,7 +138,6 @@ fun TrackRow(
                     sharing = true
                     scope.launch {
                         try {
-                            // A link anyone can open, account or not.
                             val (link, expiresAt) = model.shareLinkFor(track)
                             clipboard.setClipEntry(plainTextClipEntry(link))
                             shareMessage = "Link copied" + (expiresAt?.let { " · expires ${formatTimeUntil(it)}" } ?: "")
@@ -212,17 +195,11 @@ fun trackSubtitle(track: Track): String {
     return "$artist · ${formatDuration(track.duration)}"
 }
 
-/**
- * Download / downloading / downloaded toggle for a track. Tapping a downloaded
- * track removes the local copy; tapping a failed one retries.
- */
 @Composable
 fun DownloadButton(track: Track, modifier: Modifier = Modifier) {
     val model = LocalAppModel.current
     val scope = rememberCoroutineScope()
     val state = model.downloads.stateOf(track.id)
-    // Only formats some platforms can't decode have a second copy, so this
-    // stays a single tap for almost everything in the library.
     var chooseVersion by remember(track.id) { mutableStateOf(false) }
 
     fun start(useCompatible: Boolean?) {
@@ -235,7 +212,7 @@ fun DownloadButton(track: Track, modifier: Modifier = Modifier) {
         onClick = {
             when (state) {
                 DownloadState.DONE -> model.downloads.remove(track.id)
-                DownloadState.DOWNLOADING -> Unit // already in flight
+                DownloadState.DOWNLOADING -> Unit
                 else -> if (track.hasCompatible) chooseVersion = true else start(null)
             }
         },
@@ -277,13 +254,6 @@ fun DownloadButton(track: Track, modifier: Modifier = Modifier) {
 }
 
 
-/**
- * Asks which stored version to keep offline, for the few tracks that have two.
- *
- * The original is listed first and described by its own format; the converted
- * copy is offered as the one that plays anywhere, which is the reason it
- * exists. Tracks with a single version never reach this dialog.
- */
 @Composable
 private fun DownloadVersionDialog(
     track: Track,
@@ -317,7 +287,6 @@ private fun DownloadVersionDialog(
     )
 }
 
-/** "audio/ogg" -> "OGG", for labelling the choice. */
 private fun shortFormat(mime: String): String = when (mime.substringBefore(';').trim().lowercase()) {
     "audio/mpeg", "audio/mp3" -> "MP3"
     "audio/mp4", "audio/m4a", "audio/x-m4a" -> "AAC"

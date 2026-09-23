@@ -15,29 +15,17 @@ type Playlist struct {
         TrackCount    int     `json:"trackCount"`
         TotalDuration float64 `json:"totalDuration"`
         CreatedAt     string  `json:"createdAt"`
-        // Playlists are private by default. Making one public lets every other
-        // signed-in user find and play it — but never edit it.
         IsPublic bool `json:"isPublic"`
-        // Who made it. Only meaningful for playlists shared by someone else,
-        // but always populated so the client can tell "mine" from "theirs".
         Owner    Uploader `json:"owner"`
         IsMine   bool     `json:"isMine"`
-        // Pinned playlists belong to someone else but the viewer has chosen to
-        // keep them in their sidebar.
         IsPinned bool `json:"isPinned"`
 }
 
-// playlistDetail is a playlist plus its tracks. Embedding Playlist keeps the
-// detail payload in lockstep with the list payload — add a field to Playlist
-// and this endpoint returns it automatically.
 type playlistDetail struct {
         *Playlist
         Tracks []*Track `json:"tracks"`
 }
 
-// playlistSelect returns every column Playlist needs; callers add the WHERE.
-// It takes one leading bind value — the viewing user's id, for the is-pinned
-// check — so build argument lists with playlistSelectArgs.
 const playlistSelect = `
 SELECT EXISTS(SELECT 1 FROM playlist_pins pp WHERE pp.user_id = ? AND pp.playlist_id = p.id),
        p.id, p.name, p.created_at, p.is_public, p.user_id,
@@ -47,8 +35,6 @@ SELECT EXISTS(SELECT 1 FROM playlist_pins pp WHERE pp.user_id = ? AND pp.playlis
 FROM playlists p
 LEFT JOIN users u ON u.id = p.user_id`
 
-// playlistSelectArgs returns the leading bind values playlistSelect expects.
-// Append any further WHERE arguments after these.
 func playlistSelectArgs(userID string) []any { return []any{userID} }
 
 func scanPlaylist(scan func(dest ...any) error, viewerID string) (*Playlist, error) {
@@ -71,9 +57,6 @@ func scanPlaylist(scan func(dest ...any) error, viewerID string) (*Playlist, err
 
 func (s *Server) handleListPlaylists(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
-        // Own playlists plus the ones pinned from other people, so the sidebar
-        // is a single source of truth. A pinned playlist that has since been
-        // unshared drops out on its own (is_public = 1 is required).
         s.writePlaylists(w, u, `
                 WHERE p.user_id = ?
                    OR (p.is_public = 1 AND EXISTS(
@@ -82,8 +65,6 @@ func (s *Server) handleListPlaylists(w http.ResponseWriter, r *http.Request) {
                 u.ID, u.ID, u.ID)
 }
 
-// handleListPublicPlaylists returns playlists other people have chosen to
-// share. Your own are excluded — they're already in /api/playlists.
 func (s *Server) handleListPublicPlaylists(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         s.writePlaylists(w,
@@ -133,8 +114,6 @@ func (s *Server) handleCreatePlaylist(w http.ResponseWriter, r *http.Request) {
                 s.internalErr(w, "create playlist", err)
                 return
         }
-        // Read it back rather than hand-building the response: that way the
-        // new playlist carries owner/isMine/isPublic like every other one.
         p, ok := s.getPlaylist(w, u, id)
         if !ok {
                 return
@@ -142,9 +121,6 @@ func (s *Server) handleCreatePlaylist(w http.ResponseWriter, r *http.Request) {
         writeJSON(w, http.StatusCreated, p)
 }
 
-// getPlaylist fetches a playlist the user is allowed to *see*: their own, or
-// someone else's that's been made public. A private playlist belonging to
-// another user reads as "not found" — no reason to confirm it exists.
 func (s *Server) getPlaylist(w http.ResponseWriter, u *User, id string) (*Playlist, bool) {
         row := s.db.QueryRow(playlistSelect+` WHERE p.id = ? AND (p.user_id = ? OR p.is_public = 1)`,
                 append(playlistSelectArgs(u.ID), id, u.ID)...)
@@ -159,7 +135,6 @@ func (s *Server) getPlaylist(w http.ResponseWriter, u *User, id string) (*Playli
         return p, true
 }
 
-// requireOwnPlaylist is getPlaylist plus "and you may change it".
 func (s *Server) requireOwnPlaylist(w http.ResponseWriter, u *User, id string) (*Playlist, bool) {
         p, ok := s.getPlaylist(w, u, id)
         if !ok {
@@ -204,9 +179,6 @@ func (s *Server) handleGetPlaylist(w http.ResponseWriter, r *http.Request) {
         writeJSON(w, http.StatusOK, playlistDetail{Playlist: p, Tracks: tracks})
 }
 
-// handlePinPlaylist keeps someone else's public playlist in your sidebar.
-// Your own are always listed, so pinning one is rejected rather than silently
-// doing nothing.
 func (s *Server) handlePinPlaylist(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         id := r.PathValue("id")
@@ -232,9 +204,6 @@ func (s *Server) handlePinPlaylist(w http.ResponseWriter, r *http.Request) {
         writeJSON(w, http.StatusOK, updated)
 }
 
-// handleUnpinPlaylist removes the pin. It succeeds even when the playlist is
-// no longer visible (the owner may have unshared it since), so the client can
-// always drop it from the sidebar.
 func (s *Server) handleUnpinPlaylist(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         id := r.PathValue("id")
@@ -257,8 +226,6 @@ func (s *Server) handleUpdatePlaylist(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         id := r.PathValue("id")
 
-        // Both fields are optional: send a name to rename, isPublic to share or
-        // unshare, or both. Pointers so "absent" is distinguishable from "false".
         var body struct {
                 Name     *string `json:"name"`
                 IsPublic *bool   `json:"isPublic"`

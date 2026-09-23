@@ -18,18 +18,12 @@ import {
 
 interface LyricsPanelProps {
   trackId: string
-  /** Current playback position in seconds; drives the highlighted line. */
   position: number
   onSeek: (sec: number) => void
   className?: string
-  /**
-   * "full" is the immersive page: big, left-aligned, white on colour.
-   * "side" is the docked panel: white on colour too, at reading size.
-   */
   size?: "compact" | "full" | "side"
 }
 
-/** A line is "current" from its own time until the next one starts. */
 function activeIndex(lines: { t: number }[], position: number): number {
   let idx = -1
   for (let i = 0; i < lines.length; i++) {
@@ -46,16 +40,9 @@ const SOURCE_LABEL: Record<Lyrics["source"], string> = {
   none: "",
 }
 
-/**
- * Lyrics for the current track. Synced lyrics follow playback — the current
- * line is highlighted and kept in view, and clicking a line seeks to it;
- * plain lyrics are just text to read. The panel scrolls, the page doesn't.
- */
 export function LyricsPanel({ trackId, position, onSeek, className, size = "compact" }: LyricsPanelProps) {
   const full = size === "full"
-  // White text over the cover colour, as opposed to zinc over the dark UI.
   const tinted = size !== "compact"
-  // Keyed on the track so a stale result never shows under a new title.
   const [state, setState] = useState<{ id: string; lyrics: Lyrics | null; error: string | null } | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const loaded = state?.id === trackId ? state : null
@@ -78,8 +65,6 @@ export function LyricsPanel({ trackId, position, onSeek, className, size = "comp
   const synced = lyrics?.synced ?? null
   const current = synced ? activeIndex(synced, position) : -1
 
-  // Follow playback, but not while the reader is scrolling on their own:
-  // a manual scroll pauses the auto-follow for a few seconds.
   const scroller = useRef<HTMLDivElement>(null)
   const lastUserScroll = useRef(0)
   const programmatic = useRef(false)
@@ -90,7 +75,6 @@ export function LyricsPanel({ trackId, position, onSeek, className, size = "comp
     if (!el) return
     programmatic.current = true
     el.scrollIntoView({ block: "center", behavior: "smooth" })
-    // scrollIntoView fires scroll events for a while; ignore those.
     const t = setTimeout(() => {
       programmatic.current = false
     }, 600)
@@ -202,13 +186,11 @@ export function LyricsPanel({ trackId, position, onSeek, className, size = "comp
   )
 }
 
-/** Synced lyrics back into LRC so they can be edited with their timing. */
 function lyricsToLRC(l: Lyrics): string {
   if (!l.synced) return l.plain
   return l.synced.map((x) => lrcStamp(x.t) + x.line).join("\n")
 }
 
-/** "[mm:ss.xx]" for t seconds. Rounded to the hundredth first, so 59.999 becomes 01:00.00, not 00:60.00. */
 function lrcStamp(t: number): string {
   const cs = Math.round(Math.max(0, t) * 100)
   const min = Math.floor(cs / 6000)
@@ -216,11 +198,8 @@ function lrcStamp(t: number): string {
   return `[${String(min).padStart(2, "0")}:${sec}]`
 }
 
-// The timestamps the server reads as synced lyrics; tags like [ar:…] or
-// [offset:…] don't match and are left alone.
 const LRC_STAMP = /\[(\d+):(\d{1,2}(?:\.\d+)?)\]/g
 
-/** Moves every timestamp in LRC text by delta seconds, none before 0. */
 function shiftLRC(text: string, delta: number): string {
   return text.replace(LRC_STAMP, (_, m: string, sec: string) => lrcStamp(Number(m) * 60 + Number(sec) + delta))
 }
@@ -238,7 +217,6 @@ function LyricsEditDialog({
 }) {
   const [text, setText] = useState(initial)
   const [busy, setBusy] = useState(false)
-  // Shifting every line at once, for lyrics that are all early or all late.
   const [shiftBy, setShiftBy] = useState(1)
   const [shifted, setShifted] = useState(0)
   const synced = /\[\d+:\d{1,2}(?:\.\d+)?\]/.test(text)
@@ -256,7 +234,6 @@ function LyricsEditDialog({
         onSaved(saved)
         toast.success("Lyrics saved")
       } else {
-        // Cleared: the next open looks them up again.
         onSaved({ plain: "", synced: null, source: "none", instrumental: false, editable: true })
         toast.success("Lyrics removed")
       }

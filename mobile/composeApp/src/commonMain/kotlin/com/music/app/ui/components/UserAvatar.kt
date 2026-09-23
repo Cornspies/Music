@@ -31,14 +31,13 @@ import com.music.app.LocalAppModel
 import kotlin.math.abs
 import kotlin.math.max
 
-/** Deterministic pair of colours per user, matching the web app's approach. */
 private val AVATAR_COLORS = listOf(
-    Color(0xFF34D399) to Color(0xFF0F766E), // emerald / teal
-    Color(0xFF60A5FA) to Color(0xFF1E3A8A), // blue
-    Color(0xFFF472B6) to Color(0xFF9D174D), // pink
-    Color(0xFFFBBF24) to Color(0xFF92400E), // amber
-    Color(0xFFA78BFA) to Color(0xFF5B21B6), // violet
-    Color(0xFF22D3EE) to Color(0xFF155E75), // cyan
+    Color(0xFF34D399) to Color(0xFF0F766E),
+    Color(0xFF60A5FA) to Color(0xFF1E3A8A),
+    Color(0xFFF472B6) to Color(0xFF9D174D),
+    Color(0xFFFBBF24) to Color(0xFF92400E),
+    Color(0xFFA78BFA) to Color(0xFF5B21B6),
+    Color(0xFF22D3EE) to Color(0xFF155E75),
 )
 
 private fun gradientFor(seed: String): Brush {
@@ -49,7 +48,6 @@ private fun gradientFor(seed: String): Brush {
     return Brush.linearGradient(listOf(from, to))
 }
 
-/** First letter(s) of a name, e.g. "alice" -> "A". */
 private fun initialsOf(name: String): String {
     val parts = name.trim().split(" ", "_", "-", ".").filter { it.isNotBlank() }
     return when {
@@ -59,12 +57,6 @@ private fun initialsOf(name: String): String {
     }
 }
 
-/**
- * A user's avatar: their uploaded picture when they have one, otherwise their
- * initials on a colour derived from the name. The gradient is drawn underneath
- * the image too, so a slow or failed load degrades to the initials rather than
- * flashing an empty box.
- */
 @Composable
 fun UserAvatar(
     userId: String,
@@ -72,7 +64,6 @@ fun UserAvatar(
     hasAvatar: Boolean,
     size: Dp = 20.dp,
     modifier: Modifier = Modifier,
-    /** Screen-reader text, e.g. "Uploaded by alice". */
     label: String = username,
 ) {
     val model = LocalAppModel.current
@@ -90,14 +81,8 @@ fun UserAvatar(
             text = initialsOf(username.ifEmpty { "?" }),
             color = Color.White,
             fontWeight = FontWeight.Bold,
-            // Sized as a fraction of the circle, with a floor: at 18dp a 0.42
-            // ratio worked out to ~7sp, which was unreadable on a phone.
             fontSize = max(9f, size.value * 0.52f).sp,
-            // Material's default line height adds padding that pushes a single
-            // glyph off-centre in a small circle.
             lineHeight = max(9f, size.value * 0.52f).sp,
-            // Centre the single glyph in its line box; the default leading
-            // would push it off-centre inside a small circle.
             style = LocalTextStyle.current.copy(
                 lineHeightStyle = LineHeightStyle(
                     alignment = LineHeightStyle.Alignment.Center,

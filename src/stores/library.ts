@@ -1,7 +1,5 @@
 "use client"
 
-// Library store — tracks, playlists, favorites, stats. All data via api().
-
 import { create } from "zustand"
 import { toast } from "sonner"
 import { api, fetchTrackChanges } from "@/lib/api"
@@ -10,7 +8,6 @@ import { usePlayerStore } from "@/stores/player"
 import { useMediaTokenStore } from "@/stores/media-token"
 import { useOfflineStore } from "@/stores/offline"
 
-/** True for the error api() throws when the server can't be reached at all. */
 function isNetworkError(e: unknown): boolean {
   return e instanceof Error && e.message.startsWith("Network error")
 }
@@ -24,7 +21,6 @@ interface LibraryState {
   stats: Stats | null
   loading: boolean
   initialized: boolean
-  /** bumped on any playlist mutation so detail views can refetch */
   playlistVersion: number
   fetchAll: () => Promise<void>
   fetchTracks: (sort?: TrackSort) => Promise<void>
@@ -35,18 +31,14 @@ interface LibraryState {
   createPlaylist: (name: string) => Promise<Playlist | null>
   deletePlaylist: (id: string) => Promise<boolean>
   renamePlaylist: (id: string, name: string) => Promise<boolean>
-  /** Playlists other users have shared publicly. */
   publicPlaylists: Playlist[]
   fetchPublicPlaylists: () => Promise<void>
-  /** Share or unshare one of your own playlists. */
   setPlaylistPublic: (id: string, isPublic: boolean) => Promise<boolean>
-  /** Pin or unpin someone else's public playlist to your sidebar. */
   setPlaylistPinned: (id: string, pinned: boolean) => Promise<boolean>
   addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<boolean>
   removePlaylistTrack: (playlistId: string, trackId: string) => Promise<void>
   deleteTrack: (id: string) => Promise<void>
   updateTrack: (id: string, patch: TrackPatch) => Promise<boolean>
-  /** Picks up a track's server-side changes while its audio is re-analysed. */
   followAnalysis: (trackId: string) => void
   reset: () => void
 }
@@ -63,9 +55,6 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
 
   fetchAll: async () => {
     set({ loading: true })
-    // The media token goes into every cover/stream URL, so it has to be in
-    // hand before anything that renders one. Downloads are read in parallel:
-    // they're what the library falls back to when the server is unreachable.
     await Promise.allSettled([useMediaTokenStore.getState().refresh(), useOfflineStore.getState().init()])
     const results = await Promise.allSettled([
       get().fetchTracks(),
@@ -76,7 +65,6 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     ])
     const tracksFailed = results[0].status === "rejected" ? results[0].reason : null
     if (tracksFailed && isNetworkError(tracksFailed)) {
-      // Offline: show what's on this device rather than an empty library.
       const offline = useOfflineStore.getState()
       offline.setOffline(true)
       if (get().tracks.length === 0) set({ tracks: offline.tracks })
@@ -104,8 +92,6 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
   setPlaylistPinned: async (id, pinned) => {
     try {
       await api(`/api/playlists/${id}/pin`, { method: pinned ? "POST" : "DELETE" })
-      // The sidebar list is "mine + pinned", so a pin adds an entry that
-      // wasn't there at all — refetch rather than patching in place.
       await Promise.allSettled([get().fetchPlaylists(), get().fetchPublicPlaylists()])
       return true
     } catch (e) {
@@ -146,7 +132,6 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     const track = tracks.find((t) => t.id === trackId)
     const wasFav = track ? track.isFavorite : favorites.some((t) => t.id === trackId)
 
-    // optimistic update everywhere
     set({
       tracks: tracks.map((t) => (t.id === trackId ? { ...t, isFavorite: !wasFav } : t)),
       favorites: wasFav
@@ -168,7 +153,6 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
         await api(`/api/favorites/${trackId}`, { method: "POST" })
       }
     } catch (e) {
-      // revert
       set({
         tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, isFavorite: wasFav } : t)),
         favorites: get().favorites,
@@ -277,7 +261,6 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     usePlayerStore.getState().handleTrackDeleted(id)
     useOfflineStore.getState().remove(id).catch(() => {})
     if (removed) {
-      // refresh aggregates (stats, playlists) in the background
       await Promise.allSettled([get().fetchStats(), get().fetchPlaylists()])
     }
   },
@@ -303,10 +286,6 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
   },
 
   followAnalysis: (trackId) => {
-    // Cutting a track throws away its loudness and waveform and queues a
-    // fresh analysis, which takes a few seconds. Rather than reloading the
-    // whole library on a guess, ask what changed — a handful of times, at
-    // growing intervals — and stop as soon as the waveform is back.
     let since = new Date(Date.now() - 60_000).toISOString().replace(/\.\d+Z$/, "Z")
     const delays = [1500, 3000, 5000, 10_000, 20_000]
     let step = 0
@@ -324,9 +303,7 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
           }
         }
         if (get().tracks.find((t) => t.id === trackId)?.hasWaveform) return
-      } catch {
-        // Offline or a hiccup: the next tick tries again.
-      }
+      } catch {}
       if (step < delays.length) setTimeout(tick, delays[step++])
     }
     setTimeout(tick, delays[step++])

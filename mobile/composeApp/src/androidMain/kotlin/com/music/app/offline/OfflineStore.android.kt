@@ -5,7 +5,6 @@ import com.music.app.appContext
 import java.io.File
 import androidx.core.content.edit
 
-/** Files under `filesDir/offline` (private to the app, not scanned by the media store). */
 actual class OfflineStore actual constructor() {
 
     private val dir: File = File(appContext.filesDir, "offline").apply { mkdirs() }
@@ -48,7 +47,6 @@ actual class OfflineStore actual constructor() {
 
     actual fun loadMeta(key: String): String? = prefs.getString(key, null)
 
-    /** Matches on the "<trackId>." prefix so a track id can't match a longer one. */
     private fun filesFor(trackId: String): List<File> =
         dir.listFiles()?.filter { it.isFile && it.name.startsWith("$trackId.") } ?: emptyList()
 

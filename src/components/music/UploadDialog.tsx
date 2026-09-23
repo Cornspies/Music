@@ -40,11 +40,9 @@ interface UploadTask {
   progress: number
   status: TaskStatus
   message?: string
-  /** Set while the server holds the file because it looks like a duplicate. */
   duplicate?: DuplicateResponse
 }
 
-/** Thrown by uploadTrack when the server parks the file as a likely duplicate. */
 class DuplicateError extends Error {
   constructor(readonly response: DuplicateResponse) {
     super(response.error)
@@ -57,7 +55,6 @@ function isAudioFile(file: File): boolean {
   return file.type.startsWith("audio/") || AUDIO_EXT.test(file.name)
 }
 
-/** Client-side duration measurement (fallback for server-side tag parsing). */
 function measureDuration(file: File): Promise<number | undefined> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file)
@@ -79,7 +76,6 @@ function measureDuration(file: File): Promise<number | undefined> {
   })
 }
 
-/** XHR upload (fetch can't report progress). */
 function uploadTrack(
   file: File,
   duration: number | undefined,
@@ -101,7 +97,6 @@ function uploadTrack(
           reject(new Error("Invalid server response"))
         }
       } else if (xhr.status === 409) {
-        // Held on the server: the person decides with the matches in view.
         try {
           reject(new DuplicateError(JSON.parse(xhr.responseText) as DuplicateResponse))
         } catch {
@@ -112,9 +107,7 @@ function uploadTrack(
         try {
           const data = JSON.parse(xhr.responseText) as { error?: string }
           if (data?.error) message = data.error
-        } catch {
-          // non-JSON error body
-        }
+        } catch {}
         reject(new Error(message))
       }
     }
@@ -196,7 +189,6 @@ export function UploadDialog() {
     }
   }
 
-  /** "Add anyway" for a held duplicate: finishes the upload server-side. */
   const addAnyway = async (task: UploadTask) => {
     if (!task.duplicate) return
     patchTask(task.key, { status: "uploading", progress: 100 })

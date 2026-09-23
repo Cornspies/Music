@@ -17,8 +17,6 @@ import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.AVPlayerTimeControlStatusPlaying
-// AVPlayer's playback controls are Objective-C category members, which
-// Kotlin/Native exposes as extensions that need importing by name.
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
@@ -55,18 +53,6 @@ import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
 import platform.UIKit.UIImage
 import platform.darwin.NSObjectProtocol
 
-/**
- * AVFoundation AVPlayer-backed implementation. Position is polled with an
- * NSTimer every 250 ms on the main run loop; end-of-track arrives via the
- * AVPlayerItemDidPlayToEndTime notification.
- *
- * The audio session is set to playback (so audio continues in the background
- * and through the mute switch), what's playing is published to
- * MPNowPlayingInfoCenter for the lock screen and Control Centre, and the
- * remote command centre feeds headset / lock-screen presses back in.
- */
-// CMTime is a C struct, so every call that passes one through cinterop is
-// behind the foreign-API opt-in.
 @OptIn(ExperimentalForeignApi::class)
 actual class PlayerController actual constructor() {
 
@@ -82,7 +68,6 @@ actual class PlayerController actual constructor() {
 
     private var player: AVPlayer? = null
 
-    /** What the lock screen is currently told; updated as position changes. */
     private var nowPlaying: MutableMap<Any?, Any?> = mutableMapOf()
     private var currentArtworkUrl: String? = null
 
@@ -92,13 +77,6 @@ actual class PlayerController actual constructor() {
             onEnded?.invoke()
         }
 
-    /**
-     * A phone call, alarm or Siri takes the audio session away and iOS pauses
-     * the player for us; what it doesn't do is start it again. When the
-     * interruption ends and the system says resuming is appropriate (it isn't
-     * after, say, the user started music in another app), pick up where we
-     * were — the same thing ExoPlayer's audio-focus handling does on Android.
-     */
     private var wasPlayingBeforeInterruption = false
     private val interruptionObserver: NSObjectProtocol = NSNotificationCenter.defaultCenter
         .addObserverForName(AVAudioSessionInterruptionNotification, `object` = null, queue = NSOperationQueue.mainQueue) { note ->
@@ -113,7 +91,7 @@ actual class PlayerController actual constructor() {
                     val options = (info[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.unsignedLongValue ?: 0uL
                     val shouldResume = options and AVAudioSessionInterruptionOptionShouldResume != 0uL
                     if (wasPlayingBeforeInterruption && shouldResume) {
-                        configureAudioSession() // the session was deactivated by the interruption
+                        configureAudioSession()
                         play()
                     }
                     wasPlayingBeforeInterruption = false
@@ -143,9 +121,6 @@ actual class PlayerController actual constructor() {
 
     actual fun load(url: String, autoplay: Boolean, info: NowPlayingInfo?) {
         _positionSec.value = 0.0
-        // Offline playback passes a plain filesystem path; streaming passes an
-        // http(s) URL. fileURLWithPath does the percent-encoding that
-        // URLWithString would silently fail on for paths with spaces.
         val nsUrl = if (url.startsWith("/")) NSURL.fileURLWithPath(url) else NSURL.URLWithString(url)
         if (nsUrl == null) return
         val item = AVPlayerItem(uRL = nsUrl)
@@ -183,8 +158,6 @@ actual class PlayerController actual constructor() {
         clearWidgetState()
     }
 
-    // ---- audio session / now playing ---------------------------------------
-
     private fun configureAudioSession() {
         val session = AVAudioSession.sharedInstance()
         runCatching {
@@ -215,7 +188,6 @@ actual class PlayerController actual constructor() {
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = nowPlaying.toMap()
     }
 
-    /** Fetches the cover on a background queue and attaches it when it lands. */
     private fun loadArtwork(url: String) {
         val nsUrl = NSURL.URLWithString(url) ?: return
         val task = NSURLSession.sharedSession.dataTaskWithURL(nsUrl) { data: NSData?, _, _ ->
@@ -256,11 +228,6 @@ actual class PlayerController actual constructor() {
             if (position != null) { seekTo(position); MPRemoteCommandHandlerStatusSuccess } else MPRemoteCommandHandlerStatusCommandFailed
         }
     }
-
-    // ---- home-screen widget --------------------------------------------------
-    //
-    // The WidgetKit extension (iosApp/MusicWidget) reads this from the shared
-    // app group; see its README for the one-time Xcode setup.
 
     private fun publishWidgetState(info: NowPlayingInfo) {
         val shared = NSUserDefaults(suiteName = WIDGET_APP_GROUP)

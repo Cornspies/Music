@@ -14,11 +14,6 @@ import { Label } from "@/components/ui/label"
 
 type Mode = "login" | "register"
 
-/**
- * The screen's own addresses: /login, /register and /register?invite=CODE
- * (an invite link from the admin console). Read once, on mount — this only
- * ever renders on the client, after hydration.
- */
 function fromUrl(): { mode: Mode; invite: string } {
   if (typeof window === "undefined") return { mode: "login", invite: "" }
   const path = window.location.pathname.replace(/\/+$/, "")
@@ -52,14 +47,10 @@ export function AuthView() {
   const [confirm, setConfirm] = useState("")
   const [inviteCode, setInviteCode] = useState(initial.invite)
   const [busy, setBusy] = useState(false)
-  // Sign-up policy comes from the server so the form matches whatever the
-  // admin configured (closed signup, invite code, password length).
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
-  // When arriving through an invite link: whether it still works.
   const [inviteCheck, setInviteCheck] = useState<InviteCheck | null>(null)
   const viaLink = Boolean(initial.invite)
 
-  // Keep the address in step so "sign in" / "create account" are linkable.
   const setMode = (next: Mode) => {
     setModeState(next)
     window.history.replaceState(null, "", pathFor(next, next === "register" ? initial.invite : ""))
@@ -73,9 +64,7 @@ export function AuthView() {
       .then((check: InviteCheck | null) => {
         if (!cancelled && check) setInviteCheck(check)
       })
-      .catch(() => {
-        // Unreachable: the form still works, the server decides on submit.
-      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -88,16 +77,13 @@ export function AuthView() {
       .then((cfg: AuthConfig | null) => {
         if (!cancelled && cfg) setAuthConfig(cfg)
       })
-      .catch(() => {
-        // Older server, or unreachable: fall back to showing the plain form.
-      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
   }, [])
 
   const minPassword = authConfig?.minPasswordLength ?? 8
-  // A live invite link opens sign-up regardless of the server's policy.
   const linkValid = viaLink && inviteCheck?.valid !== false
   const registrationOpen = (authConfig?.registrationOpen ?? true) || linkValid
   const inviteRequired = (authConfig?.inviteRequired ?? false) && !linkValid
@@ -130,8 +116,6 @@ export function AuthView() {
         await register(uname, password, inviteCode.trim() || undefined)
         toast.success(`Welcome to Music, ${uname}`)
       }
-      // The auth screen's address (and any invite code in it) has done its
-      // job; the app takes over at the root.
       window.history.replaceState(null, "", "/")
     } catch (err) {
       toast.error((err as Error).message)
@@ -142,7 +126,6 @@ export function AuthView() {
 
   return (
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-zinc-950 p-4">
-      {/* ambient glows */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-48 left-1/2 size-140 -translate-x-1/2 rounded-full bg-emerald-500/10 blur-3xl"

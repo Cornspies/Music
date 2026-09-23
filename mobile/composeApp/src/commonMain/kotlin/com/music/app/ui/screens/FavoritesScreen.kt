@@ -35,7 +35,6 @@ import com.music.app.ui.theme.Emerald
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
-/** Favorites tab — the tracks the user hearted, newest first. */
 @Composable
 fun FavoritesScreen() {
     val model = LocalAppModel.current
@@ -43,7 +42,6 @@ fun FavoritesScreen() {
     LaunchedEffect(model.favorites) {
         if (model.favorites == null) model.loadFavorites()
     }
-    // Keep the list fresh when returning to the tab.
     LaunchedEffect(Unit) {
         while (true) {
             delay(30_000.milliseconds)

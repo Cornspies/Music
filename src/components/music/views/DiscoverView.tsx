@@ -21,7 +21,6 @@ interface SearchState {
   hasMore: boolean
   error: string | null
   loadingMore: boolean
-  /** The playlist behind a pasted link; the results are its tracks. */
   playlist: DiscoverPlaylist | null
 }
 
@@ -31,11 +30,6 @@ function importActive(j: PlaylistImport): boolean {
   return j.state === "queued" || j.state === "listing" || j.state === "running"
 }
 
-/**
- * Search an online catalogue and add tracks to the library with one click.
- * The server downloads, tags and stores the file; the row then flips to
- * "in library" and can be played straight away.
- */
 export function DiscoverView() {
   const [sources, setSources] = useState<DiscoverSource[] | null>(null)
   const [sourceKey, setSourceKey] = useState<string>("")
@@ -45,8 +39,6 @@ export function DiscoverView() {
   const [submitted, setSubmitted] = useState("")
   const [state, setState] = useState<SearchState | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  // Playlist imports running on the server (and recently finished ones),
-  // polled while any is active; a finished one can be dismissed here.
   const [imports, setImports] = useState<PlaylistImport[]>([])
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set())
   const finishedSeen = useRef<Set<string>>(new Set())
@@ -72,7 +64,6 @@ export function DiscoverView() {
         const list = await discover.imports()
         if (!alive) return
         setImports(list)
-        // A playlist that just got created or filled: show it in the sidebar.
         for (const j of list) {
           if (!importActive(j) && !finishedSeen.current.has(j.id)) {
             finishedSeen.current.add(j.id)
@@ -89,7 +80,6 @@ export function DiscoverView() {
       alive = false
       if (timer) clearTimeout(timer)
     }
-    // `pollKey` bumps when an import is started here, so polling resumes.
   }, [pollKey])
 
   const key = `${sourceKey}\n${submitted}`
@@ -308,7 +298,6 @@ export function DiscoverView() {
   )
 }
 
-/** One playlist import: progress while it runs, the tally when it's done. */
 function ImportCard({ job, onCancel, onDismiss }: { job: PlaylistImport; onCancel: () => void; onDismiss: () => void }) {
   const [showFailures, setShowFailures] = useState(false)
   const [showExisting, setShowExisting] = useState(false)
@@ -556,7 +545,6 @@ function ResultRow({ result, onAdded }: { result: DiscoverResult; onAdded: (t: T
   )
 }
 
-/** "cc-by-nc-sa" → "CC BY-NC-SA"; the public-domain dedication by name. */
 function licenseLabel(license: string): string {
   if (license === "no-rights-reserved") return "Public domain"
   if (license.startsWith("cc-")) return "CC " + license.slice(3).toUpperCase()

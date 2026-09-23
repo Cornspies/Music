@@ -15,17 +15,6 @@ import (
 	"time"
 )
 
-// NCS — NoCopyrightSounds (https://ncs.io). Their whole catalogue is free
-// to download and use with attribution, and the site is a plain server-
-// rendered page, so this reads the same HTML the browser gets: the search
-// results table and the per-track download panel. There's no official API,
-// which means this is the one place in the server that can break when
-// someone else redesigns their website; the parsing is kept loose (attribute
-// order doesn't matter, unknown columns are ignored) to make that rarer.
-//
-// The downloads are untagged MP3s, so the listing's title/artist/genre/
-// release date and the cover image are what end up on the library entry.
-
 type ncsSource struct{}
 
 const (
@@ -34,7 +23,6 @@ const (
 	ncsPageSize  = 20
 )
 
-// coverAllowed limits the artwork proxy to NCS's own CDN.
 func (ncsSource) coverAllowed(u string) bool {
 	return strings.HasPrefix(u, "https://ncsmusic.s3.eu-west-1.amazonaws.com/")
 }
@@ -42,20 +30,14 @@ func (ncsSource) coverAllowed(u string) bool {
 func (ncsSource) key() string  { return "ncs" }
 func (ncsSource) name() string { return "NoCopyrightSounds" }
 
-// One result row: the play button carries everything as data attributes.
 var (
-	ncsRowRe = regexp.MustCompile(`(?s)<tr>(.*?)</tr>`)
-	// data-artist holds HTML (<a> links) inside the attribute value, so the
-	// tag can't be delimited by the next ">"; the icon element that always
-	// follows is the end marker instead.
-	ncsPlayRe     = regexp.MustCompile(`(?s)<a\s+class="[^"]*player-play[^"]*".*?><i\s`)
-	ncsAttrRe     = regexp.MustCompile(`data-([a-z]+)="([^"]*)"`)
-	ncsDateRe     = regexp.MustCompile(`<td[^>]*>\s*(\d{1,2}\s+[A-Za-z]{3}\s+(\d{4}))\s*</td>`)
-	ncsPageLinkRe = regexp.MustCompile(`<td[^>]*><a href="(/[^"]+)">`)
-	ncsNextRe     = regexp.MustCompile(`page=(\d+)`)
-	ncsCoverSize  = regexp.MustCompile(`/\d+x\d+/`)
-	// The download panel: an <h5>Title <span>Artist</span></h5> and the
-	// download links with their own data attributes.
+	ncsRowRe        = regexp.MustCompile(`(?s)<tr>(.*?)</tr>`)
+	ncsPlayRe       = regexp.MustCompile(`(?s)<a\s+class="[^"]*player-play[^"]*".*?><i\s`)
+	ncsAttrRe       = regexp.MustCompile(`data-([a-z]+)="([^"]*)"`)
+	ncsDateRe       = regexp.MustCompile(`<td[^>]*>\s*(\d{1,2}\s+[A-Za-z]{3}\s+(\d{4}))\s*</td>`)
+	ncsPageLinkRe   = regexp.MustCompile(`<td[^>]*><a href="(/[^"]+)">`)
+	ncsNextRe       = regexp.MustCompile(`page=(\d+)`)
+	ncsCoverSize    = regexp.MustCompile(`/\d+x\d+/`)
 	ncsPanelTitleRe = regexp.MustCompile(`(?s)<h5>(.*?)<span>(.*?)</span>`)
 	ncsPanelLinkRe  = regexp.MustCompile(`<a href="/track/download/[^"]*"[^>]*>`)
 	ncsPanelCoverRe = regexp.MustCompile(`background-image:\s*url\('([^']+)'\)`)
@@ -94,8 +76,6 @@ func (n ncsSource) search(ctx context.Context, query string, page int) ([]discov
 		return nil, false, err
 	}
 	results := parseNCSSearch(string(body))
-	// The pager only lists pages that exist, so "is there a link to the next
-	// one" is the reliable test; a full page with no such link is the last.
 	hasMore := false
 	for _, m := range ncsNextRe.FindAllStringSubmatch(string(body), -1) {
 		if p, _ := strconv.Atoi(m[1]); p == page+1 {
@@ -122,13 +102,11 @@ func parseNCSSearch(page string) []discoverResult {
 			continue
 		}
 		r := discoverResult{
-			Source: "ncs",
-			ID:     id,
-			Title:  strings.TrimSpace(attrs["track"]),
-			Artist: strings.TrimSpace(attrs["artistraw"]),
-			Genre:  strings.TrimSpace(attrs["genre"]),
-			// 325px is the largest thumbnail the CDN serves; the original
-			// (used when the track is added) is 3000px and megabytes.
+			Source:     "ncs",
+			ID:         id,
+			Title:      strings.TrimSpace(attrs["track"]),
+			Artist:     strings.TrimSpace(attrs["artistraw"]),
+			Genre:      strings.TrimSpace(attrs["genre"]),
 			CoverURL:   ncsCoverSize.ReplaceAllString(attrs["cover"], "/325x325/"),
 			PreviewURL: attrs["url"],
 		}
@@ -143,8 +121,6 @@ func parseNCSSearch(page string) []discoverResult {
 	return out
 }
 
-// ncsFullCover turns the listing's 100x100 thumbnail URL into the original
-// image, which sits at the same path without the size segment.
 func ncsFullCover(thumb string) string {
 	if thumb == "" {
 		return ""
@@ -156,9 +132,6 @@ func (n ncsSource) fetch(ctx context.Context, id string) (*sourceDownload, error
 	if strings.ContainsAny(id, "/?#& ") {
 		return nil, fmt.Errorf("ncs: bad id %q", id)
 	}
-	// The download panel names the track and artist; the listing (found by
-	// searching the title) adds genre, release year and the cover. Neither
-	// is fatal on its own — the file still lands, just with fewer tags.
 	title, artist, genre, cover := n.panelInfo(ctx, id)
 	year := 0
 	if title != "" {
@@ -196,8 +169,6 @@ func (n ncsSource) fetch(ctx context.Context, id string) (*sourceDownload, error
 		Size:     resp.ContentLength,
 		Title:    title,
 		Artist:   artist,
-		// NCS releases are singles; their own tagging puts the title in the
-		// album field, and following that keeps the Albums view sensible.
 		Album:    title,
 		Genre:    genre,
 		Year:     year,
@@ -205,8 +176,6 @@ func (n ncsSource) fetch(ctx context.Context, id string) (*sourceDownload, error
 	}, nil
 }
 
-// panelInfo reads /track/info/{id}, the HTML fragment the site's download
-// button loads. Everything is best-effort.
 func (ncsSource) panelInfo(ctx context.Context, id string) (title, artist, genre, cover string) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

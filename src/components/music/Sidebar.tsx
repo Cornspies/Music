@@ -59,7 +59,6 @@ const NAV_ITEMS: NavItem[] = [
   { view: "offline", label: "Downloads", icon: CloudDownload },
 ]
 
-/** Sidebar content — shared by the desktop sidebar and the mobile sheet. */
 export function SidebarContent() {
   const view = useUIStore((s) => s.view)
   const viewArg = useUIStore((s) => s.viewArg)
@@ -83,7 +82,6 @@ export function SidebarContent() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* logo */}
       <div className="flex items-center gap-3 px-5 pb-4 pt-5">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-emerald-400 to-teal-600 shadow-md shadow-emerald-900/40">
           <AudioLines className="size-5 text-zinc-950" aria-hidden="true" />
@@ -93,7 +91,6 @@ export function SidebarContent() {
         </div>
       </div>
 
-      {/* main nav */}
       <nav aria-label="Main" className="flex flex-col gap-0.5 px-3">
         {NAV_ITEMS.map((item) => {
           const active = view === item.view
@@ -138,7 +135,6 @@ export function SidebarContent() {
         ) : null}
       </nav>
 
-      {/* playlists */}
       <div className="mt-5 flex min-h-0 flex-1 flex-col px-3">
         <div className="flex items-center justify-between px-2 pb-2">
           <h3 className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
@@ -188,12 +184,7 @@ export function SidebarContent() {
                     >
                       <Music4 className="size-3.5 text-zinc-400" />
                     </div>
-                    {/* Someone else's playlist: their picture sits on the corner
-                        so "mine" vs "theirs" is obvious at a glance. */}
                     {!p.isMine && p.owner?.id ? (
-                      // Positioned directly on the avatar: an inline wrapper
-                      // span would take its height from the line box, not the
-                      // avatar, and the ring would trace that taller box.
                       <UserAvatar
                         userId={p.owner.id}
                         username={p.owner.username}
@@ -224,7 +215,6 @@ export function SidebarContent() {
         </div>
       </div>
 
-      {/* user + account actions */}
       <div className="border-t border-zinc-800/60 px-3 py-3">
         <div className="flex items-center gap-3">
           <AvatarPicker />
@@ -283,4 +273,3 @@ export function SidebarContent() {
     </div>
   )
 }
-

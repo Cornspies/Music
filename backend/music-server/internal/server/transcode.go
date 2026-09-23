@@ -13,20 +13,6 @@ import (
 	"music-server/internal/config"
 )
 
-// Some formats this server happily stores cannot be decoded everywhere. Ogg
-// (Vorbis/Opus) is the big one: fine in browsers and on Android, silent on iOS,
-// because AVFoundation has never supported the Ogg container. WMA and WebM are
-// in the same boat.
-//
-// For those, a second copy is made at upload time in AAC/M4A, which every
-// platform plays. The original is never touched and stays the default source —
-// the copy exists only for clients that would otherwise get silence.
-//
-// Note this is a lossy-to-lossy conversion for Ogg sources, so it costs one
-// generation of quality. That is the price of playing at all on iOS. Lossless
-// sources (FLAC, ALAC, WAV, AIFF) are deliberately left alone: FLAC already
-// plays on iOS 11+, and re-encoding lossless audio to AAC would throw away
-// quality for no reason.
 var needsCompatibleCopy = map[string]bool{
 	".ogg":  true,
 	".oga":  true,
@@ -39,23 +25,16 @@ var needsCompatibleCopy = map[string]bool{
 }
 
 const (
-	compatibleExt  = ".m4a"
-	compatibleMime = "audio/mp4"
-	// Transcoding is CPU-bound and runs in the background after the upload
-	// has been answered (see startCompatibleCopy). It is still bounded so a
-	// pathological file can't pin a transcode slot forever.
+	compatibleExt    = ".m4a"
+	compatibleMime   = "audio/mp4"
 	transcodeTimeout = 10 * time.Minute
 )
 
-// ffmpegOnce caches the lookup — it's the same answer for the process lifetime
-// and upload is not the place to be probing the filesystem repeatedly.
 var (
 	ffmpegOnce sync.Once
 	ffmpegPath string
 )
 
-// ffmpegBinary returns the ffmpeg to use, or "" when none is available.
-// MUSIC_FFMPEG_PATH overrides the PATH lookup for unusual installs.
 func ffmpegBinary() string {
 	ffmpegOnce.Do(func() {
 		if custom := config.Value("MUSIC_FFMPEG_PATH"); custom != "" {
@@ -72,22 +51,14 @@ func ffmpegBinary() string {
 	return ffmpegPath
 }
 
-// TranscodingAvailable reports whether compatible copies can be produced.
 func TranscodingAvailable() bool { return ffmpegBinary() != "" }
 
-// compatibleCopy is the result of a successful conversion.
 type compatibleCopy struct {
-	relPath string // relative to dataDir, as stored in tracks.alt_path
+	relPath string
 	mime    string
 	size    int64
 }
 
-// makeCompatibleCopy converts an uploaded file to AAC/M4A when the format needs
-// it and ffmpeg is available. It is entirely best-effort: any failure means the
-// track is stored with the original only, which is exactly how things behaved
-// before this existed.
-//
-// Returns nil when no copy was made, for any reason.
 func (s *Server) makeCompatibleCopy(trackID, originalRel string) *compatibleCopy {
 	ext := strings.ToLower(filepath.Ext(originalRel))
 	if !needsCompatibleCopy[ext] {
@@ -106,8 +77,6 @@ func (s *Server) makeCompatibleCopy(trackID, originalRel string) *compatibleCopy
 
 	relPath := filepath.Join("uploads", trackID+compatibleExt)
 	outPath := filepath.Join(s.dataDir, relPath)
-	// Write to a temporary name and rename, so a killed ffmpeg can't leave a
-	// truncated file that looks like a valid alternate.
 	tmpPath := outPath + ".part"
 
 	ctx, cancel := context.WithTimeout(context.Background(), transcodeTimeout)
@@ -116,13 +85,8 @@ func (s *Server) makeCompatibleCopy(trackID, originalRel string) *compatibleCopy
 	cmd := exec.CommandContext(ctx, bin,
 		"-nostdin", "-loglevel", "error",
 		"-i", filepath.Join(s.dataDir, originalRel),
-		// Audio only: an .ogx may carry a video stream, which has no place in
-		// an audio file and would break the m4a.
 		"-vn",
 		"-c:a", "aac", "-b:a", "256k",
-		// Carry the tags across. Both forms are needed: Ogg keeps Vorbis
-		// comments on the audio *stream*, while WebM/WMA put them at the
-		// container level, and each mapping alone silently drops the other.
 		"-map_metadata", "0",
 		"-map_metadata", "0:s:0",
 		"-f", "mp4", "-movflags", "+faststart",

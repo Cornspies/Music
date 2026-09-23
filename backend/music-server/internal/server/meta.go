@@ -20,10 +20,6 @@ type fileMetadata struct {
         picture []byte
 }
 
-// readMetadata extracts ID3/Vorbis/MP4 tags, embedded cover art and (for MP3)
-// the play duration from an audio file. Fields that have no tag are left as
-// their zero value — callers (see enrichMissingMetadata) rely on that to
-// tell a genuinely missing tag apart from one that's merely empty text.
 func readMetadata(path string) fileMetadata {
         var meta fileMetadata
 
@@ -50,7 +46,6 @@ func readMetadata(path string) fileMetadata {
         return meta
 }
 
-// mp3DurationSeconds sums frame durations of an MP3 file.
 func mp3DurationSeconds(path string) float64 {
         f, err := os.Open(path)
         if err != nil {
@@ -64,7 +59,7 @@ func mp3DurationSeconds(path string) float64 {
                 var frame mp3dec.Frame
                 skipped := 0
                 if err := dec.Decode(&frame, &skipped); err != nil {
-                        break // io.EOF or corrupt frame: stop counting
+                        break
                 }
                 totalNS += frame.Duration().Nanoseconds()
         }

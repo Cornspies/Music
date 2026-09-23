@@ -6,11 +6,10 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Emerald accent on near-black zinc — the Music design language (no blue/indigo).
-val Emerald = Color(0xFF34D399) // emerald-400 — primary
+val Emerald = Color(0xFF34D399)
 val EmeraldLight = Color(0xFF6EE7B7)
-val EmeraldDark = Color(0xFF059669) // emerald-600
-val OnEmerald = Color(0xFF022C22) // deep emerald-950
+val EmeraldDark = Color(0xFF059669)
+val OnEmerald = Color(0xFF022C22)
 
 val Zinc100 = Color(0xFFF4F4F5)
 val Zinc400 = Color(0xFFA1A1AA)
@@ -52,11 +51,9 @@ private val MusicDarkColors = darkColorScheme(
     scrim = Color(0xFF000000),
 )
 
-/** Music is a always-dark, emerald-on-zinc app. */
 @Composable
 fun MusicTheme(content: @Composable () -> Unit) {
-    // Dark regardless of system setting — a music app at night.
-    isSystemInDarkTheme() // kept for future light-mode support
+    isSystemInDarkTheme()
     MaterialTheme(
         colorScheme = MusicDarkColors,
         content = content,

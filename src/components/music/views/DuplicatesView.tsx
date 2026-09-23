@@ -11,15 +11,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackRow } from "@/components/music/TrackRow"
 
-/**
- * Tracks that look like the same song — same title and artist, or same
- * title and length — grouped, oldest first, with what tells them apart
- * (format, size, where they came from, plays) under each, so the extra
- * copies can be deleted from the row menu. Groups shrink as tracks go.
- */
 export function DuplicatesView() {
-  // Keyed by scan so "Scan again" shows the spinner without a reset in the
-  // effect: a result from an older scan is simply not the current one.
   const [scanKey, setScanKey] = useState(0)
   const [result, setResult] = useState<{ key: number; groups?: DuplicateGroup[]; error?: string } | null>(null)
   const trackIds = useLibraryStore((s) => s.tracks)
@@ -42,7 +34,6 @@ export function DuplicatesView() {
   const groups = current?.groups ?? null
   const error = current?.error ?? null
 
-  // A deleted track leaves its group; a group of one is no longer a group.
   const shown = useMemo(() => {
     if (!groups) return null
     const alive = new Set(trackIds.map((t) => t.id))
@@ -108,7 +99,6 @@ export function DuplicatesView() {
   )
 }
 
-/** What tells two copies apart. */
 function describe(t: Track): string {
   const parts: string[] = []
   parts.push(formatLabel(t.mimeType))

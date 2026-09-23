@@ -41,19 +41,11 @@ import com.music.app.state.insecureServerWarning
 import com.music.app.ui.theme.Emerald
 import kotlinx.coroutines.launch
 
-/**
- * Login / register (toggle) + server URL configuration. A fresh installation
- * points at [defaultBaseUrl]; another server can be typed here at any time
- * and is persisted in TokenStore. What goes in is the site's origin — the
- * app appends "/api/…" itself.
- */
 @Composable
 fun LoginScreen() {
     val model = LocalAppModel.current
     val scope = rememberCoroutineScope()
 
-    // An invite link (`/register?invite=CODE`) that opened the app lands here
-    // with the code filled in and the form already on "create account".
     val linkedInvite = remember { DeepLinks.consumeInvite() }
     var registerMode by remember { mutableStateOf(linkedInvite != null) }
     var serverUrl by remember { mutableStateOf(model.api.baseUrl) }
@@ -62,13 +54,9 @@ fun LoginScreen() {
     var inviteCode by remember { mutableStateOf(linkedInvite ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    // Plain http off the LAN sends the password and session in the clear;
-    // the user has to say so explicitly before we'll do it.
     val insecureWarning = insecureServerWarning(serverUrl)
     var acceptInsecure by remember(serverUrl) { mutableStateOf(false) }
 
-    // Ask the server what sign-up needs before showing the form. Re-asked when
-    // the server URL changes, since policy belongs to the server, not the app.
     LaunchedEffect(serverUrl) {
         if (serverUrl.isNotBlank()) model.loadAuthConfig(serverUrl)
     }
@@ -94,7 +82,6 @@ fun LoginScreen() {
                     model.register(serverUrl, username, password, inviteCode, acceptInsecure)
                 }
                 else model.login(serverUrl, username, password, acceptInsecure)
-                // on success the root switches to MainScreen automatically
             } catch (e: InsecureServerException) {
                 error = e.message
             } catch (e: Exception) {
@@ -151,9 +138,6 @@ fun LoginScreen() {
             ),
             modifier = Modifier.fillMaxWidth(),
         )
-        // Always offered when signing up: a single-use invite link's code gets
-        // its holder in even while sign-ups are closed, so the field can't be
-        // hidden behind the server's general policy.
         if (registerMode) {
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(

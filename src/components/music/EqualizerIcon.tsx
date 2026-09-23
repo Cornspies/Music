@@ -2,7 +2,6 @@
 
 import { cn } from "@/lib/utils"
 
-/** Tiny animated equalizer bars — the "currently playing" indicator. */
 export function EqualizerIcon({
   playing,
   className,

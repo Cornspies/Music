@@ -25,17 +25,11 @@ import com.music.app.ui.theme.EmeraldDark
 import com.music.app.ui.theme.Zinc500
 import com.music.app.ui.theme.Zinc800
 
-/**
- * Track cover art. Loads `/api/tracks/{id}/cover?token=…` via Coil when the track has
- * embedded art; otherwise (or while/if the fetch fails) a gradient tile with a music note
- * shows through.
- */
 @Composable
 fun CoverImage(
     track: Track,
     modifier: Modifier = Modifier,
     corner: Dp = 8.dp,
-    /** Size of the music-note placeholder; scale it up for big tiles. */
     placeholderSize: Dp = 20.dp,
 ) {
     val model = LocalAppModel.current
@@ -47,10 +41,6 @@ fun CoverImage(
         contentAlignment = Alignment.Center,
     ) {
         if (track.hasCover) {
-            // The URL carries the media token, which rotates every few hours;
-            // keyed on the URL every rotation would throw the whole cover cache
-            // away. Keyed on the track (and its edit time, so replaced art
-            // shows up) it survives across sessions.
             val cacheKey = "cover:${track.id}:${track.updatedAt}"
             AsyncImage(
                 model = ImageRequest.Builder(LocalPlatformContext.current)
@@ -73,7 +63,6 @@ fun CoverImage(
     }
 }
 
-/** Convenience overload with an explicit square size. */
 @Composable
 fun CoverImage(track: Track, size: Dp, modifier: Modifier = Modifier, corner: Dp = 8.dp) {
     CoverImage(track, modifier.size(size), corner)

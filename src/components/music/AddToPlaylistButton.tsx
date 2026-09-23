@@ -16,13 +16,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-/**
- * "Add to playlist" for whatever is playing.
- *
- * The menu stays open while you tick playlists, so one track can go into
- * several in a row, and each one shows a tick once it's in. Only your own
- * playlists are listed — pinned ones belong to someone else and are read-only.
- */
 export function AddToPlaylistButton({ track }: { track: Track }) {
   const playlists = useLibraryStore((s) => s.playlists)
   const ownPlaylists = playlists.filter((p) => p.isMine)
@@ -69,7 +62,6 @@ export function AddToPlaylistButton({ track }: { track: Track }) {
             <DropdownMenuItem
               key={p.id}
               disabled={pending !== null}
-              // Keep the menu open so several playlists can be ticked in one go.
               onSelect={(e) => {
                 e.preventDefault()
                 addTo(p.id, p.name)

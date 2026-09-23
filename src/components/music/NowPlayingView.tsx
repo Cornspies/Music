@@ -67,10 +67,6 @@ function GhostControl({
   )
 }
 
-/**
- * Full-screen Now Playing overlay — the immersive player.
- * Big cover, ambient gradient background, full controls, up-next preview.
- */
 export function NowPlayingView() {
   const open = useUIStore((s) => s.nowPlayingOpen)
   const setOpen = useUIStore((s) => s.setNowPlayingOpen)
@@ -85,19 +81,15 @@ export function NowPlayingView() {
   const queueIndex = usePlayerStore((s) => s.queueIndex)
 
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
-  // Lyrics mode turns the page into the full-screen lyrics view; the choice sticks per browser.
   const [lyricsOpen, setLyricsOpen] = useState(readLyricsPref)
   const toggleLyrics = () => {
     const next = !lyricsOpen
     setLyricsOpen(next)
     try {
       localStorage.setItem(LYRICS_PREF, next ? "1" : "0")
-    } catch {
-      // per-viewer convenience only
-    }
+    } catch {}
   }
 
-  // Escape closes the overlay
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -123,8 +115,6 @@ export function NowPlayingView() {
           role="dialog"
           aria-modal="true"
           aria-label="Now playing"
-          // Playback surface, not an input surface — the transport shortcuts
-          // are exactly what you want here, so they stay live.
           data-shortcuts-allowed=""
           initial={{ y: "100%", opacity: 0.6 }}
           animate={{ y: 0, opacity: 1 }}
@@ -132,8 +122,6 @@ export function NowPlayingView() {
           transition={{ type: "spring", damping: 32, stiffness: 340 }}
           className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-zinc-950"
         >
-          {/* Lyrics mode paints the page in the cover's colour; otherwise
-              the ambient background is a blurred, scaled-up copy of the art. */}
           {lyricsOpen ? (
             <div
               aria-hidden="true"
@@ -167,7 +155,6 @@ export function NowPlayingView() {
             </>
           )}
 
-          {/* top bar */}
           <div className="relative z-10 flex items-center justify-between px-3 pt-3 md:px-6 md:pt-5">
             <Button
               variant="ghost"
@@ -204,7 +191,6 @@ export function NowPlayingView() {
             </div>
           </div>
 
-          {/* content */}
           <div
             className={cn(
               "relative z-10 flex min-h-0 flex-1 flex-col items-center px-6 pb-6 md:px-10",
@@ -213,7 +199,6 @@ export function NowPlayingView() {
           >
             {lyricsOpen ? (
               <>
-                {/* who's playing, small, where the big cover used to be */}
                 <div className="flex w-full max-w-4xl items-center gap-3 pt-2">
                   <span className="w-12 shrink-0 md:w-14">
                     <CoverArt trackId={currentTrack.id} title={currentTrack.title} hasCover={currentTrack.hasCover} />
@@ -232,7 +217,6 @@ export function NowPlayingView() {
                 />
               </>
             ) : (
-              /* cover */
               <motion.div
                 layout
                 initial={{ scale: 0.96, opacity: 0 }}
@@ -255,7 +239,6 @@ export function NowPlayingView() {
               </motion.div>
             )}
 
-            {/* title + meta */}
             {!lyricsOpen && (
             <div className="w-full max-w-xl text-center">
               <h1 className="truncate text-2xl font-bold tracking-tight text-white md:text-3xl">
@@ -274,7 +257,6 @@ export function NowPlayingView() {
             </div>
             )}
 
-            {/* seek */}
             <div className="group/seek w-full max-w-xl">
               <WaveformSeek
                 track={currentTrack}
@@ -305,7 +287,6 @@ export function NowPlayingView() {
               </div>
             </div>
 
-            {/* controls */}
             <div className="flex items-center gap-2 md:gap-4">
               <GhostControl
                 label="Shuffle"
@@ -348,7 +329,6 @@ export function NowPlayingView() {
               </GhostControl>
             </div>
 
-            {/* favorite + queue row */}
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -379,7 +359,6 @@ export function NowPlayingView() {
               </Button>
             </div>
 
-            {/* up next */}
             {upNext && !lyricsOpen && (
               <button
                 type="button"
@@ -403,7 +382,6 @@ export function NowPlayingView() {
             )}
           </div>
 
-          {/* bottom safe-area spacer (mobile) */}
           <div aria-hidden="true" className="relative z-10 h-[env(safe-area-inset-bottom)]" />
         </motion.div>
       )}

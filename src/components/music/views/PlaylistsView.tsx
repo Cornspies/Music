@@ -83,7 +83,6 @@ function PlaylistGrid({
             <span className="absolute bottom-2 left-2 rounded-full bg-zinc-950/60 px-2 py-0.5 text-[10px] font-medium text-zinc-300 backdrop-blur">
               {playlist.trackCount}
             </span>
-            {/* Owners get a quiet reminder that this one is visible to everyone. */}
             {playlist.isMine && playlist.isPublic && (
               <span
                 title="Public — anyone signed in can see this"

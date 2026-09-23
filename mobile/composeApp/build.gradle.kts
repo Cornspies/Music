@@ -8,33 +8,21 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
-// This module is the shared code — commonMain, iosMain and the Android
-// implementation (Activity, playback service, widget) as an Android *library*.
-// The installable APK is built by :androidApp, which does nothing but depend on
-// this module and hold app-level settings (applicationId, signing, deep-link
-// host). AGP 9 dropped support for com.android.application inside a Kotlin
-// Multiplatform module, which is why the two are separate.
 kotlin {
     android {
         namespace = "com.music.app"
         compileSdk = 37
         minSdk = 27
-        // The launcher icon, theme and widget definition live in androidMain/res.
         androidResources.enable = true
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
         }
     }
 
-    // TokenStore, PlayerController & co. are expect/actual *classes*, which the
-    // compiler still labels Beta; this opts in instead of warning on each one.
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
-    // Compose Multiplatform 1.10+ no longer ships iosX64 artifacts, so the
-    // Intel-Mac simulator target is gone; Apple-silicon simulators use
-    // iosSimulatorArm64.
     listOf(
         iosArm64(),
         iosSimulatorArm64(),
@@ -61,7 +49,6 @@ kotlin {
             implementation(libs.coil.network.ktor3)
         }
         androidMain.dependencies {
-            // Ktor engine + Android-specific platform APIs.
             implementation(libs.ktor.client.okhttp)
             implementation(libs.androidx.activity.compose)
             implementation(libs.media3.exoplayer)
@@ -74,4 +61,3 @@ kotlin {
         }
     }
 }
-

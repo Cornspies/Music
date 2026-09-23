@@ -13,8 +13,6 @@ import (
         "time"
 )
 
-// MetadataCandidate is the JSON shape of a single lookup result offered to
-// the user in the "pick the right result" dialog.
 type MetadataCandidate struct {
         ID         string  `json:"id"`
         Source     string  `json:"source"`
@@ -25,35 +23,19 @@ type MetadataCandidate struct {
         Year       int     `json:"year"`
         Duration   float64 `json:"duration"`
         HasArtwork bool    `json:"hasArtwork"`
-        // Confidence is the 0-1 match score; the list is sorted by it, best first.
         Confidence float64 `json:"confidence"`
-        // Applied marks the candidate that was automatically applied at upload
-        // time (at most one, and only when it cleared the confidence threshold).
         Applied bool `json:"applied"`
 }
 
-// MetadataCandidatesResponse is returned by GET .../metadata/candidates.
 type MetadataCandidatesResponse struct {
-        // AutoApplied is true when one of the candidates was confident enough to
-        // be applied automatically during upload.
         AutoApplied bool                `json:"autoApplied"`
         Candidates  []MetadataCandidate `json:"candidates"`
-        // LookupDisabled is true when online lookups are switched off server-side.
         LookupDisabled bool `json:"lookupDisabled"`
-        // Pending is true while the lookup is still queued or running; the
-        // candidates are then what has been found so far. Poll again later.
         Pending bool `json:"pending"`
-        // QueuePosition is 1 when the track is next (or being looked up now).
         QueuePosition int `json:"queuePosition,omitempty"`
-        // Partial is true when the finished lookup was missing a provider.
         Partial bool `json:"partial"`
-        // Attempts counts lookups made so far, for "retrying (attempt 3)" wording.
         Attempts int `json:"attempts"`
-        // RetryAt is when a lookup missing a provider will be tried again
-        // (RFC 3339), while it is parked.
         RetryAt string `json:"retryAt,omitempty"`
-        // Paused is true while the lookup waits on an admin's pause of the
-        // queue.
         Paused bool `json:"paused"`
 }
 
@@ -69,17 +51,10 @@ func toJSONCandidates(cands []scoredCandidate, appliedID string) []MetadataCandi
         return out
 }
 
-// handleTrackMetadataCandidates returns the metadata matches found for a
-// track, best first, from its lookup job. A track without a job (older than
-// the queue, or never looked up) gets one queued here, and the response says
-// "pending" until the worker has been through it — clients poll.
 func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         id := r.PathValue("id")
 
-        // The review belongs to whoever may apply a result — and opening it
-        // queues a lookup, which others shouldn't be able to trigger for
-        // every track in the library.
         t, _, _, ok := s.getTrack(w, r, u.ID, id)
         if !ok {
                 return
@@ -127,19 +102,8 @@ func (s *Server) handleTrackMetadataCandidates(w http.ResponseWriter, r *http.Re
         writeJSON(w, http.StatusOK, resp)
 }
 
-// candidateArtworkTimeout bounds a single thumbnail fetch. It is shorter than
-// a full lookup because a dialog opens a request per candidate at once, and a
-// slow provider should cost one placeholder, not a hung dialog.
 const candidateArtworkTimeout = 10 * time.Second
 
-// handleCandidateArtwork serves a candidate's cover art so the review dialog
-// can show a thumbnail next to each suggestion. The image is fetched from the
-// provider on demand through the SSRF-guarded lookup client and never stored:
-// choosing the candidate downloads it again for real via applyCandidate.
-//
-// Anything that stops a thumbnail being shown answers 404 — an expired
-// candidate list, a provider that has no image after all, a fetch failure —
-// so both clients fall back to their placeholder through the same path.
 func (s *Server) handleCandidateArtwork(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         id := r.PathValue("id")
@@ -175,7 +139,6 @@ func (s *Server) handleCandidateArtwork(w http.ResponseWriter, r *http.Request) 
         defer cancel()
         b, err := fetchArtwork(ctx, artURL)
         if err != nil {
-                // The client hung up (dialog closed) — nothing to report.
                 if r.Context().Err() == nil {
                         logErr("candidate artwork", fmt.Errorf("candidate %s: %w", candidateID, err))
                 }
@@ -183,9 +146,6 @@ func (s *Server) handleCandidateArtwork(w http.ResponseWriter, r *http.Request) 
                 return
         }
 
-        // Same rule as the track cover endpoint: these bytes come from a third
-        // party and are served same-origin with the app, so only recognised raster
-        // image types go out, and nosniff stops the browser second-guessing that.
         ct := http.DetectContentType(b)
         if !allowedImageTypes[ct] {
                 logErr("candidate artwork", fmt.Errorf("candidate %s: refusing to serve artwork of type %q", candidateID, ct))
@@ -193,8 +153,6 @@ func (s *Server) handleCandidateArtwork(w http.ResponseWriter, r *http.Request) 
                 return
         }
 
-        // Candidate IDs are content hashes, so the same ID always maps to the same
-        // artwork URL: safe to cache well past the candidate list's own lifetime.
         etag := `"cand-` + candidateID + `"`
         w.Header().Set("Content-Type", ct)
         w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -218,8 +176,6 @@ func dropPlaceholder(v, placeholder string) string {
         return v
 }
 
-// trackSearchTitle ignores a stored title that's just the bare filename,
-// since that's the upload fallback rather than a real tag.
 func trackSearchTitle(title, fileName string) string {
         t := strings.TrimSpace(title)
         base := strings.TrimSpace(strings.TrimSuffix(fileName, filepath.Ext(fileName)))
@@ -229,11 +185,6 @@ func trackSearchTitle(title, fileName string) string {
         return t
 }
 
-// knownTitle is a track's title as a lookup should see it: "" only when it
-// is the upload's fallback, the filename standing in for a missing tag. A
-// title that merely equals the filename is kept when the file's own title
-// tag says it too — files are often named after the song ("Numb.mp3"), and
-// a lookup may fill what's missing but must never replace a real tag.
 func (s *Server) knownTitle(title, filePath, fileName string) string {
         if t := trackSearchTitle(title, fileName); t != "" {
                 return t
@@ -248,10 +199,6 @@ func (s *Server) knownTitle(title, filePath, fileName string) string {
         return ""
 }
 
-// handleApplyTrackMetadata applies a user-chosen candidate to a track,
-// overwriting title/artist/album/genre/year and the cover art with whatever
-// that candidate provides. Unlike the automatic upload path this intentionally
-// overwrites existing values — the user explicitly picked this result.
 func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         id := r.PathValue("id")
@@ -272,9 +219,6 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
         if !ok {
                 return
         }
-        // Everyone can see every track, but its tags belong to whoever uploaded
-        // it. Without this the UPDATE below would quietly match zero rows and
-        // still report success.
         if track.UploadedBy.ID != u.ID && !u.IsAdmin() {
                 writeErr(w, http.StatusForbidden, "only the person who uploaded this track can change its details")
                 return
@@ -301,7 +245,6 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
         ctx, cancel := context.WithTimeout(r.Context(), metadataLookupTimeout)
         defer cancel()
 
-        // Start from empty so overwrite mode fills everything the candidate has.
         meta := fileMetadata{}
         applyCandidate(ctx, &meta, chosen.metadataCandidate, true)
 
@@ -337,8 +280,6 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
                 return
         }
 
-        // The user has resolved this track. The suggestions stay (they're the
-        // job row) but the applied one is marked so the dialog shows it.
         _, _ = s.db.Exec(`UPDATE metadata_jobs SET applied_id = ? WHERE track_id = ?`, chosen.id, id)
         s.forgetLookedUpLyrics(id)
         if len(meta.picture) > 0 && hasCover {

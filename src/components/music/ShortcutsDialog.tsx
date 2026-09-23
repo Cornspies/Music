@@ -26,7 +26,6 @@ const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "Esc", action: "Close overlays" },
 ]
 
-/** Keyboard shortcuts reference dialog ("?" or the sidebar button opens it). */
 export function ShortcutsDialog() {
   const open = useUIStore((s) => s.shortcutsOpen)
   const setOpen = useUIStore((s) => s.setShortcutsOpen)
@@ -35,8 +34,6 @@ export function ShortcutsDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         aria-describedby={undefined}
-        // Reference sheet only — no input, so the shortcuts it documents keep
-        // working while you read it.
         data-shortcuts-allowed=""
         className="max-w-md gap-0 border-zinc-800 bg-zinc-950 p-0 text-zinc-100 sm:max-w-md"
       >

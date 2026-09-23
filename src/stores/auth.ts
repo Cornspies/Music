@@ -1,8 +1,5 @@
 "use client"
 
-// Auth store — zustand + persist ("music-auth"). Talks directly to the Go
-// backend (no Authorization header needed for login/register).
-
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { gw } from "@/lib/gateway"
@@ -32,9 +29,7 @@ async function authPost(
   let data: { token?: string; user?: User; error?: string } = {}
   try {
     data = (await res.json()) as typeof data
-  } catch {
-    // non-JSON body
-  }
+  } catch {}
   if (!res.ok || !data.token || !data.user) {
     throw new Error(data.error || `Request failed (${res.status})`)
   }
@@ -46,7 +41,6 @@ interface AuthState {
   user: User | null
   login: (username: string, password: string) => Promise<void>
   register: (username: string, password: string, inviteCode?: string) => Promise<void>
-  /** Forgets the session on this device only. */
   logout: () => void
 }
 

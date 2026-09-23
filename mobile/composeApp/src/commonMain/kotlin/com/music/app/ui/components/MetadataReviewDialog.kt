@@ -64,7 +64,6 @@ import com.music.app.ui.theme.Zinc800
 import com.music.app.ui.theme.Zinc950
 import kotlinx.coroutines.launch
 
-// Per-provider accent, mirroring the web app's source badges.
 private val SourceSky = Color(0xFF7DD3FC)
 private val SourceViolet = Color(0xFFC4B5FD)
 private val SourcePink = Color(0xFFF9A8D4)
@@ -86,11 +85,10 @@ private fun confidenceText(confidence: Double): String = when {
 
 private fun confidenceColor(confidence: Double): Color = when {
     confidence >= 0.8 -> Emerald
-    confidence >= 0.5 -> Color(0xFFFBBF24) // amber-400
+    confidence >= 0.5 -> Color(0xFFFBBF24)
     else -> Zinc500
 }
 
-/** "Artist · Album · 2001 · 3:24", skipping whatever's missing. */
 private fun candidateSubtitle(candidate: MetadataCandidate): String {
     val parts = mutableListOf<String>()
     parts.add(candidate.artist.ifBlank { "Unknown artist" })
@@ -108,14 +106,6 @@ private fun trackSubtitleLine(track: Track): String {
     return parts.joinToString(" · ")
 }
 
-/**
- * Lets the user confirm (or correct) the metadata detected for freshly uploaded tracks.
- *
- * Walks [tracks] one at a time, showing every online match the server found across
- * MusicBrainz / Deezer / iTunes / YouTube, best first. Picking one overwrites that
- * track's tags and cover art; "Keep current" moves on without changing anything.
- * Dismisses itself once the last track is resolved or skipped.
- */
 @Composable
 fun MetadataReviewDialog(
     tracks: List<Track>,
@@ -132,7 +122,6 @@ fun MetadataReviewDialog(
     var lookupDisabled by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var applyingId by remember { mutableStateOf<String?>(null) }
-    // Queue state from the last response; polled while pending.
     var pending by remember { mutableStateOf(false) }
     var queuePosition by remember { mutableStateOf(0) }
     var attempts by remember { mutableStateOf(0) }
@@ -140,13 +129,10 @@ fun MetadataReviewDialog(
     var partial by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(false) }
 
-    // trackId -> chosen candidate id, so revisiting a track shows what was applied.
     var resolved by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    // Bumped to force a reload when the user retries after an error.
     var reloadKey by remember { mutableStateOf(0) }
 
     val track = tracks.getOrNull(index) ?: return
-    // Provider chip; null shows every source. Resets with the track.
     var sourceFilter by remember(track.id) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(track.id, reloadKey) {
@@ -154,9 +140,6 @@ fun MetadataReviewDialog(
         error = null
         candidates = emptyList()
         pending = false
-        // First answer, then — while the server's queue hasn't been through
-        // this track — ask again every few seconds. The list grows as
-        // providers answer and the position counts down.
         var first = true
         while (true) {
             try {
@@ -194,7 +177,6 @@ fun MetadataReviewDialog(
         },
         text = {
             Column(Modifier.fillMaxWidth()) {
-                // What the track currently says, for comparison against the suggestions.
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -337,8 +319,6 @@ fun MetadataReviewDialog(
                                     scope.launch {
                                         try {
                                             val updated = model.api.applyMetadataCandidate(track.id, candidate.id)
-                                            // If this track is downloaded, update the offline
-                                            // copy's metadata too so it doesn't show stale tags.
                                             model.downloads.refreshMetadata(updated)
                                             resolved = resolved + (track.id to candidate.id)
                                             model.loadLibrary()
@@ -464,15 +444,6 @@ private fun CandidateRow(
     }
 }
 
-/**
- * Thumbnail of a suggestion's cover art, so the right release can be told
- * apart at a glance. Fetched lazily through the server. Two distinct
- * fallbacks, because they mean different things to the person choosing: a
- * candidate that simply has no artwork shows a neutral image icon, while one
- * that *should* have artwork but couldn't be fetched (the server answers 404
- * for an expired list or an unreachable provider) shows a broken-image icon
- * — the art may still arrive when the candidate is applied.
- */
 @Composable
 private fun CandidateThumb(trackId: String, candidate: MetadataCandidate) {
     val model = LocalAppModel.current
@@ -515,7 +486,6 @@ private fun CandidateThumb(trackId: String, candidate: MetadataCandidate) {
     }
 }
 
-/** Small pill label used for the provider name and the auto-applied marker. */
 @Composable
 private fun Badge(text: String, color: Color) {
     Box(
@@ -533,7 +503,6 @@ private fun Badge(text: String, color: Color) {
     }
 }
 
-/** "in 10 min", "in 12 h", "in a day" — when a parked retry runs. */
 @OptIn(ExperimentalTime::class)
 private fun formatIn(iso: String): String {
     val at = runCatching { Instant.parse(iso) }.getOrNull() ?: return "later"

@@ -31,8 +31,6 @@ export function QueuePanel() {
     <Sheet open={queueOpen} onOpenChange={setQueueOpen}>
       <SheetContent
         side="right"
-        // Passive overlay: it shows the queue but takes no text input, so the
-        // global shortcuts stay live while it's open (see use-keyboard-shortcuts).
         data-shortcuts-allowed=""
         className="flex w-full flex-col gap-0 border-zinc-800/70 bg-zinc-950 p-0 sm:max-w-md"
       >

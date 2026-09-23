@@ -11,34 +11,17 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Self-service account changes: a new username, and deleting the account.
-//
-// The library is shared, so an account's uploads are not really its own to
-// take along: when someone deletes their account their tracks stay, handed
-// to a built-in placeholder account. Everything personal goes with the row
-// (the cascade takes playlists, favourites, history, sessions, share links).
-//
-// The placeholder can never be signed into or registered: its password hash
-// is not a bcrypt hash, its name has a space in it (usernames can't), and it
-// is left out of the user list, the "is this the first account" checks and
-// sign-in. Tracks it holds show as uploaded by "deleted user" and can be
-// managed by admins, like any other track.
-
 const (
 	deletedUserID   = "deleted-user"
 	deletedUsername = "deleted user"
 )
 
-// ensureDeletedUser creates the placeholder account the first time it is
-// needed.
 func (s *Server) ensureDeletedUser(tx *sql.Tx) error {
 	_, err := tx.Exec(`INSERT OR IGNORE INTO users (id, username, password_hash, created_at, role) VALUES (?,?,?,?,?)`,
 		deletedUserID, deletedUsername, "!", nowRFC3339(), roleUser)
 	return err
 }
 
-// checkPassword verifies the caller's current password, answering 401 (and
-// counting the failure against the sign-in rate limit) when it is wrong.
 func (s *Server) checkPassword(w http.ResponseWriter, r *http.Request, userID, password string) bool {
 	var hash string
 	err := s.db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash)
@@ -57,11 +40,6 @@ func (s *Server) checkPassword(w http.ResponseWriter, r *http.Request, userID, p
 	return true
 }
 
-// handleRenameAccount: POST /api/auth/username {"username", "password"}.
-// The username is also the sign-in name, so this asks for the password
-// like a password change does — a borrowed session shouldn't be able to
-// lock the owner out by renaming the account. Answers with a fresh token
-// (the token carries the name) and the updated user.
 func (s *Server) handleRenameAccount(w http.ResponseWriter, r *http.Request) {
 	if blocked, _ := rateLimitAuth(r); blocked {
 		writeErr(w, http.StatusTooManyRequests, "too many attempts, try again later")
@@ -95,7 +73,6 @@ func (s *Server) handleRenameAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.db.Exec(`UPDATE users SET username = ? WHERE id = ?`, name, u.ID); err != nil {
-		// Two renames racing for the same name: the UNIQUE constraint decides.
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			writeErr(w, http.StatusConflict, "username already taken")
 			return
@@ -120,9 +97,6 @@ func (s *Server) handleRenameAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": user})
 }
 
-// handleDeleteAccount: POST /api/auth/delete-account {"password"}. The
-// tracks stay in the library; the account and everything personal to it
-// go. The last admin can't leave while others depend on the server.
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	if blocked, _ := rateLimitAuth(r); blocked {
 		writeErr(w, http.StatusTooManyRequests, "too many attempts, try again later")
@@ -161,7 +135,6 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "placeholder account", err)
 		return
 	}
-	// updated_at moves so other devices' delta sync picks up the new uploader.
 	if _, err := tx.Exec(`UPDATE tracks SET user_id = ?, updated_at = ? WHERE user_id = ?`,
 		deletedUserID, nowRFC3339(), u.ID); err != nil {
 		s.internalErr(w, "hand over tracks", err)
@@ -181,8 +154,6 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	writeNoContent(w)
 }
 
-// publicUserByID reads a user as the clients see it, from the database —
-// not from the token, whose copy of the name is only as new as the token.
 func (s *Server) publicUserByID(id string) (publicUser, error) {
 	var out publicUser
 	var hasAvatar int

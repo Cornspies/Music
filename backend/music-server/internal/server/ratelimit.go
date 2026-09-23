@@ -10,20 +10,11 @@ import (
 	"music-server/internal/config"
 )
 
-// Credential endpoints are the one place an attacker gets unlimited free
-// guesses, so they get a small in-memory limiter. It is per-process and resets
-// on restart, which is fine for a self-hosted instance — the goal is to turn
-// "millions of guesses per hour" into "a handful per minute", not to be a WAF.
 const (
-	authAttemptWindow = 15 * time.Minute
-	authMaxAttempts   = 10
-	// Successful sign-ups count too, with their own (lower) ceiling: an open
-	// server should not let one address script thousands of accounts.
+	authAttemptWindow        = 15 * time.Minute
+	authMaxAttempts          = 10
 	registrationMaxPerWindow = 3
-	// Hard cap on tracked addresses. Past this the oldest entries are
-	// evicted, so someone cycling through spoofed addresses can't grow the
-	// map without bound.
-	authLimiterMaxKeys = 10000
+	authLimiterMaxKeys       = 10000
 )
 
 type attemptRecord struct {
@@ -37,9 +28,6 @@ var authLimiter = struct {
 	entries map[string]*attemptRecord
 }{entries: map[string]*attemptRecord{}}
 
-// rateLimitAuth reports whether this request should be rejected, and how long
-// the caller should wait. Only failed attempts count: a successful login
-// clears the record, so normal use never trips it.
 func rateLimitAuth(r *http.Request) (blocked bool, retryAfter time.Duration) {
 	key := clientIP(r)
 	now := time.Now()
@@ -61,13 +49,10 @@ func noteAuthFailure(r *http.Request) {
 	touch(r, func(rec *attemptRecord) { rec.count++ })
 }
 
-// noteRegistration records a successful sign-up against the address.
 func noteRegistration(r *http.Request) {
 	touch(r, func(rec *attemptRecord) { rec.registrations++ })
 }
 
-// touch finds or creates the record for the caller's address and applies fn
-// to it, evicting stale and (if needed) oldest entries first.
 func touch(r *http.Request, fn func(*attemptRecord)) {
 	key := clientIP(r)
 	now := time.Now()
@@ -86,8 +71,6 @@ func touch(r *http.Request, fn func(*attemptRecord)) {
 	fn(rec)
 }
 
-// evictLocked drops expired entries, and if that isn't enough, the oldest
-// ones until the map is comfortably under the cap. Caller holds the lock.
 func evictLocked(now time.Time) {
 	for k, v := range authLimiter.entries {
 		if now.Sub(v.first) > authAttemptWindow {
@@ -115,16 +98,6 @@ func clearAuthFailures(r *http.Request) {
 	delete(authLimiter.entries, clientIP(r))
 }
 
-// clientIP works out who is really calling.
-//
-// X-Forwarded-For is only believed when the direct peer is a trusted proxy
-// (MUSIC_TRUSTED_PROXIES, default: loopback and private ranges — where a
-// reverse proxy on the same box or LAN lives). Even then the header is read
-// from the right: each proxy appends the address it saw, so the right-most
-// entry that isn't itself a trusted proxy is the client, and anything the
-// client put in the header itself is further left and ignored. Set
-// MUSIC_TRUSTED_PROXIES to an empty value ("none") to ignore the header
-// entirely when the server is exposed directly.
 func clientIP(r *http.Request) string {
 	peer := remoteHost(r.RemoteAddr)
 	if !isTrustedProxy(peer) {
@@ -139,8 +112,6 @@ func clientIP(r *http.Request) string {
 	return peer
 }
 
-// forwardedChain returns the hops from X-Forwarded-For (left to right), or
-// X-Real-IP as a single entry when only that is present.
 func forwardedChain(r *http.Request) []string {
 	var out []string
 	for _, v := range r.Header.Values("X-Forwarded-For") {
@@ -171,8 +142,6 @@ var (
 	trustedProxies     []*net.IPNet
 )
 
-// isTrustedProxy reports whether an address belongs to a proxy whose
-// forwarding headers we accept.
 func isTrustedProxy(host string) bool {
 	trustedProxiesOnce.Do(loadTrustedProxies)
 	ip := net.ParseIP(strings.Trim(host, "[]"))
@@ -187,8 +156,6 @@ func isTrustedProxy(host string) bool {
 	return false
 }
 
-// loadTrustedProxies parses MUSIC_TRUSTED_PROXIES: a comma-separated list of
-// IPs or CIDRs, "none" to trust nobody, or unset for the default set.
 func loadTrustedProxies() {
 	raw := strings.TrimSpace(config.Value("MUSIC_TRUSTED_PROXIES"))
 	if strings.EqualFold(raw, "none") {

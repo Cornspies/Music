@@ -51,10 +51,6 @@ import com.music.app.ui.screens.SearchScreen
 import com.music.app.ui.screens.UploadScreen
 import com.music.app.ui.theme.MusicTheme
 
-/**
- * Navigation destinations. Bottom-bar tabs are the root screens; everything else
- * (PlaylistDetail, Upload, NowPlaying) is pushed on top of the back stack.
- */
 sealed interface Screen {
     data object Home : Screen
     data object Library : Screen
@@ -70,7 +66,6 @@ sealed interface Screen {
     data class PlaylistDetail(val id: String) : Screen
 }
 
-/** The app-wide state holder, provided at the root and consumed by all screens. */
 val LocalAppModel = staticCompositionLocalOf<AppModel> { error("AppModel is not provided") }
 
 @Composable
@@ -80,15 +75,12 @@ fun App() {
         onDispose { model.destroy() }
     }
 
-    // Coil image loader with the Ktor network engine (shared by all cover art).
     setSingletonImageLoaderFactory { context ->
         ImageLoader.Builder(context)
             .components { add(KtorNetworkFetcherFactory()) }
             .build()
     }
 
-    // A share link usually arrives before sign-in has finished, so it waits
-    // until there's a session and is then opened exactly once.
     val pendingLink = DeepLinks.pendingPlaylistId
     LaunchedEffect(pendingLink, model.user) {
         if (pendingLink != null && model.user != null) {
@@ -102,7 +94,6 @@ fun App() {
         }
     }
 
-    // Back in the foreground: pick up what another device played meanwhile.
     LifecycleResumeEffect(model) {
         model.onForeground()
         onPauseOrDispose {}
@@ -129,7 +120,6 @@ private fun Root() {
     } else {
         MainScreen()
     }
-    // A share link that no longer works (revoked, or sharing switched off).
     model.shareLinkError?.let { message ->
         AlertDialog(
             onDismissRequest = { model.shareLinkError = null },
@@ -147,9 +137,6 @@ private fun MainScreen() {
 
     BackHandler(enabled = model.backStack.size > 1) { model.pop() }
 
-    // The full-screen player is an overlay, not a destination of its own:
-    // the screen it was opened from stays composed underneath (bars and all),
-    // so swiping the player down reveals it rather than a black void.
     val playerOpen = current == Screen.NowPlaying
     val shown = if (playerOpen) {
         model.backStack.getOrNull(model.backStack.size - 2) ?: Screen.Home
@@ -165,9 +152,6 @@ private fun MainScreen() {
                     if (model.currentTrack != null) {
                         NowPlayingBar()
                     }
-                    // Tabs stay put on pushed screens like a playlist: they are
-                    // normal browsing destinations, and selectTab resets the
-                    // stack so "back" still never crosses tabs.
                     BottomTabs(selected = shown)
                 }
             },
@@ -177,8 +161,6 @@ private fun MainScreen() {
                     .fillMaxSize()
                     .padding(padding),
             ) {
-                // Mounted once for the whole app: every screen keeps its normal
-                // layout offline and just gains this strip at the top.
                 OfflineBanner()
                 Box(Modifier.fillMaxSize()) {
                     when (shown) {
@@ -192,7 +174,7 @@ private fun MainScreen() {
                         Screen.Profile -> ProfileScreen()
                         Screen.History -> HistoryScreen()
                         Screen.Duplicates -> DuplicatesScreen()
-                        Screen.NowPlaying -> HomeScreen() // never: the player is always the overlay
+                        Screen.NowPlaying -> HomeScreen()
                         is Screen.PlaylistDetail -> PlaylistDetailScreen(shown)
                     }
                 }
@@ -200,8 +182,6 @@ private fun MainScreen() {
         }
 
         if (playerOpen) {
-            // Outside the Scaffold, so the on-background content colour that
-            // Text and Icon default to has to be provided by hand.
             CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
                 NowPlayingScreen()
             }

@@ -26,8 +26,6 @@ function useSleepCountdown(endsAt: number | null): number | null {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (endsAt === null) return
-    // first update on the next frame (async → no cascading render),
-    // then keep ticking once a second until the timer fires.
     const raf = requestAnimationFrame(() => setNow(Date.now()))
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => {
@@ -38,10 +36,6 @@ function useSleepCountdown(endsAt: number | null): number | null {
   return endsAt === null ? null : Math.max(0, (endsAt - now) / 1000)
 }
 
-/**
- * Sleep timer dropdown — shared by the PlayerBar (desktop) and the
- * Now Playing overlay. 0 = "end of track", null = off.
- */
 export function SleepTimerMenu({ compact = false }: { compact?: boolean }) {
   const sleepEndsAt = usePlayerStore((s) => s.sleepEndsAt)
   const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack)

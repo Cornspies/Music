@@ -38,10 +38,6 @@ import com.music.app.ui.formatBytes
 import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.Emerald
 
-/**
- * Tracks saved to this device. Everything here plays with no connection, so
- * this is the one screen that stays fully functional offline.
- */
 @Composable
 fun DownloadsScreen() {
     val model = LocalAppModel.current
@@ -105,8 +101,6 @@ fun DownloadsScreen() {
             )
         }
 
-        // Quality, Wi-Fi-only and sync live on the profile screen with the
-        // other preferences; this screen is the list itself.
         if (downloads.waitingForWifi) {
             Text(
                 "Waiting for Wi-Fi.",

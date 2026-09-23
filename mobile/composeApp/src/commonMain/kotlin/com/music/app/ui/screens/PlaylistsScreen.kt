@@ -53,7 +53,6 @@ import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.EmeraldDark
 import kotlinx.coroutines.launch
 
-/** Playlists: list, create dialog, open detail, delete. */
 @Composable
 fun PlaylistsScreen() {
     val model = LocalAppModel.current
@@ -102,8 +101,6 @@ fun PlaylistsScreen() {
                 items(playlists, key = { it.id }) { playlist ->
                     PlaylistRow(playlist)
                 }
-                // Public playlists you haven't pinned yet — pinning moves them
-                // into the list above.
                 val available = model.publicPlaylists.filter { p -> playlists.none { it.id == p.id } }
                 if (available.isNotEmpty()) {
                     item(key = "shared-header") {
@@ -155,8 +152,6 @@ private fun PlaylistRow(playlist: Playlist) {
             ) {
                 Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Emerald)
             }
-            // Someone else's playlist: their picture on the corner makes
-            // "mine" vs "theirs" obvious without reading the subtitle.
             if (!playlist.isMine && playlist.owner.id.isNotEmpty()) {
                 Box(Modifier.align(Alignment.BottomEnd)) {
                     UserAvatar(
@@ -204,7 +199,6 @@ private fun PlaylistRow(playlist: Playlist) {
                 Icon(Icons.Filled.Delete, contentDescription = "Delete playlist")
             }
         } else {
-            // Not yours: the useful action is keeping (or dropping) it here.
             IconButton(
                 enabled = !pinBusy,
                 onClick = {
@@ -314,13 +308,6 @@ private fun CreatePlaylistDialog(onDismiss: () -> Unit) {
 }
 
 
-/**
- * Downloads a whole playlist straight from the overview.
- *
- * The overview only knows a playlist's summary, so the track list is fetched
- * when the download starts. Progress replaces the icon because a playlist takes
- * long enough that a static icon would look stuck.
- */
 @Composable
 private fun PlaylistRowDownloadButton(playlist: Playlist) {
     val model = LocalAppModel.current
@@ -333,8 +320,6 @@ private fun PlaylistRowDownloadButton(playlist: Playlist) {
     var confirmRemove by remember(playlist.id) { mutableStateOf(false) }
     var error by remember(playlist.id) { mutableStateOf<String?>(null) }
 
-    // An empty playlist has nothing to keep offline, so the control is
-    // disabled rather than silently doing nothing when tapped.
     val empty = playlist.trackCount == 0
 
     IconButton(

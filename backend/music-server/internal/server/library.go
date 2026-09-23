@@ -59,8 +59,6 @@ func (s *Server) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
         writeNoContent(w)
 }
 
-// ---- aggregates / search / stats ----
-
 type Album struct {
         Name          string  `json:"name"`
         Artist        string  `json:"artist"`
@@ -77,8 +75,6 @@ type Artist struct {
 }
 
 func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
-        // Albums and artists are aggregated over the whole shared library,
-        // so there's no per-user filter here any more.
         rows, err := s.db.Query(`
                 SELECT
                         COALESCE(NULLIF(t.album, ''), 'Unknown Album') AS album_name,
@@ -113,8 +109,6 @@ func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListArtists(w http.ResponseWriter, r *http.Request) {
-        // Albums and artists are aggregated over the whole shared library,
-        // so there's no per-user filter here any more.
         rows, err := s.db.Query(`
                 SELECT COALESCE(NULLIF(artist, ''), 'Unknown Artist'), COUNT(*), COALESCE(SUM(duration), 0)
                 FROM tracks
@@ -212,8 +206,6 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
         }
         result["artists"] = artists
 
-        // Uses playlistSelect so the selected columns match scanPlaylist, and so
-        // search surfaces playlists other people have shared, not just your own.
         rows4, err := s.db.Query(playlistSelect+`
                 WHERE (p.user_id = ? OR p.is_public = 1) AND p.name LIKE ? ESCAPE '\'
                 ORDER BY p.created_at DESC LIMIT 25`, append(playlistSelectArgs(u.ID), u.ID, like)...)
@@ -259,7 +251,6 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
                 return
         }
 
-        // Listening time comes from the history, so it reflects every device.
         var listenedSeconds float64
         var listenCount int
         if err := s.db.QueryRow(`

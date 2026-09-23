@@ -122,16 +122,11 @@ export function HomeView() {
   const playlists = useLibraryStore((s) => s.playlists)
   const navigate = useUIStore((s) => s.navigate)
 
-  // Timestamps are RFC 3339 in UTC, so they order correctly as strings — no
-  // Date parsing inside the comparator, and only when the list changes.
   const recent = useMemo(
     () => [...tracks].sort((a, b) => (b.createdAt < a.createdAt ? -1 : b.createdAt > a.createdAt ? 1 : 0)).slice(0, 8),
     [tracks]
   )
 
-  // Recently played comes from the server's listening history, so it covers
-  // every device; the local lastPlayedAt sort is the fallback for an older
-  // server that doesn't send it.
   const serverRecent = stats?.recentlyPlayed
   const recentlyPlayed = useMemo(
     () =>
@@ -144,7 +139,6 @@ export function HomeView() {
     [serverRecent, tracks]
   )
 
-  // keep the history fresh: play events happen while Home is mounted
   useEffect(() => {
     const unsub = usePlayerStore.subscribe((state, prev) => {
       if (state.currentTrack?.id && state.currentTrack.id !== prev.currentTrack?.id) {
@@ -194,7 +188,6 @@ export function HomeView() {
         </div>
       )}
 
-      {/* quick shortcuts */}
       <SectionHeader title="Jump back in" />
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <ShortcutCard

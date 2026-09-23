@@ -23,53 +23,30 @@ import (
 	"music-server/internal/config"
 )
 
-// Lyrics.
-//
-// Resolved lazily the first time someone asks for a track's lyrics, then kept
-// in the lyrics table. Sources, in order: the file's own tag (USLT / LYRICS —
-// the uploader's copy wins), LRCLIB (https://lrclib.net, a free and open
-// lyrics database with a plain JSON API, no key), or a text someone pasted in
-// by hand. A miss is remembered too, so a track that has no lyrics anywhere
-// doesn't cost a network round-trip on every open; it's retried after a
-// while in case LRCLIB has gained it since.
-
 const (
 	lyricsSourceEmbedded = "embedded"
 	lyricsSourceLRCLIB   = "lrclib"
 	lyricsSourceManual   = "manual"
 	lyricsSourceNone     = "none"
 
-	// A miss is cached this long before LRCLIB is asked again.
 	lyricsMissTTL = 7 * 24 * time.Hour
 
-	// LRCLIB asks clients to identify themselves.
 	lrclibUserAgent = "Music-SelfHosted-MusicPlayer/1.0 (https://github.com/cornspies/music-player)"
 )
 
-// lrclibBase is a variable so tests can point it at a stub.
 var lrclibBase = "https://lrclib.net/api"
 
-// LyricLine is one time-stamped line of synced lyrics.
 type LyricLine struct {
-	// T is the offset in seconds at which the line starts.
 	T    float64 `json:"t"`
 	Line string  `json:"line"`
 }
 
-// Lyrics is what GET /api/tracks/{id}/lyrics returns.
 type Lyrics struct {
-	// Plain is the whole text, one line per row, for tracks with no timing
-	// information (and as the fallback when Synced is present).
-	Plain string `json:"plain"`
-	// Synced is nil when only plain text is known.
-	Synced []LyricLine `json:"synced"`
-	// Source is "embedded", "lrclib" or "manual"; "none" means nothing was
-	// found anywhere (the response is then a 404 with this body).
-	Source string `json:"source"`
-	// Instrumental is LRCLIB's word that the track has no lyrics on purpose.
-	Instrumental bool `json:"instrumental"`
-	// Editable is true for the uploader and admins.
-	Editable bool `json:"editable"`
+	Plain        string      `json:"plain"`
+	Synced       []LyricLine `json:"synced"`
+	Source       string      `json:"source"`
+	Instrumental bool        `json:"instrumental"`
+	Editable     bool        `json:"editable"`
 }
 
 type lyricsRow struct {
@@ -107,17 +84,11 @@ func (s *Server) writeLyricsRow(trackID string, row lyricsRow) error {
 	return err
 }
 
-// forgetLookedUpLyrics drops a cached LRCLIB result or miss so the next
-// request looks again — for after the tags were corrected, when the old
-// search terms were probably why nothing was found. Embedded and hand-typed
-// lyrics don't depend on the tags and are kept.
 func (s *Server) forgetLookedUpLyrics(trackID string) {
 	_, _ = s.db.Exec(`DELETE FROM lyrics WHERE track_id = ? AND source IN (?, ?)`,
 		trackID, lyricsSourceLRCLIB, lyricsSourceNone)
 }
 
-// resolveLyrics returns the cached row, filling the cache first when it is
-// empty or holds a miss old enough to retry.
 func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (*lyricsRow, error) {
 	row, err := s.readLyricsRow(t.ID)
 	switch {
@@ -141,11 +112,6 @@ func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (
 	} else if !lyricsLookupDisabled() {
 		hit, err := lrclibLookup(ctx, t)
 		if err != nil {
-			// The provider is down or throttling (LRCLIB sits behind
-			// Cloudflare and has the odd 503). That says nothing about
-			// whether the lyrics exist, so it must not be cached as a miss
-			// — that would hide them for a week. Answer "none" for now and
-			// let the next request try again once the backoff has passed.
 			logErr("lyrics lookup", err)
 			return &fresh, nil
 		}
@@ -159,9 +125,6 @@ func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (
 	return &fresh, nil
 }
 
-// purgeStaleLyricsMisses runs once: builds before the backoff logic wrote a
-// provider outage into the cache as "no lyrics", so any miss recorded by
-// them is dropped and looked up afresh. Keyed in settings so it's a one-off.
 func (s *Server) purgeStaleLyricsMisses() {
 	const key = "lyrics_misses_purged"
 	if _, done := s.getSetting(key); done {
@@ -174,10 +137,6 @@ func (s *Server) purgeStaleLyricsMisses() {
 	_ = s.putSetting(key, nowRFC3339())
 }
 
-// lrclibBackoff holds the moment LRCLIB may be contacted again after it
-// answered with an error. One outage shouldn't turn every "open lyrics"
-// into another failing round-trip; the default matches its own Retry-After
-// when it sends one.
 var lrclibBackoff struct {
 	sync.Mutex
 	until time.Time
@@ -201,8 +160,6 @@ func lrclibPause(retryAfter string) {
 	lrclibBackoff.Unlock()
 }
 
-// embeddedLyrics reads the lyrics tag (USLT for ID3, LYRICS for Vorbis) from
-// the audio file, or "" when there is none.
 func embeddedLyrics(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -216,8 +173,6 @@ func embeddedLyrics(path string) string {
 	return strings.TrimSpace(strings.ReplaceAll(m.Lyrics(), "\r\n", "\n"))
 }
 
-// ---- LRCLIB ---------------------------------------------------------------
-
 type lrclibRecord struct {
 	ID           int64   `json:"id"`
 	TrackName    string  `json:"trackName"`
@@ -229,13 +184,9 @@ type lrclibRecord struct {
 	SyncedLyrics string  `json:"syncedLyrics"`
 }
 
-// lrclibLookup asks LRCLIB for the track. /api/get wants an exact title,
-// artist, album and duration and is the precise path; when it 404s, /api/search
-// is tried without the album and the closest duration within a few seconds
-// is taken. nil, nil means "nothing there".
 func lrclibLookup(ctx context.Context, t *Track) (*lyricsRow, error) {
 	if strings.TrimSpace(t.Title) == "" || strings.TrimSpace(t.Artist) == "" {
-		return nil, nil // nothing to search by
+		return nil, nil
 	}
 	if !lrclibAvailable() {
 		return nil, errors.New("lrclib is unavailable, waiting before asking again")
@@ -283,9 +234,6 @@ func lrclibLookup(ctx context.Context, t *Track) (*lyricsRow, error) {
 	return row, nil
 }
 
-// pickLRCLIBResult chooses the search hit whose length is closest to the
-// track's, preferring one with synced lyrics. Anything more than five seconds
-// off is likely a different version (live, radio edit) and is skipped.
 func pickLRCLIBResult(results []lrclibRecord, duration float64) *lrclibRecord {
 	var usable []lrclibRecord
 	for _, r := range results {
@@ -310,9 +258,6 @@ func pickLRCLIBResult(results []lrclibRecord, duration float64) *lrclibRecord {
 	return &usable[0]
 }
 
-// lrclibGet performs one request through the SSRF-guarded lookup client.
-// It reports found=false on a 404 rather than an error, since "not in the
-// database" is the common, uninteresting case.
 func lrclibGet(ctx context.Context, pathAndQuery string, out any) (found bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, lrclibBase+pathAndQuery, nil)
 	if err != nil {
@@ -331,7 +276,6 @@ func lrclibGet(ctx context.Context, pathAndQuery string, out any) (found bool, e
 	case http.StatusNotFound:
 		return false, nil
 	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		// Their problem, not a verdict on the track: back off and try later.
 		lrclibPause(resp.Header.Get("Retry-After"))
 		return false, fmt.Errorf("lrclib: status %d (paused)", resp.StatusCode)
 	default:
@@ -343,15 +287,8 @@ func lrclibGet(ctx context.Context, pathAndQuery string, out any) (found bool, e
 	return true, nil
 }
 
-// ---- LRC ------------------------------------------------------------------
-
-// lrcStamp matches one [mm:ss.xx] (or [mm:ss]) time tag; a line may carry
-// several when the same words repeat.
 var lrcStamp = regexp.MustCompile(`\[(\d+):(\d{1,2}(?:\.\d+)?)\]`)
 
-// parseLRC turns LRC text into lines ordered by time. Metadata tags like
-// [ar:…] have no digits before the colon and are skipped; text with no time
-// tags at all yields nothing, which is how callers tell plain from synced.
 func parseLRC(text string) []LyricLine {
 	var out []LyricLine
 	for _, raw := range strings.Split(text, "\n") {
@@ -378,8 +315,6 @@ func plainFromLines(lines []LyricLine) string {
 	return strings.Join(parts, "\n")
 }
 
-// ---- handlers -------------------------------------------------------------
-
 func (s *Server) lyricsResponse(row *lyricsRow, editable bool) Lyrics {
 	out := Lyrics{Plain: row.plain, Source: row.source, Instrumental: row.instrumental, Editable: editable}
 	if row.synced != "" {
@@ -394,8 +329,6 @@ func (s *Server) canEditLyrics(u *User, t *Track) bool {
 	return u.IsAdmin() || t.UploadedBy.ID == u.ID
 }
 
-// handleTrackLyrics: GET /api/tracks/{id}/lyrics. 404 (with a body) when no
-// source has them, so clients can show "no lyrics" without a second request.
 func (s *Server) handleTrackLyrics(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	t, filePath, _, ok := s.getTrack(w, r, u.ID, r.PathValue("id"))
@@ -417,9 +350,6 @@ func (s *Server) handleTrackLyrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleSetLyrics: PUT /api/tracks/{id}/lyrics with {"text": "..."}. LRC
-// time tags in the text make it synced; plain text is stored as is. An empty
-// text removes what's stored so the next request looks the lyrics up again.
 func (s *Server) handleSetLyrics(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	t, _, _, ok := s.getTrack(w, r, u.ID, r.PathValue("id"))

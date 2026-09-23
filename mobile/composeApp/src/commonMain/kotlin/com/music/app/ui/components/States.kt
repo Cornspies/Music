@@ -24,9 +24,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.app.ui.theme.Zinc500
 
-// ---------------------------------------------------------------- loading / error / empty states
-
-/** Centered spinner for in-flight loads. */
 @Composable
 fun LoadingBox(modifier: Modifier = Modifier) {
     Box(
@@ -39,7 +36,6 @@ fun LoadingBox(modifier: Modifier = Modifier) {
     }
 }
 
-/** Error message with an optional retry action. */
 @Composable
 fun ErrorState(
     message: String,
@@ -72,7 +68,6 @@ fun ErrorState(
     }
 }
 
-/** Friendly empty state (icon + title + optional subtitle). */
 @Composable
 fun EmptyState(
     icon: ImageVector,
@@ -106,9 +101,6 @@ fun EmptyState(
     }
 }
 
-// ---------------------------------------------------------------- generic rows
-
-/** Section title ("Recently added", "Most played", …) with an optional trailing slot. */
 @Composable
 fun SectionHeader(
     title: String,
@@ -132,4 +124,3 @@ fun SectionHeader(
         trailing?.invoke()
     }
 }
-

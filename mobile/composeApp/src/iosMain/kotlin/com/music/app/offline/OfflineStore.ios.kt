@@ -16,11 +16,6 @@ import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.writeToFile
 
-/**
- * Files under Application Support/offline. That directory persists (unlike
- * Caches, which iOS may purge under storage pressure) and is excluded from
- * iCloud backup, which Apple requires for re-downloadable content.
- */
 @OptIn(ExperimentalForeignApi::class)
 actual class OfflineStore actual constructor() {
 
@@ -50,7 +45,6 @@ actual class OfflineStore actual constructor() {
         val ok = bytes.toNSData().writeToFile(partial, atomically = true)
         if (!ok) throw IllegalStateException("Could not save the download to device storage.")
 
-        // Replace atomically: remove any stale target, then move the temp file over.
         if (fileManager.fileExistsAtPath(target)) fileManager.removeItemAtPath(target, null)
         val moved = fileManager.moveItemAtPath(partial, target, null)
         if (!moved) {
@@ -90,7 +84,6 @@ actual class OfflineStore actual constructor() {
             ?.filterIsInstance<String>()
             ?: emptyList()
 
-    /** Matches on the "<trackId>." prefix so a track id can't match a longer one. */
     private fun namesFor(trackId: String): List<String> =
         allNames().filter { it.startsWith("$trackId.") }
 
@@ -99,7 +92,6 @@ actual class OfflineStore actual constructor() {
     }
 }
 
-/** ByteArray → NSData without copying through an intermediate list. */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 private fun ByteArray.toNSData(): NSData {
     if (isEmpty()) return NSData()

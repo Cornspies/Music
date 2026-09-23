@@ -18,34 +18,10 @@ import (
 	"music-server/internal/config"
 )
 
-// Trimming.
-//
-// Rips often carry a second or two of silence at either end, or a chunk of
-// applause on a live recording. Two ways to cut:
-//
-//   - Automatically: the first time a track is analysed (every upload, and
-//     once for everything already in the library), silence at either end is
-//     cut off for good — no copy of the original is kept. The threshold is
-//     strict (-60 dB, near digital silence, for at least half a second), so
-//     a quiet intro or the tail of a fade-out stays; only dead air goes.
-//     MUSIC_DISABLE_AUTO_TRIM switches it off.
-//   - By hand: an uploader or admin picks the cut points in the trim dialog.
-//     That keeps the untouched original beside the file, so it can be undone.
-//
-// Either way the audio isn't re-encoded where that would cost quality (see
-// cutAudio), embedded cover art and tags are kept, and everything derived
-// from the audio — the compatible copy, loudness and waveform, synced lyrics
-// timing — is redone. The stored file hash stays the one of the upload, so
-// uploading the same file again is still recognised as a duplicate.
-
 const (
-	trimTimeout = 2 * time.Minute
-	// For the trim dialog's "Detect silence": anything this quiet for at
-	// least this long, suggested to the person, who decides.
-	silenceThresholdDB = "-45dB"
-	silenceMinSeconds  = "0.3"
-	// For the automatic trim, which decides alone: near digital silence,
-	// for at least half a second, and a little of it left in place.
+	trimTimeout         = 2 * time.Minute
+	silenceThresholdDB  = "-45dB"
+	silenceMinSeconds   = "0.3"
 	autoTrimThresholdDB = "-60dB"
 	autoTrimMinSeconds  = 0.5
 	autoTrimMargin      = 0.05
@@ -55,13 +31,9 @@ func autoTrimEnabled() bool {
 	return !config.Flag("MUSIC_DISABLE_AUTO_TRIM") && ffmpegBinary() != ""
 }
 
-// SilenceInfo is GET /api/tracks/{id}/silence: how much silence the file
-// starts and ends with, as suggested cut points.
 type SilenceInfo struct {
-	Duration float64 `json:"duration"`
-	// LeadingEnd is where sound first starts (0 when it starts at once).
-	LeadingEnd float64 `json:"leadingEnd"`
-	// TrailingStart is where the sound last stops (== duration when it runs to the end).
+	Duration      float64 `json:"duration"`
+	LeadingEnd    float64 `json:"leadingEnd"`
 	TrailingStart float64 `json:"trailingStart"`
 }
 
@@ -83,8 +55,6 @@ func (s *Server) handleTrackSilence(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), trimTimeout)
 	defer cancel()
-	// It decodes the whole file, so it waits its turn with the other ffmpeg
-	// work: requests can't pile up processes.
 	select {
 	case transcodeSlots <- struct{}{}:
 		defer func() { <-transcodeSlots }()
@@ -100,10 +70,6 @@ func (s *Server) handleTrackSilence(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, info)
 }
 
-// detectSilence finds the silence at the start and the end of a file:
-// anything quieter than noise (e.g. "-45dB") for at least minSeconds.
-// duration is the file's length, used to tell a silence that runs to the
-// end of the file.
 func detectSilence(ctx context.Context, bin, abs, noise, minSeconds string, duration float64) (SilenceInfo, error) {
 	cmd := exec.CommandContext(ctx, bin,
 		"-nostdin", "-hide_banner", "-nostats",
@@ -117,42 +83,22 @@ func detectSilence(ctx context.Context, bin, abs, noise, minSeconds string, dura
 	ends := silenceEndRe.FindAllStringSubmatch(string(out), -1)
 	for i, m := range starts {
 		start, _ := strconv.ParseFloat(m[1], 64)
-		// ffmpeg reports an end for every silence, including one that runs
-		// to the end of the file (its end is then the file's end).
 		end := duration
 		if i < len(ends) {
 			end, _ = strconv.ParseFloat(ends[i][1], 64)
 		}
 		switch {
 		case start <= 0.05 && i == 0:
-			// Silence from the very start: the music begins where it ends.
 			info.LeadingEnd = end
 		case end >= duration-0.15 && start > info.LeadingEnd:
-			// Silence running to the very end: the music stops where it starts.
 			info.TrailingStart = start
 		}
 	}
 	return info, err
 }
 
-// cutAudio keeps [start, end] of the file at abs, replacing it. How depends
-// on the format, because each has its own way of going wrong:
-//
-//   - most (MP3, AAC/M4A, WAV, …): a stream copy, so lossy audio isn't
-//     encoded a second time; cuts land on frame boundaries, tens of
-//     milliseconds, plenty for silence;
-//   - FLAC: re-encoded to FLAC, which is lossless, because a stream copy
-//     keeps the old length in the header and players then show and seek by
-//     the wrong duration;
-//   - Opus and the other Ogg/WebM audio: a stream copy that seeks on the
-//     output side, because seeking on the input side lands on page
-//     boundaries and leaves the file longer than its header says. Those
-//     containers can't carry a cover picture stream anyway.
-//
-// Cover art embedded in the file and the tags are kept.
 func cutAudio(ctx context.Context, bin, abs string, start, end, duration float64) error {
 	ext := strings.ToLower(filepath.Ext(abs))
-	// Keep the extension: ffmpeg picks the output container from it.
 	tmp := strings.TrimSuffix(abs, filepath.Ext(abs)) + ".trim" + filepath.Ext(abs)
 	var seek []string
 	if start > 0 {
@@ -186,8 +132,6 @@ func cutAudio(ctx context.Context, bin, abs string, start, end, duration float64
 	return nil
 }
 
-// handleTrackTrim: POST /api/tracks/{id}/trim {"start": s, "end": e} keeps
-// the audio between start and end (seconds; end 0 = to the end).
 func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
@@ -200,12 +144,9 @@ func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Start float64 `json:"start"`
-		End   float64 `json:"end"`
-		// ShiftLyrics moves synced lyrics along with a cut at the start;
-		// omitted means yes. Off is for files whose lyrics were timed to the
-		// audio proper rather than to the silence in front of it.
-		ShiftLyrics *bool `json:"shiftLyrics"`
+		Start       float64 `json:"start"`
+		End         float64 `json:"end"`
+		ShiftLyrics *bool   `json:"shiftLyrics"`
 	}
 	if err := jsonDecodeStrict(r, w, &body); err != nil {
 		return
@@ -228,8 +169,6 @@ func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 	}
 
 	abs := filepath.Join(s.dataDir, filePath)
-	// The first cut keeps the original; later cuts work on the cut file but
-	// "restore" always goes back to what was uploaded.
 	backup := abs + ".orig"
 	if _, err := os.Stat(backup); err != nil {
 		if err := copyFile(abs, backup); err != nil {
@@ -258,8 +197,6 @@ func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleTrackRestore: POST /api/tracks/{id}/trim/restore puts the uploaded
-// original back.
 func (s *Server) handleTrackRestore(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
@@ -282,9 +219,7 @@ func (s *Server) handleTrackRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setTrimmed(id, false)
-	s.afterAudioChanged(id, filePath, 0) // also marks it checked: the original is wanted as it is
-	// Lyrics timing can't be shifted back without knowing the old cut, so
-	// they're looked up afresh.
+	s.afterAudioChanged(id, filePath, 0)
 	_, _ = s.db.Exec(`DELETE FROM lyrics WHERE track_id = ? AND source <> ?`, id, lyricsSourceManual)
 	out, _, _, ok := s.getTrack(w, r, u.ID, id)
 	if !ok {
@@ -293,13 +228,8 @@ func (s *Server) handleTrackRestore(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// afterAudioChanged re-derives everything that depends on the audio bytes:
-// duration and size, the hash, the compatible copy, loudness + waveform,
-// and synced lyrics, which move earlier by lyricsShift seconds (the cut at
-// the start, or 0 to leave their timing alone).
 func (s *Server) afterAudioChanged(id, filePath string, lyricsShift float64) {
 	s.recordNewAudio(id, filePath)
-	// A cut by hand settles the question the automatic trim would ask.
 	_, _ = s.db.Exec(`UPDATE tracks SET loudness = NULL, waveform_json = '', analyzed_at = '', edges_checked = 1 WHERE id = ?`, id)
 	s.queueAnalysis(id)
 	if lyricsShift > 0 {
@@ -307,10 +237,6 @@ func (s *Server) afterAudioChanged(id, filePath string, lyricsShift float64) {
 	}
 }
 
-// recordNewAudio updates what the database knows about a track's file after
-// its audio changed — length and size — and redoes the compatible copy,
-// which was made from the old audio. The file hash is left alone: it names
-// the uploaded file, so uploading that file again is still recognised.
 func (s *Server) recordNewAudio(id, filePath string) {
 	abs := filepath.Join(s.dataDir, filePath)
 	var size int64
@@ -326,10 +252,6 @@ func (s *Server) recordNewAudio(id, filePath string) {
 	s.startCompatibleCopy(id, filePath)
 }
 
-// trimSilentEdges cuts the silence off both ends of a track for good — no
-// copy of the original is kept — and reports whether it cut anything. The
-// analysis worker runs it the first time it sees a track, before measuring,
-// so loudness and waveform describe the trimmed audio.
 func (s *Server) trimSilentEdges(ctx context.Context, id, rel string) (bool, error) {
 	bin := ffmpegBinary()
 	abs := filepath.Join(s.dataDir, rel)
@@ -352,15 +274,12 @@ func (s *Server) trimSilentEdges(ctx context.Context, id, rel string) (bool, err
 		return false, nil
 	}
 	if end-start < 1 {
-		return false, nil // (nearly) nothing but silence: not ours to judge
+		return false, nil
 	}
 	if err := cutAudio(ctx, bin, abs, start, end, duration); err != nil {
 		return false, err
 	}
 	s.recordNewAudio(id, rel)
-	// Lyrics from the file's tag or from LRCLIB are timed to the release,
-	// which doesn't carry a rip's dead air — they fit better now as they
-	// are. Only lyrics typed in by hand, against this very file, move.
 	if start > 0 {
 		s.shiftSyncedLyrics(id, -start, true)
 	}
@@ -368,9 +287,6 @@ func (s *Server) trimSilentEdges(ctx context.Context, id, rel string) (bool, err
 	return true, nil
 }
 
-// shiftSyncedLyrics moves every LRC time tag by delta seconds; lines that
-// would land before the start are clamped to 0. onlyManual limits it to
-// lyrics someone typed in by hand.
 func (s *Server) shiftSyncedLyrics(trackID string, delta float64, onlyManual bool) {
 	var synced, source string
 	if err := s.db.QueryRow(`SELECT synced, source FROM lyrics WHERE track_id = ?`, trackID).Scan(&synced, &source); err != nil || synced == "" {
@@ -389,7 +305,6 @@ func (s *Server) shiftSyncedLyrics(trackID string, delta float64, onlyManual boo
 	_, _ = s.db.Exec(`UPDATE lyrics SET synced = ? WHERE track_id = ?`, shifted, trackID)
 }
 
-// probeDuration asks ffprobe (next to ffmpeg) for the length of the file.
 func probeDuration(path string) float64 {
 	bin := ffmpegBinary()
 	if bin == "" {
@@ -421,9 +336,6 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, in, 0o644)
 }
 
-// trimmedSet remembers which tracks have a kept original, so the track JSON
-// can say so without a stat() per row. Filled at start-up from the uploads
-// directory and kept current by trim/restore.
 type trimmedSet struct {
 	sync.RWMutex
 	ids map[string]bool

@@ -21,12 +21,8 @@ import (
 	"github.com/google/uuid"
 )
 
-const maxUploadBytes = 512 << 20 // 512 MB
+const maxUploadBytes = 512 << 20
 
-// allowedImageTypes are the only content types served from the cover endpoint.
-// SVG is deliberately absent: it is an executable document in a browser.
-// safeCoverBytes reports whether embedded/remote artwork is a real raster
-// image we are willing to store and serve back.
 func safeCoverBytes(b []byte) bool {
 	return len(b) > 0 && allowedImageTypes[http.DetectContentType(b)]
 }
@@ -39,66 +35,42 @@ var allowedImageTypes = map[string]bool{
 	"image/bmp":  true,
 }
 
-// Track is the JSON representation of an uploaded track.
 type Track struct {
-	ID           string  `json:"id"`
-	Title        string  `json:"title"`
-	Artist       string  `json:"artist"`
-	Album        string  `json:"album"`
-	Genre        string  `json:"genre"`
-	Year         int     `json:"year"`
-	TrackNo      int     `json:"trackNo"`
-	Duration     float64 `json:"duration"`
-	MimeType     string  `json:"mimeType"`
-	FileSize     int64   `json:"fileSize"`
-	HasCover     bool    `json:"hasCover"`
-	Plays        int     `json:"plays"`
-	LastPlayedAt *string `json:"lastPlayedAt"`
-	IsFavorite   bool    `json:"isFavorite"`
-	CreatedAt    string  `json:"createdAt"`
-	// Uploader of the file. The library is shared between all users, so
-	// every track carries who contributed it.
-	UploadedBy Uploader `json:"uploadedBy"`
-	// A second copy in a format every platform can play, made at upload
-	// time for sources iOS can't decode. The original is always kept and
-	// remains the default; clients that can't play mimeType should stream
-	// with ?version=compatible.
-	HasCompatible  bool   `json:"hasCompatible"`
-	CompatibleMime string `json:"compatibleMimeType"`
-	CompatibleSize int64  `json:"compatibleFileSize"`
-	// UpdatedAt changes whenever tags, cover or the compatible copy do,
-	// so clients can sync deltas with GET /api/tracks/changes.
-	UpdatedAt string `json:"updatedAt"`
-	// Loudness is the integrated loudness in LUFS (EBU R128), for volume
-	// normalisation. Null until the background analysis has run.
-	Loudness *float64 `json:"loudness"`
-	// Source and SourceID identify the catalogue a track was added from
-	// via Discover ("ncs"); both empty for ordinary uploads.
-	Source   string `json:"source"`
-	SourceID string `json:"sourceId"`
-	// CoverColor is a "#rrggbb" colour representative of the cover art,
-	// "" until computed (or when there is no cover).
-	CoverColor string `json:"coverColor"`
-	// Trimmed is true when the audio was cut and the upload is kept for
-	// "restore original".
-	Trimmed bool `json:"trimmed"`
-	// MetadataStatus is the online lookup's state for this track:
-	// "queued", "running", "waiting" (a provider was missing; the retry is
-	// scheduled, hours away at most), "done", or "" when none was ever queued.
-	MetadataStatus string `json:"metadataStatus"`
-	// HasWaveform is true once GET /api/tracks/{id}/waveform has data.
-	HasWaveform bool `json:"hasWaveform"`
+	ID             string   `json:"id"`
+	Title          string   `json:"title"`
+	Artist         string   `json:"artist"`
+	Album          string   `json:"album"`
+	Genre          string   `json:"genre"`
+	Year           int      `json:"year"`
+	TrackNo        int      `json:"trackNo"`
+	Duration       float64  `json:"duration"`
+	MimeType       string   `json:"mimeType"`
+	FileSize       int64    `json:"fileSize"`
+	HasCover       bool     `json:"hasCover"`
+	Plays          int      `json:"plays"`
+	LastPlayedAt   *string  `json:"lastPlayedAt"`
+	IsFavorite     bool     `json:"isFavorite"`
+	CreatedAt      string   `json:"createdAt"`
+	UploadedBy     Uploader `json:"uploadedBy"`
+	HasCompatible  bool     `json:"hasCompatible"`
+	CompatibleMime string   `json:"compatibleMimeType"`
+	CompatibleSize int64    `json:"compatibleFileSize"`
+	UpdatedAt      string   `json:"updatedAt"`
+	Loudness       *float64 `json:"loudness"`
+	Source         string   `json:"source"`
+	SourceID       string   `json:"sourceId"`
+	CoverColor     string   `json:"coverColor"`
+	Trimmed        bool     `json:"trimmed"`
+	MetadataStatus string   `json:"metadataStatus"`
+	HasWaveform    bool     `json:"hasWaveform"`
 }
 
-// Uploader is the small public profile shown next to a track.
 type Uploader struct {
 	ID        string `json:"id"`
 	Username  string `json:"username"`
 	HasAvatar bool   `json:"hasAvatar"`
 }
 
-// supportedExtensions lists what uploads accept, derived from extMime so the
-// message can never drift from the actual rule.
 func supportedExtensions() string {
 	exts := make([]string, 0, len(extMime))
 	for ext := range extMime {
@@ -119,11 +91,6 @@ var extMime = map[string]string{
 	".ogg":  "audio/ogg",
 	".oga":  "audio/ogg",
 	".opus": "audio/ogg",
-	// .ogx is RFC 5334's "Ogg multiplexed", normally application/ogg. It is
-	// served as audio/ogg because this is an audio player: browsers and
-	// ExoPlayer both sniff the actual container, and declaring audio/ogg
-	// means an <audio> element will play the audio stream of a file that
-	// also happens to carry something else.
 	".ogx":  "audio/ogg",
 	".spx":  "audio/ogg",
 	".weba": "audio/webm",
@@ -135,12 +102,6 @@ var extMime = map[string]string{
 	".m4b":  "audio/mp4",
 }
 
-// trackSelect carries two leading bind values, both the viewing user's id:
-// the favourites EXISTS in the select list, then the play_stats join. Always
-// build the argument list with trackSelectArgs so the order can't drift.
-//
-// plays / lastPlayedAt are per-listener (play_stats), not library-wide: the
-// library is shared, but "your most played" should mean yours.
 const trackSelect = `
 SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration,
        t.mime_type, t.file_size, t.has_cover,
@@ -157,8 +118,6 @@ LEFT JOIN users u ON u.id = t.user_id
 LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?
 LEFT JOIN metadata_jobs mj ON mj.track_id = t.id`
 
-// trackSelectArgs returns the leading bind values trackSelect expects.
-// Append any further WHERE arguments after these.
 func trackSelectArgs(userID string) []any { return []any{userID, userID} }
 
 func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
@@ -203,7 +162,6 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
 }
 
 func (s *Server) getTrack(w http.ResponseWriter, _ *http.Request, userID, id string) (*Track, string, string, bool) {
-	// The library is shared: any signed-in user can read any track.
 	row := s.db.QueryRow(trackSelect+` WHERE t.id = ?`, append(trackSelectArgs(userID), id)...)
 	t, fp, fn, err := scanTrack(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -215,8 +173,6 @@ func (s *Server) getTrack(w http.ResponseWriter, _ *http.Request, userID, id str
 	}
 	return t, fp, fn, true
 }
-
-// ---- list ----
 
 func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
@@ -234,7 +190,6 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 	case "created":
 		order = "t.created_at DESC"
 	case "recent":
-		// Most recently played first; never-played tracks last.
 		order = "(ps.last_played_at IS NULL) ASC, ps.last_played_at DESC, t.created_at DESC"
 	}
 
@@ -247,9 +202,6 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 	}
 	query += " ORDER BY " + order
 
-	// Optional paging. Without ?limit the whole library comes back, as it
-	// always has; with it, X-Total-Count says how many match in all so a
-	// client can page without a second request.
 	if limit, offset, ok := pageParams(r); ok {
 		var total int
 		countQuery := `SELECT COUNT(1) FROM tracks t WHERE 1 = 1`
@@ -291,9 +243,6 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tracks)
 }
 
-// pageParams reads ?limit and ?offset. ok is false when no limit was given,
-// meaning "everything". The limit is capped so a client can't ask for a
-// million rows in one go by accident.
 func pageParams(r *http.Request) (limit, offset int, ok bool) {
 	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
 	if raw == "" {
@@ -319,15 +268,10 @@ func likeEscape(s string) string {
 	return s
 }
 
-// ---- upload ----
-
 func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
-	// Per-user storage cap, checked up front against what's already stored
-	// so a full account is refused before 250 MB have been written to disk;
-	// the exact check happens once the file size is known.
 	if quota := userQuotaBytes(); quota > 0 {
 		used, err := s.bytesUsedBy(u.ID)
 		if err != nil {
@@ -348,7 +292,7 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		savedPath string // relative path under dataDir
+		savedPath string
 		fileName  string
 		mimeType  string
 		clientDur float64
@@ -410,7 +354,6 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 				clientDur = d
 			}
 		default:
-			// Drain unknown fields so multipart parsing stays valid.
 			_, _ = io.Copy(io.Discard, io.LimitReader(part, 1<<20))
 		}
 		part.Close()
@@ -436,10 +379,6 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 	up.hash, _ = fileSHA256(absPath)
 	up.meta = readMetadata(absPath)
 
-	// The same song may already be in the library — the identical file,
-	// or another rip of it. Unless the client said "add anyway", hold the
-	// file and let the person decide with the existing tracks in front
-	// of them; nothing needs to be uploaded twice.
 	if r.URL.Query().Get("force") == "" {
 		if dup := s.findDuplicates(u.ID, up); len(dup.Matches) > 0 {
 			dup.PendingID = s.holdUpload(up)
@@ -450,9 +389,6 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 	s.finalizeUpload(w, r, up)
 }
 
-// pendingUpload is a stored file that hasn't become a track yet: either
-// about to (the normal path) or waiting for the uploader to confirm that a
-// duplicate is wanted.
 type pendingUpload struct {
 	savedPath, fileName, mimeType string
 	clientDur                     float64
@@ -462,8 +398,6 @@ type pendingUpload struct {
 	heldAt                        time.Time
 }
 
-// finalizeUpload turns a stored file into a library track and answers the
-// request with it.
 func (s *Server) finalizeUpload(w http.ResponseWriter, r *http.Request, up *pendingUpload) {
 	u := userFrom(r)
 	absPath := filepath.Join(s.dataDir, up.savedPath)
@@ -517,8 +451,6 @@ func (s *Server) finalizeUpload(w http.ResponseWriter, r *http.Request, up *pend
 		return
 	}
 
-	// Whatever the file's tags left out is looked up online by the queue
-	// worker, after the response: a bulk upload never waits on providers.
 	if err := s.enqueueMetadataLookup(id, reasonUpload, u.ID); err != nil {
 		logErr("queue metadata lookup", err)
 	}
@@ -529,11 +461,6 @@ func (s *Server) finalizeUpload(w http.ResponseWriter, r *http.Request, up *pend
 	}
 	writeJSON(w, http.StatusCreated, t)
 
-	// Transcoding runs after the response, not before it. Converting a long
-	// file takes minutes, and holding the upload open that long trips the
-	// client's idle timeout — the upload appears to fail even though the
-	// track was stored fine. The compatible copy shows up on the next
-	// refresh instead. Loudness/waveform analysis queues behind it.
 	s.startCompatibleCopy(id, savedPath)
 	s.queueAnalysis(id)
 	if hasCover {
@@ -541,8 +468,6 @@ func (s *Server) finalizeUpload(w http.ResponseWriter, r *http.Request, up *pend
 	}
 }
 
-// userQuotaBytes resolves MUSIC_MAX_BYTES_PER_USER (accepts plain bytes or a
-// suffix: 500M, 20G). 0 means unlimited, which is the default.
 func userQuotaBytes() int64 {
 	raw := strings.ToUpper(strings.TrimSpace(config.Value("MUSIC_MAX_BYTES_PER_USER")))
 	if raw == "" {
@@ -564,7 +489,6 @@ func userQuotaBytes() int64 {
 	return n * mult
 }
 
-// bytesUsedBy sums the originals and compatible copies a user has uploaded.
 func (s *Server) bytesUsedBy(userID string) (int64, error) {
 	var used int64
 	err := s.db.QueryRow(`SELECT COALESCE(SUM(file_size + COALESCE(alt_size, 0)), 0) FROM tracks WHERE user_id = ?`, userID).Scan(&used)
@@ -582,12 +506,8 @@ func humanBytes(n int64) string {
 	}
 }
 
-// transcodeSlots caps how many conversions run at once. ffmpeg is CPU-hungry
-// and a bulk upload would otherwise start one per file and swamp the machine.
 var transcodeSlots = make(chan struct{}, 2)
 
-// startCompatibleCopy produces the widely-playable copy in the background and
-// records it against the track when it is ready.
 func (s *Server) startCompatibleCopy(trackID, originalRel string) {
 	if !needsCompatibleCopy[strings.ToLower(filepath.Ext(originalRel))] {
 		return
@@ -608,8 +528,6 @@ func (s *Server) startCompatibleCopy(trackID, originalRel string) {
 			logErr("record compatible copy", err)
 			return
 		}
-		// The track may have been deleted while ffmpeg was running; if
-		// so nothing references this file, so don't leave it behind.
 		if n, _ := res.RowsAffected(); n == 0 {
 			os.Remove(filepath.Join(s.dataDir, alt.relPath))
 			return
@@ -620,7 +538,6 @@ func (s *Server) startCompatibleCopy(trackID, originalRel string) {
 
 func sanitizeFilename(name string) string {
 	name = strings.TrimSpace(name)
-	// Control characters out.
 	var b strings.Builder
 	for _, c := range name {
 		if c < 32 {
@@ -630,8 +547,6 @@ func sanitizeFilename(name string) string {
 	}
 	return b.String()
 }
-
-// ---- update / delete ----
 
 func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
@@ -683,9 +598,6 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Everyone can see every track, but only the uploader (or an admin)
-	// may edit it — so "missing" and "not yours" are genuinely different
-	// answers now.
 	var ownerID string
 	switch err := s.db.QueryRow(`SELECT user_id FROM tracks WHERE id = ?`, id).Scan(&ownerID); {
 	case errors.Is(err, sql.ErrNoRows):
@@ -707,7 +619,6 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "update track", err)
 		return
 	}
-	// Corrected tags are the usual reason a lyrics lookup missed.
 	s.forgetLookedUpLyrics(id)
 	t, _, _, ok := s.getTrack(w, r, u.ID, id)
 	if !ok {
@@ -735,12 +646,7 @@ func (s *Server) handleDeleteTrack(w http.ResponseWriter, r *http.Request) {
 	writeNoContent(w)
 }
 
-// removeTrack deletes a track row and every file behind it, leaving a
-// tombstone so syncing clients learn it's gone. Authorisation is the
-// caller's job.
 func (s *Server) removeTrack(id string) error {
-	// Read the paths before the row goes: afterwards there is nothing
-	// left to look them up from and the files would be orphaned.
 	var filePath, altPath string
 	var hasCover int
 	err := s.db.QueryRow(`SELECT file_path, COALESCE(alt_path, ''), has_cover FROM tracks WHERE id = ?`, id).
@@ -767,11 +673,6 @@ func (s *Server) removeTrack(id string) error {
 	return nil
 }
 
-// ---- delta sync ----
-
-// TrackChanges is what GET /api/tracks/changes?since=<RFC3339> returns: every
-// track created or modified after the cut-off, the ids of tracks deleted
-// since, and the server time to pass back as the next "since".
 type TrackChanges struct {
 	Tracks  []*Track `json:"tracks"`
 	Deleted []string `json:"deleted"`
@@ -787,8 +688,6 @@ func (s *Server) handleTrackChanges(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Taken before the queries so anything written during them is
-	// reported again next time rather than lost in the gap.
 	now := nowRFC3339()
 
 	rows, err := s.db.Query(trackSelect+` WHERE t.updated_at > ? ORDER BY t.updated_at ASC`,
@@ -829,8 +728,6 @@ func (s *Server) handleTrackChanges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, changes)
 }
 
-// ---- streaming ----
-
 func (s *Server) handleStreamTrack(w http.ResponseWriter, r *http.Request) {
 	s.serveTrackFile(w, r, false)
 }
@@ -848,9 +745,6 @@ func (s *Server) serveTrackFile(w http.ResponseWriter, r *http.Request, download
 		return
 	}
 
-	// The original is the default everywhere. A client that cannot decode
-	// it (iOS with an Ogg file, say) asks for ?version=compatible and gets
-	// the AAC copy made at upload time, when one exists.
 	if wantsCompatible(r) && t.HasCompatible {
 		if alt := s.altPathFor(id); alt != "" {
 			filePath = alt
@@ -871,20 +765,13 @@ func (s *Server) serveTrackFile(w http.ResponseWriter, r *http.Request, download
 	}
 	w.Header().Set("Content-Type", t.MimeType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	// http.ServeContent handles Range / 206 / Content-Length / If-Range.
 	http.ServeContent(w, r, fileName, timeZero, f)
 }
 
-// wantsCompatible reports whether the caller asked for the widely-playable
-// copy. Anything other than "compatible" means the original, so a stray value
-// can never silently downgrade what someone hears.
 func wantsCompatible(r *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("version")), "compatible")
 }
 
-// altPathFor reads the stored path of the compatible copy, or "" if there is
-// none. Read from the database rather than derived from a naming convention so
-// the two can never disagree.
 func (s *Server) altPathFor(trackID string) string {
 	var path string
 	if err := s.db.QueryRow(`SELECT COALESCE(alt_path, '') FROM tracks WHERE id = ?`, trackID).
@@ -895,8 +782,6 @@ func (s *Server) altPathFor(trackID string) string {
 	return path
 }
 
-// swapExtension renames a download so the file the user saves matches what is
-// actually inside it.
 func swapExtension(name, ext string) string {
 	return strings.TrimSuffix(name, filepath.Ext(name)) + ext
 }
@@ -913,9 +798,6 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no cover art")
 		return
 	}
-	// The ETag carries updated_at, which moves whenever art is replaced,
-	// so a match can be answered before the file is even opened — which is
-	// most cover requests once the list has been scrolled once.
 	etag := `"cover-` + id + `-` + t.UpdatedAt + `"`
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("ETag", etag)
@@ -928,12 +810,6 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "read cover", err)
 		return
 	}
-	// Cover bytes come from the uploader's file (an embedded ID3 picture)
-	// or a remote provider, so they are untrusted. DetectContentType will
-	// happily report text/html for HTML-shaped bytes, and this endpoint is
-	// same-origin with the app, so serving that would be stored XSS against
-	// every listener. Only recognised raster image types are served, and
-	// nosniff stops the browser second-guessing us.
 	ct := http.DetectContentType(b)
 	if !allowedImageTypes[ct] {
 		logErr("cover art", fmt.Errorf("track %s: refusing to serve cover of type %q", id, ct))
@@ -952,7 +828,6 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTrackPlay(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
-	// Any user may play any track, but the count is theirs alone.
 	var exists int
 	if err := s.db.QueryRow(`SELECT COUNT(1) FROM tracks WHERE id = ?`, id).Scan(&exists); err != nil {
 		s.internalErr(w, "check track", err)

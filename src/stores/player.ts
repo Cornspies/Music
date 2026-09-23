@@ -1,9 +1,5 @@
 "use client"
 
-// Player store — THE HEART. A single module-level AudioEngine (two <audio>
-// elements, see lib/audio-engine.ts) shared by the whole app, driven by a
-// zustand store. Volume and playback settings are persisted ("music-volume").
-
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { toast } from "sonner"
@@ -14,7 +10,6 @@ import { useAuthStore } from "@/stores/auth"
 
 export type RepeatMode = "off" | "all" | "one"
 
-/** Crossfade lengths offered in the playback settings menu, in seconds. */
 export const CROSSFADE_OPTIONS = [0, 2, 4, 8, 12] as const
 
 interface PlayerState {
@@ -43,25 +38,17 @@ interface PlayerState {
   jumpTo: (index: number) => void
   clearQueue: () => void
   stop: () => void
-  /** housekeeping when a track is deleted from the library */
   handleTrackDeleted: (id: string) => void
-  /** swap metadata for an edited track everywhere (queue + current) */
   replaceTrack: (track: Track) => void
-  /** sleep timer: minutes from now, or null to cancel. 0 = end of current track. */
   setSleepTimer: (minutes: number | null) => void
-  /** epoch-ms when the sleep timer fires (null when off) */
   sleepEndsAt: number | null
-  /** true → stop playback at the end of the current track */
   sleepAfterTrack: boolean
-  /** seconds of overlap between tracks; 0 = gapless (next track pre-buffered) */
   crossfadeSeconds: number
   setCrossfade: (seconds: number) => void
-  /** level tracks to a common loudness using the server's analysis */
   normalizeVolume: boolean
   setNormalizeVolume: (on: boolean) => void
 }
 
-// module-level handle for the pending sleep timeout
 let sleepTimeout: ReturnType<typeof setTimeout> | null = null
 
 function clearSleepTimeout() {
@@ -81,9 +68,6 @@ function getEngine(): AudioEngine | null {
         noteListening(position)
         usePlayerStore.setState({ position })
         if (position % 5 < 0.3) updatePositionState()
-        // The seek that puts a restored track at its saved position fires
-        // this too; only a real move is worth writing back (a stale write
-        // would clobber what another device saved since).
         if (Math.abs(position - lastSavedPosition) >= 1) positionDirty = true
         persistPlayback()
       },
@@ -94,8 +78,6 @@ function getEngine(): AudioEngine | null {
       onPlay: () => {
         usePlayerStore.setState({ isPlaying: true })
         updatePositionState()
-        // A track restored from the last session resumes without a new play
-        // event; its listening still counts against the play it belongs to.
         const cur = usePlayerStore.getState().currentTrack
         if (cur && listening?.trackId !== cur.id) {
           flushListening()
@@ -117,15 +99,12 @@ function getEngine(): AudioEngine | null {
         if (s.repeat === "one" && s.currentTrack) {
           engine?.seek(0)
           engine?.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
-          // Starting over is another play, as it would be from the queue.
           reportPlay(s.currentTrack)
         } else {
           s.next()
         }
       },
       onAdvanced: (track) => {
-        // The engine started the prepared track on its own (gapless or
-        // crossfade); catch the queue up to it.
         const s = usePlayerStore.getState()
         const index = pendingNextIndex >= 0 && s.queue[pendingNextIndex]?.id === track.id
           ? pendingNextIndex
@@ -160,22 +139,10 @@ function getEngine(): AudioEngine | null {
 }
 
 function reportPlay(track: Track) {
-  // A new play: whatever the previous track still had unreported goes out
-  // first, against that track.
   flushListening()
   listening = { trackId: track.id, lastPosition: null, unreported: 0 }
-  api(`/api/tracks/${track.id}/play`, { method: "POST" }).catch(() => {
-    // play-count reporting is best-effort
-  })
+  api(`/api/tracks/${track.id}/play`, { method: "POST" }).catch(() => {})
 }
-
-// ---- listening time ---------------------------------------------------------
-//
-// The history's "time listened" counts what was actually heard, not track
-// lengths: playback progress is accumulated here in small steps (a jump of
-// more than a couple of seconds is a seek, not listening) and sent to the
-// server every so often, on pause, on track change and when the page goes
-// away. A lost report costs at most one interval.
 
 const LISTEN_REPORT_INTERVAL_S = 15
 
@@ -202,9 +169,7 @@ function flushListening(keepalive = false) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ seconds }),
     keepalive,
-  }).catch(() => {
-    // best-effort; the next report carries on from here
-  })
+  }).catch(() => {})
 }
 
 function updateMediaSession(track: Track) {
@@ -216,9 +181,7 @@ function updateMediaSession(track: Track) {
       album: track.album || "",
       artwork: track.hasCover ? [{ src: coverUrl(track), sizes: "512x512" }] : [],
     })
-  } catch {
-    // MediaMetadata not supported
-  }
+  } catch {}
 }
 
 function updatePositionState() {
@@ -233,9 +196,7 @@ function updatePositionState() {
         position: Math.min(engine.currentTime, duration),
       })
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 function wireMediaSession(e: AudioEngine) {
@@ -244,9 +205,7 @@ function wireMediaSession(e: AudioEngine) {
   const trySet = (action: MediaSessionAction, handler: ((details: MediaSessionActionDetails) => void) | null) => {
     try {
       ms.setActionHandler(action, handler)
-    } catch {
-      // action unsupported on this browser
-    }
+    } catch {}
   }
   trySet("play", () => {
     e.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
@@ -261,12 +220,8 @@ function wireMediaSession(e: AudioEngine) {
   trySet("seekforward", null)
 }
 
-// Index of the track the engine has been told to buffer as "next", or -1.
-// Chosen once per track so shuffle picks the same song for the pre-buffer
-// and for a manual skip.
 let pendingNextIndex = -1
 
-/** Works out what follows the current track and lets the engine buffer it. */
 function prepareNext() {
   const e = getEngine()
   if (!e) return
@@ -288,7 +243,6 @@ function prepareNext() {
   e.prepareNext(next >= 0 ? queue[next] : null)
 }
 
-/** Load queue[index] into the engine and play it. */
 function playIndex(index: number) {
   const s = usePlayerStore.getState()
   const track = s.queue[index]
@@ -310,28 +264,12 @@ function playIndex(index: number) {
   prepareNext()
 }
 
-// ---- continue listening ------------------------------------------------------
-//
-// The server remembers what each user last had loaded (track, position, up-next
-// queue), so a closed tab or a different device can pick up where they left
-// off. Saved every few seconds while playing, immediately on pause and on
-// track change, and with a keepalive request as the page goes away. Only
-// state that actually changed here is written, so a tab left paused for hours
-// never overwrites what another device has been doing since.
-//
-// The other direction: a paused tab that comes back into view (or has sat
-// idle for a minute) asks the server whether another device saved since the
-// state it has — cheap, the answer is usually "no" — and if so shows that
-// track instead, paused, where it was left.
-
 const SAVE_INTERVAL_MS = 10_000
 const SYNC_INTERVAL_MS = 60_000
 let positionDirty = false
 let lastSaveAt = 0
 let lastSavedPosition = 0
 let lastSavedQueueKey = ""
-// The server's stamp on the state this tab has: what it restored, or what
-// its latest save produced.
 let knownUpdatedAt = ""
 let restoring = false
 let syncing = false
@@ -341,7 +279,6 @@ function queueKey(queue: Track[]): string {
 }
 
 function noteUpdatedAt(stamp: string | undefined) {
-  // Responses can come back out of order; the stamps sort as text.
   if (stamp && stamp > knownUpdatedAt) knownUpdatedAt = stamp
 }
 
@@ -358,8 +295,6 @@ function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
   lastSaveAt = now
   positionDirty = false
   lastSavedPosition = s.position
-  // Marked as saved up front so a second call in the same tick doesn't send
-  // the queue twice; a failed request resets both so the next save resends.
   if (queueChanged) lastSavedQueueKey = key
   savePlayback(
     {
@@ -376,18 +311,11 @@ function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
     })
 }
 
-/** True when everything this tab changed has been written to the server. */
 function nothingUnsaved(): boolean {
   const s = usePlayerStore.getState()
   return !positionDirty && (!s.currentTrack || queueKey(s.queue) === lastSavedQueueKey)
 }
 
-/**
- * Puts the server's state into the player, paused, at the saved position —
- * never auto-playing: browsers block it, and a tab opened by accident
- * shouldn't start making noise. A state that matches what's loaded only
- * updates the bookkeeping, so the audio isn't fetched again.
- */
 function applyServerState(state: PlaybackState) {
   const s = usePlayerStore.getState()
   const same =
@@ -412,8 +340,6 @@ function applyServerState(state: PlaybackState) {
     updateMediaSession(state.track)
     restoring = false
   }
-  // What's loaded is exactly what the server has — nothing to write until
-  // the user actually does something.
   lastSavedQueueKey = queueKey(state.queue)
   lastSavedPosition = state.position
   positionDirty = false
@@ -421,10 +347,6 @@ function applyServerState(state: PlaybackState) {
   noteUpdatedAt(state.updatedAt)
 }
 
-/**
- * Loads the server-remembered track when the app starts. Skipped when this
- * session already has something loaded.
- */
 export async function restorePlayback(): Promise<void> {
   if (usePlayerStore.getState().currentTrack) return
   let state: PlaybackState | null
@@ -437,12 +359,6 @@ export async function restorePlayback(): Promise<void> {
   applyServerState(state)
 }
 
-/**
- * Catches a paused tab up with what another device did. Nothing happens
- * while this tab is playing (it is the source of truth then) or still has
- * changes to write; otherwise the server is asked for anything newer than
- * the state here, and that is shown.
- */
 async function syncPlayback(): Promise<void> {
   if (syncing || restoring) return
   const s = usePlayerStore.getState()
@@ -452,9 +368,7 @@ async function syncPlayback(): Promise<void> {
     const state = await fetchPlayback(knownUpdatedAt || undefined)
     const now = usePlayerStore.getState()
     if (state && !now.isPlaying && nothingUnsaved()) applyServerState(state)
-  } catch {
-    // Best-effort; the next chance to sync comes soon.
-  } finally {
+  } catch {} finally {
     syncing = false
   }
 }
@@ -534,13 +448,11 @@ export const usePlayerStore = create<PlayerState>()(
         const { queue, queueIndex, shuffle, repeat } = get()
         if (queue.length === 0) return
         if (queue.length === 1) {
-          // single track: loop if repeating, otherwise just restart
           const e = getEngine()
           if (e) {
             e.seek(0)
             if (repeat !== "off" || usePlayerStore.getState().isPlaying) {
               e.play().catch(() => set({ isPlaying: false }))
-              // Playing it again counts, like any other track start.
               reportPlay(queue[0])
             }
           }
@@ -548,7 +460,6 @@ export const usePlayerStore = create<PlayerState>()(
         }
         let nextIndex: number
         if (pendingNextIndex >= 0 && pendingNextIndex < queue.length) {
-          // Whatever was pre-buffered — the same choice a crossfade would make.
           nextIndex = pendingNextIndex
         } else if (shuffle) {
           do {
@@ -682,17 +593,12 @@ export const usePlayerStore = create<PlayerState>()(
           position: 0,
           duration: 0,
         })
-        // Local bookkeeping only. The server's copy is left alone: stop() also
-        // runs on logout and when the playing track was deleted, and neither
-        // should forget the position for the user's other devices.
         positionDirty = false
         lastSavedQueueKey = ""
         if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
           try {
             navigator.mediaSession.metadata = null
-          } catch {
-            // ignore
-          }
+          } catch {}
         }
       },
 
@@ -704,7 +610,6 @@ export const usePlayerStore = create<PlayerState>()(
           return
         }
         if (minutes === 0) {
-          // 0 = "end of current track"
           set({ sleepEndsAt: null, sleepAfterTrack: true })
           prepareNext()
           toast("Sleep timer set")
@@ -775,8 +680,6 @@ export const usePlayerStore = create<PlayerState>()(
 )
 
 if (typeof window !== "undefined") {
-  // pagehide covers tab close, navigation and bfcache; visibilitychange
-  // covers switching apps on mobile, where pagehide may never come.
   window.addEventListener("pagehide", () => {
     flushListening(true)
     persistPlayback({ force: true, keepalive: true })
@@ -789,15 +692,10 @@ if (typeof window !== "undefined") {
       syncPlayback()
     }
   })
-  // Coming back to the window after using the phone; and, for a tab that
-  // stays in view on a desk while the phone plays, a look every so often.
   window.addEventListener("focus", () => syncPlayback())
   setInterval(() => {
     if (document.visibilityState === "visible") syncPlayback()
   }, SYNC_INTERVAL_MS)
-  // Queue edits (add / remove / reorder) are rare; write them straight away.
-  // Deferred a microtask so that playNow — which sets the queue and then the
-  // track in two updates — produces one save carrying both, not two.
   usePlayerStore.subscribe((s, prev) => {
     if (s.queue !== prev.queue) queueMicrotask(() => persistPlayback({ force: true }))
   })

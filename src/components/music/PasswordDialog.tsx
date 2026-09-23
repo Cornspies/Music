@@ -17,7 +17,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-/** Change account password dialog (POST /api/auth/password). */
 export function PasswordDialog() {
   const open = useUIStore((s) => s.passwordOpen)
   const setOpen = useUIStore((s) => s.setPasswordOpen)
@@ -49,8 +48,6 @@ export function PasswordDialog() {
     setBusy(true)
     setError(null)
     try {
-      // NOTE: raw fetch (not api()) — a 401 here means "wrong current
-      // password", NOT an expired session, so it must not log the user out.
       const res = await fetch(gw("/api/auth/password"), {
         method: "POST",
         headers: {
@@ -64,20 +61,14 @@ export function PasswordDialog() {
         try {
           const data = (await res.json()) as { error?: string }
           if (data.error) message = data.error
-        } catch {
-          // ignore parse errors
-        }
+        } catch {}
         setError(message)
         return
       }
-      // Every other session was just revoked; the server hands this one a
-      // replacement token so it stays signed in.
       try {
         const data = (await res.json()) as { token?: string }
         if (data.token) useAuthStore.setState({ token: data.token })
-      } catch {
-        // an older server answers 204; the existing token is still valid then
-      }
+      } catch {}
       toast.success("Password changed", {
         description: "Other devices were signed out.",
       })

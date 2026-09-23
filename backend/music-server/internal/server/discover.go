@@ -22,96 +22,54 @@ import (
 	"music-server/internal/config"
 )
 
-// Discover: search an online catalogue of freely downloadable music and add
-// a track to the library with one click. The server does the download, so
-// the file arrives tagged, with cover art, and goes through the same
-// pipeline as an upload (transcode, analysis, quota).
-//
-// Catalogues implement source: NCS (ncs.go) always, SoundCloud's Creative
-// Commons tracks (soundcloud.go) unless switched off, YouTube through yt-dlp
-// (ytdlp.go) when the server is configured for it. A track remembers where
-// it came from (tracks.source / source_id), which is how results are marked
-// "already in the library" and duplicates are refused.
-
-// source is an online catalogue that can be searched and downloaded from.
 type source interface {
-	// key is the short id used in the API ("ncs").
 	key() string
-	// name is what people see.
 	name() string
-	// search returns one page of matches and whether there is a next page.
 	search(ctx context.Context, query string, page int) ([]discoverResult, bool, error)
-	// fetch downloads one track. The caller closes the body.
 	fetch(ctx context.Context, id string) (*sourceDownload, error)
-	// coverAllowed says whether the artwork proxy may fetch this URL: only
-	// the catalogue's own image host, so the proxy can't be pointed elsewhere.
 	coverAllowed(u string) bool
 }
 
-// discoverResult is one search hit, as the clients see it.
 type discoverResult struct {
-	Source string `json:"source"`
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Artist string `json:"artist"`
-	Genre  string `json:"genre,omitempty"`
-	Year   int    `json:"year,omitempty"`
-	// Duration in seconds, when the catalogue lists it.
-	Duration float64 `json:"duration,omitempty"`
-	CoverURL string  `json:"coverUrl,omitempty"`
-	// PageURL is the track's page on the catalogue's own site.
-	PageURL string `json:"pageUrl,omitempty"`
-	// PreviewURL streams the track from the catalogue for a listen before
-	// adding; empty when the catalogue offers none.
-	PreviewURL string `json:"previewUrl,omitempty"`
-	// License is the track's licence where the catalogue states one
-	// (SoundCloud: "cc-by", "cc-by-nc-sa", "no-rights-reserved", …).
-	License string `json:"license,omitempty"`
-	// TrackID is set when this result is already in the library.
-	TrackID string `json:"trackId,omitempty"`
+	Source     string  `json:"source"`
+	ID         string  `json:"id"`
+	Title      string  `json:"title"`
+	Artist     string  `json:"artist"`
+	Genre      string  `json:"genre,omitempty"`
+	Year       int     `json:"year,omitempty"`
+	Duration   float64 `json:"duration,omitempty"`
+	CoverURL   string  `json:"coverUrl,omitempty"`
+	PageURL    string  `json:"pageUrl,omitempty"`
+	PreviewURL string  `json:"previewUrl,omitempty"`
+	License    string  `json:"license,omitempty"`
+	TrackID    string  `json:"trackId,omitempty"`
 }
 
-// sourceDownload is a track being pulled from a catalogue.
 type sourceDownload struct {
-	Body     io.ReadCloser
-	FileName string // with the audio extension; decides the MIME type
-	Size     int64  // -1 when unknown
-	// Tags for the library entry, since downloads are often untagged files.
+	Body                        io.ReadCloser
+	FileName                    string
+	Size                        int64
 	Title, Artist, Album, Genre string
 	Year                        int
-	// Duration in seconds when the catalogue knows it; only MP3s can be
-	// measured without ffprobe.
-	Duration float64
-	CoverURL string
-	// SquareCover crops the middle square out of a wide image (a video
-	// thumbnail) instead of storing it as is.
-	SquareCover bool
-	// LookupMetadata puts the new track on the metadata queue, for sources
-	// whose tags are guesses rather than a catalogue's record.
-	LookupMetadata bool
+	Duration                    float64
+	CoverURL                    string
+	SquareCover                 bool
+	LookupMetadata              bool
 }
 
-// DiscoverSource describes a catalogue to the clients.
 type DiscoverSource struct {
-	Key  string `json:"key"`
-	Name string `json:"name"`
-	// Playlists says a pasted playlist link can be imported (import.go).
-	Playlists bool `json:"playlists"`
+	Key       string `json:"key"`
+	Name      string `json:"name"`
+	Playlists bool   `json:"playlists"`
 }
 
-// DiscoverSearch is what GET /api/discover/search returns.
 type DiscoverSearch struct {
-	Results []discoverResult `json:"results"`
-	Page    int              `json:"page"`
-	HasMore bool             `json:"hasMore"`
-	// Playlist is set when the query was a playlist link: the results are
-	// its tracks, and the whole thing can be imported.
+	Results  []discoverResult  `json:"results"`
+	Page     int               `json:"page"`
+	HasMore  bool              `json:"hasMore"`
 	Playlist *DiscoverPlaylist `json:"playlist,omitempty"`
 }
 
-// DiscoverPlaylist names a catalogue playlist behind a pasted link. Count
-// is how many of its tracks are listed (and would be imported); Total how
-// many it has, when a long one was cut short.
 type DiscoverPlaylist struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -121,11 +79,7 @@ type DiscoverPlaylist struct {
 
 var discoverSources = []source{ncsSource{}}
 
-// initDiscoverSources adds the optional sources once the environment is
-// known (package init runs before .env is read). Called at start-up.
 func (s *Server) initDiscoverSources() {
-	// The order is the order of the tabs, and the first is the one Discover
-	// opens on: YouTube (when yt-dlp is set up), NCS, SoundCloud.
 	var list []source
 	yt, err := newYTDLPSource(s.dataDir)
 	switch {
@@ -136,8 +90,6 @@ func (s *Server) initDiscoverSources() {
 		log.Printf("discover: %s", yt.describe())
 	}
 	list = append(list, ncsSource{})
-	// SoundCloud's Creative Commons tracks: legal to keep and needing no
-	// extra software, so on unless switched off.
 	if !config.Flag("MUSIC_DISABLE_SOUNDCLOUD") {
 		list = append(list, soundcloudSource{})
 	}
@@ -155,11 +107,8 @@ func findSource(key string) source {
 	return nil
 }
 
-// maxDiscoverBytes caps one catalogue download; NCS files are 5–15 MB.
 const maxDiscoverBytes = 200 << 20
 
-// discoverClient downloads from catalogues. Longer timeout than the metadata
-// lookups (a whole file comes down), same private-network guard.
 var discoverClient = &http.Client{
 	Timeout:       2 * time.Minute,
 	CheckRedirect: metadataLookupClient.CheckRedirect,
@@ -177,7 +126,6 @@ func (s *Server) handleDiscoverSources(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleDiscoverSearch: GET /api/discover/search?source=ncs&q=…&page=1
 func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 	if discoverDisabled() {
 		writeErr(w, http.StatusNotFound, "discover is disabled on this server")
@@ -198,8 +146,6 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 		page = 1
 	}
 
-	// A playlist link lists the playlist, so it can be looked over and then
-	// imported as a whole.
 	if ps, ok := src.(playlistSource); ok {
 		if listID := ps.playlistID(q); listID != "" {
 			if page > 1 {
@@ -239,10 +185,6 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, DiscoverSearch{Results: results, Page: page, HasMore: more})
 }
 
-// handleDiscoverArtwork: GET /api/discover/artwork?source=ncs&u=<url>.
-// Result thumbnails go through here rather than straight to the catalogue's
-// CDN, so the page's img-src policy stays 'self' and the browser never talks
-// to a third party. A media route: <img> can't send headers.
 func (s *Server) handleDiscoverArtwork(w http.ResponseWriter, r *http.Request) {
 	src := findSource(r.URL.Query().Get("source"))
 	u := r.URL.Query().Get("u")
@@ -270,7 +212,6 @@ func (s *Server) handleDiscoverArtwork(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
-// markInLibrary fills TrackID on results that were added before.
 func (s *Server) markInLibrary(results []discoverResult) {
 	for i := range results {
 		var id string
@@ -282,9 +223,6 @@ func (s *Server) markInLibrary(results []discoverResult) {
 	}
 }
 
-// handleDiscoverAdd: POST /api/discover/add {"source":"ncs","id":"…"}.
-// Answers 200 with the existing track when it is already in the library,
-// 201 with the new one otherwise.
 func (s *Server) handleDiscoverAdd(w http.ResponseWriter, r *http.Request) {
 	if discoverDisabled() {
 		writeErr(w, http.StatusNotFound, "discover is disabled on this server")
@@ -363,9 +301,6 @@ type statusError struct {
 
 func (e *statusError) Error() string { return e.msg }
 
-// ingestDownload stores a catalogue download exactly as an upload would be
-// stored — file under uploads/, cover under covers/, a tracks row — then
-// kicks off the compatible copy and analysis. Returns the new track id.
 func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceID string, dl *sourceDownload) (string, error) {
 	ext := strings.ToLower(filepath.Ext(dl.FileName))
 	mimeType, ok := extMime[ext]
@@ -405,9 +340,6 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	}
 
 	hash, _ := fileSHA256(absPath)
-	// The catalogue's listing is the curated record; the file's own tags,
-	// when there are any, tend to be sloppier ("Artist - Title [NCS
-	// Release]" as the title) and only fill what the listing lacks.
 	meta := readMetadata(absPath)
 	title := trimDefault(dl.Title, trimDefault(meta.title, strings.TrimSuffix(dl.FileName, ext)))
 	artist := trimDefault(dl.Artist, trimDefault(meta.artist, "Unknown Artist"))
@@ -470,13 +402,8 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	return id, nil
 }
 
-// Catalogues hand out print-resolution art (NCS: 3000×3000, ~4 MB). Every
-// list row fetches the cover, so that's brought down to what screens use.
 const maxCoverEdge = 1000
 
-// shrinkCover returns a JPEG no larger than maxCoverEdge on a side, or the
-// input unchanged when it is already small enough or can't be decoded (the
-// raster check later decides whether it's served at all).
 func shrinkCover(raw []byte) []byte {
 	if len(raw) == 0 {
 		return raw
@@ -496,8 +423,6 @@ func shrinkCover(raw []byte) []byte {
 	scale := float64(maxCoverEdge) / float64(max(b.Dx(), b.Dy()))
 	w, h := max(1, int(float64(b.Dx())*scale)), max(1, int(float64(b.Dy())*scale))
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
-	// Box filter: each output pixel averages the block of source pixels it
-	// covers, which is what you want when shrinking by 3× or more.
 	for y := 0; y < h; y++ {
 		y0 := b.Min.Y + y*b.Dy()/h
 		y1 := max(y0+1, b.Min.Y+(y+1)*b.Dy()/h)

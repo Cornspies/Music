@@ -17,7 +17,6 @@ import (
         "music-server/internal/config"
 )
 
-// Server holds all dependencies for the music API.
 type Server struct {
         db      *sql.DB
         secret  []byte
@@ -27,16 +26,10 @@ type Server struct {
         avaDir  string
 }
 
-// Options carries settings that come from configuration rather than the
-// data directory's own layout.
 type Options struct {
-        // JWTSecret, when non-empty, is used instead of the generated
-        // <dataDir>/secret.txt. Must be at least 32 characters; only the first
-        // 32 bytes are used, matching the generated secret's length.
         JWTSecret string
 }
 
-// New opens the database, applies migrations and prepares directories.
 func New(dataDir string, opts Options) (*Server, error) {
         if err := os.MkdirAll(dataDir, 0o755); err != nil {
                 return nil, err
@@ -55,8 +48,6 @@ func New(dataDir string, opts Options) (*Server, error) {
                 return nil, err
         }
 
-        // A configured secret wins, so instances can share one without
-        // syncing secret.txt between them.
         var secret []byte
         if opts.JWTSecret != "" {
                 if len(opts.JWTSecret) < 32 {
@@ -73,7 +64,6 @@ func New(dataDir string, opts Options) (*Server, error) {
         return &Server{db: db, secret: secret, dataDir: dataDir, upDir: upDir, covDir: covDir, avaDir: avaDir}, nil
 }
 
-// Routes builds the HTTP handler with auth, CORS and logging.
 func (s *Server) Routes() http.Handler {
         mux := http.NewServeMux()
 
@@ -87,7 +77,6 @@ func (s *Server) Routes() http.Handler {
                 })
         })
 
-        // Auth (public)
         mux.HandleFunc("GET /api/auth/config", s.handleAuthConfig)
         mux.HandleFunc("GET /api/auth/invite/{code}", s.handleCheckInvite)
         mux.HandleFunc("POST /api/auth/register", s.handleRegister)
@@ -99,14 +88,10 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("POST /api/auth/username", s.requireAuth(s.handleRenameAccount))
         mux.HandleFunc("POST /api/auth/delete-account", s.requireAuth(s.handleDeleteAccount))
 
-        // Tracks
         mux.HandleFunc("GET /api/tracks", s.requireAuth(s.handleListTracks))
         mux.HandleFunc("POST /api/tracks", s.requireAuth(s.handleUploadTrack))
         mux.HandleFunc("PATCH /api/tracks/{id}", s.requireAuth(s.handleUpdateTrack))
         mux.HandleFunc("DELETE /api/tracks/{id}", s.requireAuth(s.handleDeleteTrack))
-        // Media routes: fetched by <audio>/<img> and native players that can't
-        // send headers, so these also accept the short-lived media token and
-        // the ?token= query parameter. Nothing else does.
         mux.HandleFunc("GET /api/tracks/{id}/stream", s.requireMediaAuth(s.handleStreamTrack))
         mux.HandleFunc("GET /api/tracks/{id}/download", s.requireMediaAuth(s.handleDownloadTrack))
         mux.HandleFunc("GET /api/tracks/{id}/cover", s.requireMediaAuth(s.handleTrackCover))
@@ -116,9 +101,6 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("GET /api/discover/search", s.requireAuth(s.handleDiscoverSearch))
         mux.HandleFunc("POST /api/discover/add", s.requireAuth(s.handleDiscoverAdd))
         mux.HandleFunc("GET /api/discover/artwork", s.requireMediaAuth(s.handleDiscoverArtwork))
-        // Share links: the three public ones take their token in the path
-        // and never look at the session — that is what makes a link work for
-        // someone without an account.
         mux.HandleFunc("GET /api/app/releases", s.requireAuth(s.handleAppReleases))
         mux.HandleFunc("GET /api/app/releases/{file}", s.requireMediaAuth(s.handleAppReleaseDownload))
         mux.HandleFunc("GET /api/admin/shares", s.requireAdmin(s.handleAdminShares))
@@ -153,10 +135,8 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("GET /api/tracks/{id}/metadata/candidates/{candidateId}/artwork", s.requireMediaAuth(s.handleCandidateArtwork))
         mux.HandleFunc("POST /api/tracks/{id}/metadata/apply", s.requireAuth(s.handleApplyTrackMetadata))
 
-        // Listening history
         mux.HandleFunc("GET /api/history", s.requireAuth(s.handleHistory))
 
-        // Admin
         mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminListUsers))
         mux.HandleFunc("DELETE /api/admin/users/{id}", s.requireAdmin(s.handleAdminDeleteUser))
         mux.HandleFunc("PATCH /api/admin/users/{id}", s.requireAdmin(s.handleAdminUpdateUser))
@@ -167,11 +147,9 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("POST /api/admin/invites/{code}/revoke", s.requireAdmin(s.handleAdminRevokeInvite))
         mux.HandleFunc("DELETE /api/admin/invites/{code}", s.requireAdmin(s.handleAdminDeleteInvite))
 
-        // Aggregates
         mux.HandleFunc("GET /api/albums", s.requireAuth(s.handleListAlbums))
         mux.HandleFunc("GET /api/artists", s.requireAuth(s.handleListArtists))
 
-        // Playlists
         mux.HandleFunc("GET /api/playlists", s.requireAuth(s.handleListPlaylists))
         mux.HandleFunc("GET /api/playlists/public", s.requireAuth(s.handleListPublicPlaylists))
         mux.HandleFunc("POST /api/playlists", s.requireAuth(s.handleCreatePlaylist))
@@ -183,31 +161,24 @@ func (s *Server) Routes() http.Handler {
         mux.HandleFunc("POST /api/playlists/{id}/tracks", s.requireAuth(s.handleAddPlaylistTrack))
         mux.HandleFunc("DELETE /api/playlists/{id}/tracks/{trackId}", s.requireAuth(s.handleRemovePlaylistTrack))
 
-        // Playback position ("continue listening")
         mux.HandleFunc("GET /api/playback", s.requireAuth(s.handleGetPlayback))
         mux.HandleFunc("PUT /api/playback", s.requireAuth(s.handlePutPlayback))
 
-        // Favorites
         mux.HandleFunc("GET /api/favorites", s.requireAuth(s.handleListFavorites))
         mux.HandleFunc("POST /api/favorites/{trackId}", s.requireAuth(s.handleAddFavorite))
         mux.HandleFunc("DELETE /api/favorites/{trackId}", s.requireAuth(s.handleRemoveFavorite))
 
-        // Search & stats
         mux.HandleFunc("GET /api/search", s.requireAuth(s.handleSearch))
         mux.HandleFunc("GET /api/stats", s.requireAuth(s.handleStats))
 
         return s.middleware(mux)
 }
 
-// middleware adds logging then CORS handling around the mux.
 func (s *Server) middleware(next http.Handler) http.Handler {
         logMW := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
                 start := time.Now()
                 sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
                 next.ServeHTTP(sw, r)
-                // Position saves arrive every few seconds from every playing client
-                // and would drown everything else in the log; they're only logged
-                // when something went wrong with one.
                 positionSave := r.Method == http.MethodPut && r.URL.Path == "/api/playback" && sw.code < 400
                 if r.URL.Path != "/healthz" && !positionSave {
                         log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, time.Since(start).Round(time.Millisecond))
@@ -215,14 +186,8 @@ func (s *Server) middleware(next http.Handler) http.Handler {
         })
 
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-                // Never let a browser second-guess a declared content type. The
-                // cover endpoint serves bytes that originate in uploaded files.
                 w.Header().Set("X-Content-Type-Options", "nosniff")
 
-                // CORS is opt-in. The web app reaches the API through a
-                // same-origin rewrite, so no cross-origin access is needed by
-                // default; set MUSIC_CORS_ORIGINS (comma-separated, or "*") only
-                // if you have another client that needs it.
                 if origin := r.Header.Get("Origin"); origin != "" && corsAllows(origin) {
                         w.Header().Set("Access-Control-Allow-Origin", origin)
                         w.Header().Set("Vary", "Origin")
@@ -238,9 +203,6 @@ func (s *Server) middleware(next http.Handler) http.Handler {
         })
 }
 
-// corsAllows reports whether an Origin is permitted by MUSIC_CORS_ORIGINS.
-// Unset means "no cross-origin access", which is the right default for a
-// server sitting behind the app's own reverse proxy.
 func corsAllows(origin string) bool {
         raw := config.Value("MUSIC_CORS_ORIGINS")
         if raw == "" {
@@ -265,8 +227,6 @@ func (w *statusWriter) WriteHeader(code int) {
         w.ResponseWriter.WriteHeader(code)
 }
 
-// ---- helpers ----
-
 func writeJSON(w http.ResponseWriter, code int, v any) {
         w.Header().Set("Content-Type", "application/json")
         w.WriteHeader(code)
@@ -283,38 +243,21 @@ func writeNoContent(w http.ResponseWriter) {
         w.WriteHeader(http.StatusNoContent)
 }
 
-// User is the authenticated principal stored in request context.
 type User struct {
         ID       string
         Username string
-        // Role is "user" or "admin", read from the database (not the token)
-        // so a promotion takes effect on the next request.
         Role string
-        // ExpiresAt is the "exp" claim of the token this request was
-        // authenticated with. requireAuth uses it to decide when to hand the
-        // client a freshly minted token (see sliding sessions in auth.go).
         ExpiresAt time.Time
-        // OrigIssuedAt is when the session was originally signed in, carried
-        // across refreshes so the absolute session ceiling holds.
         OrigIssuedAt time.Time
-        // IsMediaToken is true when the request authenticated with a
-        // short-lived media token rather than a session.
         IsMediaToken bool
 }
 
-// IsAdmin reports whether the user may manage the server.
 func (u *User) IsAdmin() bool { return u != nil && u.Role == roleAdmin }
 
 func logErr(ctx string, err error) {
         log.Printf("ERROR %s: %v", ctx, err)
 }
 
-// logPanic, deferred at the top of a background task, keeps a panic in that
-// task from taking the whole server down. net/http recovers a request's
-// panic on its own; a goroutine of ours has no such net, and several read
-// what people upload (tags, cover images) — one crafted file would crash the
-// server, and crash it again on every restart while a start-up backfill
-// still had it queued. The task in hand is abandoned; the rest carry on.
 func logPanic(task string) {
         if v := recover(); v != nil {
                 log.Printf("PANIC in %s (recovered): %v\n%s", task, v, debug.Stack())
@@ -352,7 +295,6 @@ func nowRFC3339() string {
         return time.Now().UTC().Format(time.RFC3339)
 }
 
-// timeZero disables Last-Modified in http.ServeContent (we use Cache-Control + ETag).
 var timeZero time.Time
 
 func trimDefault(s, def string) string {

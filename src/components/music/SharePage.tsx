@@ -8,12 +8,6 @@ import { formatDuration } from "@/lib/format"
 import type { SharedTrack } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 
-/**
- * The page behind a share link: one track, playable by whoever opens it,
- * with no account on this server. It is its own small player rather than
- * the app — the visitor has no library, no queue and no session, and the
- * page is rendered before the sign-in gate for exactly that reason.
- */
 export function SharePage({ token }: { token: string }) {
   const [state, setState] = useState<{ track?: SharedTrack; error?: string } | null>(null)
 

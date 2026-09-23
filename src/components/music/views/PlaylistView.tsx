@@ -42,12 +42,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-/**
- * Copies a shareable link to a playlist. The link is this app's own URL, so
- * it works in any browser and — on Android with a matching build — opens
- * the app. Whoever follows it still needs an account on this server; a
- * single track can be shared with someone who hasn't (see ShareDialog).
- */
 async function copyPlaylistLink(playlistId: string): Promise<void> {
   const url = `${window.location.origin}/playlists/${encodeURIComponent(playlistId)}`
   if (await copyText(url)) toast.success("Link copied")
@@ -176,8 +170,6 @@ export function PlaylistView() {
                     const next = !detail.isPublic
                     const ok = await useLibraryStore.getState().setPlaylistPublic(detail.id, next)
                     if (ok) {
-                      // Reflect it locally; setPlaylistPublic already updated
-                      // the sidebar/grid copy in the store.
                       setDetail((prev) => (prev ? { ...prev, isPublic: next } : prev))
                       toast.success(
                         next
@@ -221,7 +213,6 @@ export function PlaylistView() {
               >
                 <LinkIcon className="size-4" /> Copy link
               </button>
-            // Not yours: the useful action is keeping it in your sidebar.
             <button
               type="button"
               onClick={async () => {

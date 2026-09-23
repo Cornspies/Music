@@ -14,18 +14,6 @@ import javax.crypto.spec.GCMParameterSpec
 
 internal actual val defaultBaseUrl: String = "https://music.cornspies.com"
 
-/**
- * Token storage backed by the Android Keystore.
- *
- * The JWT is encrypted with an AES-GCM key that lives in hardware-backed
- * storage (the key itself never leaves the Keystore), and only the ciphertext
- * goes into SharedPreferences. A copy of the prefs file — a backup, a rooted
- * device's file browser, a stray `adb backup` — is therefore useless without
- * this device's key. Backups are switched off in the manifest as well, so the
- * ciphertext doesn't travel either.
- *
- * The server URL is not a secret and stays in plain prefs.
- */
 actual class TokenStore {
     private val prefs = appContext.getSharedPreferences("music", Context.MODE_PRIVATE)
 
@@ -33,8 +21,6 @@ actual class TokenStore {
         migrateLegacyToken()
         val stored = prefs.getString(KEY_TOKEN_ENCRYPTED, null) ?: return null
         return runCatching { decrypt(stored) }.getOrElse {
-            // Key gone (factory reset restore, keystore wiped): the token
-            // can't be read and the user signs in again.
             prefs.edit { remove(KEY_TOKEN_ENCRYPTED) }
             null
         }
@@ -57,14 +43,11 @@ actual class TokenStore {
         prefs.edit { putString("baseUrl", url) }
     }
 
-    /** Older builds stored the token in the clear; move it across once. */
     private fun migrateLegacyToken() {
         val legacy = prefs.getString(KEY_TOKEN_LEGACY, null) ?: return
         runCatching { saveToken(legacy) }
         prefs.edit { remove(KEY_TOKEN_LEGACY) }
     }
-
-    // ---- crypto -------------------------------------------------------------
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance(KEYSTORE).apply { load(null) }
@@ -88,8 +71,6 @@ actual class TokenStore {
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val iv = cipher.iv
         val body = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
-        // iv length prefix + iv + ciphertext, so a future IV size can't be
-        // confused with today's.
         val out = ByteArray(1 + iv.size + body.size)
         out[0] = iv.size.toByte()
         iv.copyInto(out, 1)

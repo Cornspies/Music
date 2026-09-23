@@ -32,20 +32,13 @@ export default function Home() {
   const token = useAuthStore((s) => s.token)
   const view = useUIStore((s) => s.view)
   const viewArg = useUIStore((s) => s.viewArg)
-  // Adopt the current URL and follow browser back/forward. Runs before the
-  // token check so a deep link survives the login round-trip.
   useRouteSync()
-  // hydration-safe "mounted" flag (true on client after hydration, false during SSR)
   const mounted = useSyncExternalStore(
     emptySubscribe,
     () => true,
     () => false
   )
 
-  // Validate the persisted token on mount; reset app state when logged out.
-  // Not before mount: for the hydration render the store hooks hand back the
-  // initial (signed-out) state to match the server HTML, so acting on that
-  // pass would reset a session that is about to be restored.
   useEffect(() => {
     if (!mounted) return
     if (!token) {
@@ -57,15 +50,10 @@ export default function Home() {
       .then((user) => {
         useAuthStore.setState({ user })
       })
-      .catch(() => {
-        // 401 already logs out via api(); other errors keep the session
-      })
+      .catch(() => {})
   }, [mounted, token])
 
   if (!mounted) return <Splash />
-  // A share link answers visitors without a session before the sign-in gate:
-  // they get the stand-alone player. Someone signed in gets the app instead,
-  // which starts the track in its own player (see useSharedTrackLink).
   if (view === "share" && viewArg && !token) return <SharePage token={viewArg} />
   return token ? <AppShell /> : <AuthView />
 }

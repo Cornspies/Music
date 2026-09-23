@@ -61,27 +61,12 @@ function extForMime(mime: string): string {
 
 interface TrackMenuProps {
   track: Track
-  /** playlist mode: adds "Remove from this playlist" */
   onRemoveFromPlaylist?: (trackId: string) => void
-  /** Extra classes for the ⋯ button (size, visibility on hover…). */
   triggerClassName?: string
-  /** Which side of the button the menu opens on; "top" in the player bar. */
   side?: "top" | "bottom"
-  /** False in the player bar, where "Play" would restart the current track alone. */
   showPlay?: boolean
 }
 
-/**
- * A track's ⋯ menu — play, queue, playlists, share, download, and for the
- * uploader or an admin editing and deleting — as one self-contained piece,
- * so the same menu sits on library rows, home cards and the player bar.
- *
- * Everything is wrapped in a `display: contents` span that stops clicks:
- * the places it sits are themselves clickable (a card that plays, a row
- * that plays on double-click), and React bubbles events out of the menu's
- * and the dialog's portals through the component tree, so without it
- * picking "Delete" would also start the track.
- */
 export function TrackMenu({
   track,
   onRemoveFromPlaylist,
@@ -95,7 +80,6 @@ export function TrackMenu({
   const offlineSupported = useOfflineStore((s) => s.supported)
   const isDownloaded = useOfflineStore((s) => s.ids.has(track.id))
   const downloading = useOfflineStore((s) => Boolean(s.jobs[track.id]))
-  // Uploader or admin: what the server allows for edit/delete.
   const canManage = useAuthStore(
     (s) => s.user?.id === track.uploadedBy.id || s.user?.role === "admin"
   )
@@ -130,7 +114,6 @@ export function TrackMenu({
         />
       </DropdownMenu>
 
-      {/* delete confirmation */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -182,8 +165,6 @@ function TrackMenuContent({
   offline: { supported: boolean; downloaded: boolean; downloading: boolean }
 }) {
   const playlists = useLibraryStore((s) => s.playlists)
-  // The sidebar list also carries playlists pinned from other people; tracks
-  // can only be added to your own.
   const ownPlaylists = playlists.filter((p) => p.isMine)
   const ui = useUIStore()
 
@@ -270,7 +251,6 @@ function TrackMenuContent({
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => {
-              // Fresh search across every provider, then the review dialog.
               requestMetadataLookup(track.id).catch((e: Error) => toast.error(e.message))
               useUIStore.getState().setMetadataReviewTracks([track])
             }}
@@ -292,10 +272,6 @@ function TrackMenuContent({
           {track.hasCompatible ? "Download original" : "Download"}
         </a>
       </DropdownMenuItem>
-      {/* Only offered when a converted copy exists, so the menu stays a single
-          item for the ordinary case. Playback picks a version on its own; this
-          is the one place the choice is worth surfacing, because someone saving
-          a file to keep may care which one they get. */}
       {track.hasCompatible ? (
         <DropdownMenuItem asChild>
           <a

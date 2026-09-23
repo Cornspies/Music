@@ -24,35 +24,10 @@ import (
 	"music-server/internal/config"
 )
 
-// YouTube — through yt-dlp (https://github.com/yt-dlp/yt-dlp), which the
-// server runs as a subprocess: one call searches, another downloads the
-// audio stream of a video. It is off unless MUSIC_YTDLP names the binary,
-// because it is a different kind of source from NCS: nothing on YouTube is
-// offered for download, so keeping a copy of what one would otherwise
-// stream is a choice for whoever runs the server, and against YouTube's
-// terms. yt-dlp also breaks whenever YouTube changes its player, so it
-// wants updating (`yt-dlp -U`), and current players need a JavaScript
-// runtime on the server (Deno or Node; MUSIC_YTDLP_ARGS="--js-runtimes node").
-//
-// The audio comes as YouTube serves it — AAC in M4A at ~128 kbit/s when
-// there is such a stream, Opus otherwise — never re-encoded. Tags are what
-// the video offers: proper artist/album/year on the auto-generated "Topic"
-// uploads, otherwise a guess split out of the video title, which is why the
-// new track then goes on the metadata queue like an upload does.
-//
-// A pasted link is understood too: a video link searches for just that
-// video, a playlist link lists the playlist, which the import (import.go)
-// then fetches track by track into a playlist of the same name.
-
 type ytdlpSource struct {
 	bin   string
-	extra []string // MUSIC_YTDLP_ARGS, appended to every call
+	extra []string
 
-	// Cookies (MUSIC_YTDLP_COOKIES): the exported file stays the person's;
-	// yt-dlp is handed the server's own copy (jar), because it writes
-	// rotated cookies back after every run and the export would otherwise
-	// be clobbered — or, when it isn't writable, fail. The copy is refreshed
-	// whenever the export changes, so re-exporting is all it takes.
 	cookies       string
 	jar           string
 	cookieMu      sync.Mutex
@@ -62,29 +37,16 @@ type ytdlpSource struct {
 }
 
 const (
-	ytdlpPageSize = 15
-	// ytsearch has no paging; page n asks for n pages' worth and keeps the
-	// last, so deep paging costs more each time. Four pages is plenty.
-	ytdlpMaxPages = 4
-	// Audio only, the AAC stream when there is one (plays everywhere without
-	// a compatible copy), else the best there is.
+	ytdlpPageSize      = 15
+	ytdlpMaxPages      = 4
 	ytdlpDefaultFormat = "bestaudio[ext=m4a]/bestaudio/best"
-	ytdlpMaxFileSize   = "200m" // keep in step with maxDiscoverBytes
+	ytdlpMaxFileSize   = "200m"
 )
 
-// ytdlpSlots bounds concurrent downloads; each is a Python process plus a
-// few MB/s of bandwidth.
 var ytdlpSlots = make(chan struct{}, 2)
 
-// ytdlpProcs bounds yt-dlp processes of any kind — every search starts one
-// too, so without a cap anyone signed in could start as many as they can
-// send requests. Downloads take a download slot first and then one of
-// these, always in that order, so the two can't deadlock.
 var ytdlpProcs = make(chan struct{}, 4)
 
-// newYTDLPSource reads MUSIC_YTDLP: unset means no YouTube source; a path
-// or command name is looked up; a plain "1"/"true" means yt-dlp on PATH.
-// dataDir is where the server keeps its copy of the cookies file.
 func newYTDLPSource(dataDir string) (*ytdlpSource, error) {
 	raw := config.Value("MUSIC_YTDLP")
 	if raw == "" {
@@ -109,8 +71,6 @@ func newYTDLPSource(dataDir string) (*ytdlpSource, error) {
 	return y, nil
 }
 
-// describe is the start-up log line: what exactly yt-dlp is run with, so a
-// mismatch with a manual test is visible at once.
 func (y *ytdlpSource) describe() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "YouTube via yt-dlp %s (%s)", y.version(), y.bin)
@@ -129,13 +89,6 @@ func (y *ytdlpSource) describe() string {
 	return b.String()
 }
 
-// probeJSRuntime runs the JavaScript runtime yt-dlp will use — Deno unless
-// MUSIC_YTDLP_ARGS picks another — as a child of this process, so it meets
-// the same sandbox yt-dlp's children will. A runtime that works from a
-// shell but dies here is the usual reason YouTube fetches fail under
-// systemd: V8 needs a few syscalls (pkey_alloc & co.) and writable
-// executable memory that a hardened unit denies, and yt-dlp only reports
-// the symptom ("The page needs to be reloaded").
 func (y *ytdlpSource) probeJSRuntime() string {
 	name, bin := "deno", ""
 	for i, a := range y.extra {
@@ -147,7 +100,6 @@ func (y *ytdlpSource) probeJSRuntime() string {
 			spec = strings.TrimPrefix(a, "--js-runtimes=")
 		}
 		if spec != "" {
-			// "node", "node:/usr/bin/node", or several separated by commas.
 			first, _, _ := strings.Cut(spec, ",")
 			name, bin, _ = strings.Cut(first, ":")
 			break
@@ -191,10 +143,6 @@ func (y *ytdlpSource) probeJSRuntime() string {
 	return fmt.Sprintf("%s (%s) works", trimDefault(version, name), bin)
 }
 
-// syncCookies copies the exported cookies file into the server's jar when
-// it is new or has changed. Errors say what is wrong with the export from
-// the server's point of view — under systemd, ProtectHome or a service
-// user is what usually hides a file that "is right there".
 func (y *ytdlpSource) syncCookies() error {
 	y.cookieMu.Lock()
 	defer y.cookieMu.Unlock()
@@ -221,14 +169,12 @@ func (y *ytdlpSource) syncCookiesLocked() error {
 		return fmt.Errorf("%s is a directory; point at the cookies.txt file", y.cookies)
 	}
 	if fi.ModTime().Equal(y.cookieSrcMod) && fi.Size() == y.cookieSrcSize {
-		return nil // unchanged since the last copy
+		return nil
 	}
 	raw, err := os.ReadFile(y.cookies)
 	if err != nil {
 		return fmt.Errorf("%s: %w — the server's user needs read access", y.cookies, err)
 	}
-	// A Netscape cookies file starts with a comment header; anything else
-	// (a JSON export, an HTML error page) is silently no cookies to yt-dlp.
 	head := strings.TrimSpace(string(raw[:min(len(raw), 200)]))
 	if !strings.HasPrefix(head, "# Netscape HTTP Cookie File") && !strings.HasPrefix(head, "# HTTP Cookie File") && !strings.Contains(head, "\t") {
 		return fmt.Errorf("%s doesn't look like a Netscape cookies.txt (export with a \"Get cookies.txt LOCALLY\" browser extension)", y.cookies)
@@ -247,12 +193,10 @@ func (y *ytdlpSource) syncCookiesLocked() error {
 func (*ytdlpSource) key() string  { return "youtube" }
 func (*ytdlpSource) name() string { return "YouTube" }
 
-// coverAllowed limits the artwork proxy to YouTube's thumbnail hosts.
 func (*ytdlpSource) coverAllowed(u string) bool {
 	return strings.HasPrefix(u, "https://i.ytimg.com/") || strings.HasPrefix(u, "https://i9.ytimg.com/")
 }
 
-// version is what `yt-dlp --version` prints, for the start-up log.
 func (y *ytdlpSource) version() string {
 	out, err := exec.Command(y.bin, "--version").Output()
 	if err != nil {
@@ -261,11 +205,6 @@ func (y *ytdlpSource) version() string {
 	return strings.TrimSpace(string(out))
 }
 
-// run executes yt-dlp with the standing options and returns stdout. stderr
-// is folded into the error; on success its warnings (a missing JS runtime,
-// say) are logged once per call so they reach whoever runs the server. A
-// failure logs the whole command line, so what the server ran can be
-// compared with a manual test.
 func (y *ytdlpSource) run(ctx context.Context, what string, args ...string) ([]byte, error) {
 	select {
 	case ytdlpProcs <- struct{}{}:
@@ -275,7 +214,6 @@ func (y *ytdlpSource) run(ctx context.Context, what string, args ...string) ([]b
 	}
 	full := []string{"--ignore-config", "--no-playlist", "--no-progress"}
 	if y.jar != "" {
-		// A copy that exists keeps working when the export has gone away.
 		if err := y.syncCookies(); err == nil || fileExists(y.jar) {
 			full = append(full, "--cookies", y.jar)
 		}
@@ -305,9 +243,6 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// ytdlpReason picks yt-dlp's own explanation out of stderr, which is more
-// useful than "exit status 1". A Python traceback (yt-dlp crashing, e.g. on
-// an unreadable cookies file) ends with the exception, so that line is it.
 func ytdlpReason(stderr string, err error) string {
 	if line := ytdlpLine(stderr, "ERROR:"); line != "" {
 		return line
@@ -327,8 +262,6 @@ func ytdlpReason(stderr string, err error) string {
 	return err.Error()
 }
 
-// ytdlpLine returns the last stderr line starting with prefix, without the
-// prefix and yt-dlp's "[youtube] id:" tag, cut to a sensible length.
 func ytdlpLine(stderr, prefix string) string {
 	found := ""
 	for _, line := range strings.Split(stderr, "\n") {
@@ -349,8 +282,6 @@ func ytdlpLine(stderr, prefix string) string {
 	return found
 }
 
-// ---- search --------------------------------------------------------------------
-
 type ytdlpEntry struct {
 	ID         string   `json:"id"`
 	Title      string   `json:"title"`
@@ -364,8 +295,6 @@ func (y *ytdlpSource) search(ctx context.Context, query string, page int) ([]dis
 	if page > ytdlpMaxPages {
 		return nil, false, nil
 	}
-	// A pasted video link: just that video. (Playlist links are the search
-	// handler's business, since the answer carries the playlist's name.)
 	if id := youtubeVideoID(query); id != "" && strings.Contains(query, "/") {
 		if page > 1 {
 			return nil, false, nil
@@ -409,8 +338,6 @@ func (y *ytdlpSource) search(ctx context.Context, query string, page int) ([]dis
 	return results, len(all) >= want && page < ytdlpMaxPages, nil
 }
 
-// result shapes one listing entry; false for what can't be fetched (streams
-// and premieres, and the private or deleted videos a playlist may hold).
 func (y *ytdlpSource) result(e ytdlpEntry) (discoverResult, bool) {
 	title := strings.TrimSpace(e.Title)
 	if !youtubeIDRe.MatchString(e.ID) || e.LiveStatus == "is_live" || e.LiveStatus == "is_upcoming" ||
@@ -418,14 +345,11 @@ func (y *ytdlpSource) result(e ytdlpEntry) (discoverResult, bool) {
 		return discoverResult{}, false
 	}
 	r := discoverResult{
-		Source: y.key(),
-		ID:     e.ID,
-		// Some playlist listings come without titles; the download itself
-		// carries them, so the entry is still worth having.
-		Title:   trimDefault(title, "YouTube video "+e.ID),
-		Artist:  trimDefault(e.Channel, e.Uploader),
-		PageURL: "https://www.youtube.com/watch?v=" + e.ID,
-		// mqdefault is the 16:9 thumbnail without letterbox bars.
+		Source:   y.key(),
+		ID:       e.ID,
+		Title:    trimDefault(title, "YouTube video "+e.ID),
+		Artist:   trimDefault(e.Channel, e.Uploader),
+		PageURL:  "https://www.youtube.com/watch?v=" + e.ID,
 		CoverURL: "https://i.ytimg.com/vi/" + e.ID + "/mqdefault.jpg",
 	}
 	if e.Duration != nil {
@@ -434,16 +358,10 @@ func (y *ytdlpSource) result(e ytdlpEntry) (discoverResult, bool) {
 	return r, true
 }
 
-// ---- playlists ---------------------------------------------------------------
-
-// ytdlpMaxPlaylist caps an import; YouTube playlists can hold 5,000.
 const ytdlpMaxPlaylist = 500
 
 var youtubePlaylistIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{2,}$`)
 
-// youtubePlaylistID extracts the playlist id from a link: playlist?list=…,
-// a watch link carrying list=…, or the same on music.youtube.com. Anything
-// without a list is not a playlist link.
 func youtubePlaylistID(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if !strings.Contains(raw, "list=") {
@@ -468,8 +386,6 @@ func youtubePlaylistID(raw string) string {
 
 func (y *ytdlpSource) playlistID(raw string) string { return youtubePlaylistID(raw) }
 
-// listPlaylist returns the playlist's title and its playable entries, in
-// order. Mixes (list=RD…) are endless; yt-dlp returns their first stretch.
 func (y *ytdlpSource) listPlaylist(ctx context.Context, id string) (catalogPlaylist, error) {
 	if !youtubePlaylistIDRe.MatchString(id) {
 		return catalogPlaylist{}, &statusError{http.StatusBadRequest, "not a YouTube playlist id"}
@@ -496,9 +412,6 @@ func (y *ytdlpSource) listPlaylist(ctx context.Context, id string) (catalogPlayl
 	return pl, nil
 }
 
-// ---- download ------------------------------------------------------------------
-
-// ytdlpInfo is the part of the video's info JSON the library entry needs.
 type ytdlpInfo struct {
 	ID          string   `json:"id"`
 	Title       string   `json:"title"`
@@ -509,13 +422,11 @@ type ytdlpInfo struct {
 	Track       string   `json:"track"`
 	Album       string   `json:"album"`
 	ReleaseYear int      `json:"release_year"`
-	UploadDate  string   `json:"upload_date"` // YYYYMMDD
+	UploadDate  string   `json:"upload_date"`
 	Duration    float64  `json:"duration"`
 	Thumbnail   string   `json:"thumbnail"`
 }
 
-// tempDownload is the fetched file; closing it removes the directory it
-// was downloaded into.
 type tempDownload struct {
 	*os.File
 	dir string
@@ -574,9 +485,6 @@ func (y *ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, er
 	}
 	ext := strings.ToLower(filepath.Ext(matches[0]))
 
-	// Topic uploads carry real tags; everything else gets the title split
-	// the way the metadata provider splits it ("Artist - Title (Official
-	// Video)" → Artist / Title).
 	title, artist := strings.TrimSpace(info.Track), ""
 	if len(info.Artists) > 0 {
 		artist = strings.TrimSpace(info.Artists[0])
@@ -595,25 +503,20 @@ func (y *ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, er
 		cover = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
 	}
 	return &sourceDownload{
-		Body:     &tempDownload{File: f, dir: dir},
-		FileName: sanitizeFilename(trimDefault(artist, "YouTube")+" - "+trimDefault(title, id)) + ext,
-		Size:     size,
-		Title:    title,
-		Artist:   artist,
-		Album:    strings.TrimSpace(info.Album),
-		Year:     year,
-		Duration: info.Duration,
-		CoverURL: cover,
-		// A video thumbnail is 16:9; the middle square is the cover (on
-		// Topic uploads that is exactly the album art).
+		Body:           &tempDownload{File: f, dir: dir},
+		FileName:       sanitizeFilename(trimDefault(artist, "YouTube")+" - "+trimDefault(title, id)) + ext,
+		Size:           size,
+		Title:          title,
+		Artist:         artist,
+		Album:          strings.TrimSpace(info.Album),
+		Year:           year,
+		Duration:       info.Duration,
+		CoverURL:       cover,
 		SquareCover:    true,
 		LookupMetadata: true,
 	}, nil
 }
 
-// ytdlpFriendly turns yt-dlp's error text into something the person who
-// clicked "Add" can act on. withCookies says whether cookies were passed,
-// which changes what the bot check means.
 func ytdlpFriendly(err error, withCookies bool) string {
 	msg := err.Error()
 	low := strings.ToLower(msg)
@@ -653,8 +556,6 @@ func ytdlpFriendly(err error, withCookies bool) string {
 	return "couldn't fetch that video: " + msg
 }
 
-// squareCrop keeps the middle square of a wide image, re-encoded as JPEG.
-// Anything that can't be decoded, or is square already, is returned as is.
 func squareCrop(raw []byte) []byte {
 	if len(raw) == 0 {
 		return raw

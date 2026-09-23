@@ -67,24 +67,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.milliseconds
 
-/**
- * Search tab — debounced search of the library (tracks, albums, artists,
- * playlists), or, with a catalogue chip selected, of an online catalogue
- * whose tracks can be added to the library on the spot.
- */
 @Composable
 fun SearchScreen() {
     val model = LocalAppModel.current
 
     var query by remember { mutableStateOf("") }
-    // null = the library; otherwise a Discover source key ("ncs").
     var source by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) { model.loadDiscoverSources() }
     val sources = model.discoverSources.orEmpty()
 
-    // Debounce keystrokes (350 ms), then ask the server.
     LaunchedEffect(query, source) {
         val trimmed = query.trim()
         val src = source
@@ -155,9 +148,7 @@ fun SearchScreen() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 32.dp, start = 8.dp),
             )
-        } else if (results == null && !model.searchLoading) {
-            // Nothing yet (debounce window).
-        } else {
+        } else if (results == null && !model.searchLoading) {} else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
@@ -225,11 +216,6 @@ fun SearchScreen() {
     }
 }
 
-/**
- * Catalogue results: thumbnail, title, and an Add button that turns into
- * "In library". A pasted playlist link lists the playlist with an "Import
- * all" banner; imports in progress sit at the top, whatever the query.
- */
 @Composable
 private fun DiscoverResults(source: String, query: String) {
     val model = LocalAppModel.current
@@ -323,7 +309,6 @@ private fun DiscoverResults(source: String, query: String) {
     }
 }
 
-/** The playlist behind a pasted link, with the button that imports the lot. */
 @Composable
 private fun PlaylistBanner(
     playlist: DiscoverPlaylist,
@@ -373,7 +358,6 @@ private fun PlaylistBanner(
     }
 }
 
-/** One playlist import: progress while it runs, the tally when it's done. */
 @Composable
 private fun ImportCard(job: PlaylistImport, onOpen: (String) -> Unit, onCancel: () -> Unit, onDismiss: () -> Unit) {
     var showFailures by remember(job.id) { mutableStateOf(false) }
@@ -528,7 +512,6 @@ private fun DiscoverRow(source: String, result: DiscoverResult) {
                 AsyncImage(
                     model = model.api.discoverArtworkUrl(source, result.coverUrl),
                     contentDescription = null,
-                    // Video thumbnails are 16:9; the middle fills the square.
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -596,7 +579,6 @@ private fun SectionHeader(title: String) {
     )
 }
 
-/** Compact result row for albums / artists / playlists. */
 @Composable
 private fun ResultRow(
     title: String,
@@ -609,7 +591,6 @@ private fun ResultRow(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Reuse the track cover loader when the aggregate points at a cover track.
         val coverTrack = coverTrackId?.let {
             com.music.app.api.Track(id = it, title = "", hasCover = true)
         }
@@ -643,7 +624,6 @@ private fun ResultRow(
     }
 }
 
-/** "cc-by-nc-sa" → "CC BY-NC-SA"; the public-domain dedication by name. */
 private fun licenseLabel(license: String): String = when {
     license == "no-rights-reserved" -> "Public domain"
     license.startsWith("cc-") -> "CC " + license.removePrefix("cc-").uppercase()

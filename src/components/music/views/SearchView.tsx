@@ -57,7 +57,6 @@ export function SearchView() {
     return () => controller.abort()
   }, [debounced])
 
-  // "/" shortcut → focus the search input
   useEffect(() => {
     const onFocusRequest = () => inputRef.current?.focus()
     window.addEventListener("music:focus-search", onFocusRequest)

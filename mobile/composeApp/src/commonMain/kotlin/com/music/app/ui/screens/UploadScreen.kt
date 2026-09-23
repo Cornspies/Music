@@ -55,18 +55,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** One queued upload and its progress. */
 private enum class UploadStatus { PENDING, UPLOADING, DONE, FAILED, DUPLICATE, SKIPPED }
 
 private data class UploadEntry(
     val file: PickedAudio,
     val status: UploadStatus,
     val error: String? = null,
-    /** Set while the server holds the file because it looks like a duplicate. */
     val duplicate: DuplicateResponse? = null,
 )
 
-/** Upload screen — pick audio files on Android and push them to the server. */
 @Composable
 fun UploadScreen() {
     val model = LocalAppModel.current
@@ -87,7 +84,6 @@ fun UploadScreen() {
             .fillMaxSize()
             .verticalScroll(rememberScrollState()),
     ) {
-        // Same header as the other pushed screens: back, icon, title.
         Row(
             Modifier
                 .fillMaxWidth()
@@ -286,7 +282,6 @@ private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: 
             UploadStatus.FAILED, UploadStatus.DUPLICATE, UploadStatus.SKIPPED -> {}
         }
     }
-    // The existing track(s) this file looks like, and the decision.
     entry.duplicate?.let { dup ->
         Column(
             Modifier

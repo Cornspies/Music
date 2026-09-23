@@ -15,34 +15,18 @@ import (
 	"time"
 )
 
-// Duplicate detection at upload.
-//
-// Two things count as "already in the library": the identical file (same
-// SHA-256 — a re-upload of the same rip), and a different file of the same
-// song (same title and artist after normalising, or the same title and a
-// length within a few seconds when the artist tag is missing). Either way
-// the upload is parked instead of refused: the file is kept for a while
-// under a pending id, the client shows the existing tracks, and the person
-// either confirms ("add anyway") — which finishes the upload without sending
-// the file again — or lets it lapse.
-
 const pendingUploadTTL = 30 * time.Minute
 
-// DuplicateMatch is one existing track that looks like the upload.
 type DuplicateMatch struct {
-	Track Track `json:"track"`
-	// Reason is "same file" or "same song".
+	Track  Track  `json:"track"`
 	Reason string `json:"reason"`
 }
 
-// DuplicateResponse is the 409 body an upload gets when matches exist.
 type DuplicateResponse struct {
-	Error string `json:"error"`
-	// PendingID confirms or discards the held file.
+	Error     string           `json:"error"`
 	PendingID string           `json:"pendingId"`
 	Matches   []DuplicateMatch `json:"matches"`
-	// What the upload itself looks like, for the "this vs that" comparison.
-	Upload struct {
+	Upload    struct {
 		Title    string  `json:"title"`
 		Artist   string  `json:"artist"`
 		Album    string  `json:"album"`
@@ -64,8 +48,6 @@ func fileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// findDuplicates looks for existing tracks matching an upload. The library
-// is shared, so someone else's copy counts too.
 func (s *Server) findDuplicates(userID string, up *pendingUpload) DuplicateResponse {
 	out := DuplicateResponse{Error: "already in the library"}
 	title := trimDefault(up.meta.title, strings.TrimSuffix(up.fileName, filepath.Ext(up.fileName)))
@@ -104,9 +86,6 @@ func (s *Server) findDuplicates(userID string, up *pendingUpload) DuplicateRespo
 	return out
 }
 
-// Brackets and "feat." carry what a video title adds to a song's name —
-// "(Official Video)", "[NCS Release]", "(feat. X)" — and are dropped for
-// the loose comparison.
 var (
 	bracketRe = regexp.MustCompile(`\s*[\(\[][^\)\]]*[\)\]]`)
 	featRe    = regexp.MustCompile(`(?i)\s+(feat|ft)\.?\s.*$`)
@@ -116,14 +95,6 @@ func coreTitle(s string) string {
 	return normalizeForMatch(featRe.ReplaceAllString(bracketRe.ReplaceAllString(s, ""), ""))
 }
 
-// findSameSong finds library tracks that look like the same recording as
-// (title, artist, duration): the same title and artist, or the same title
-// and a length within a few seconds (the artist tag is often missing on one
-// side). With loose, the titles may also agree with their bracketed parts
-// dropped — for video titles — but then only together with the length. With
-// artistVeto, a clearly different artist on both sides rules a match out
-// even when the lengths agree; it's set when the artist is trustworthy (an
-// "Artist - Title" split) rather than a channel name.
 func (s *Server) findSameSong(userID, title, artist string, duration float64, loose, artistVeto bool) []DuplicateMatch {
 	wantTitle := normalizeForMatch(title)
 	wantCore := coreTitle(title)
@@ -135,9 +106,6 @@ func (s *Server) findSameSong(userID, title, artist string, duration float64, lo
 	if loose && wantCore != "" {
 		prefilter = wantCore
 	}
-	// Candidates by cheap SQL prefilter (case-insensitive title), then the
-	// real comparison in Go with the same normaliser the metadata scoring
-	// uses, so "Song (Remastered 2011)" and "song - remastered 2011" agree.
 	rows, err := s.db.Query(trackSelect+` WHERE lower(t.title) LIKE ?`, append(trackSelectArgs(userID), "%"+firstWord(prefilter)+"%")...)
 	if err != nil {
 		return nil
@@ -163,19 +131,13 @@ func (s *Server) findSameSong(userID, title, artist string, duration float64, lo
 		case exact && artistsAgree:
 			out = append(out, DuplicateMatch{Track: *t, Reason: "same song"})
 		case artistVeto && bothKnown && !artistsAgree:
-			// Same name, different artist: a cover or a namesake.
 		case lengthsAgree:
-			// Same title and the same length: near-certainly the same song.
 			out = append(out, DuplicateMatch{Track: *t, Reason: "same song"})
 		}
 	}
 	return out
 }
 
-// sameSongPair says whether two library tracks look like the same
-// recording, by the rules of findSameSong with the artist veto on (tags on
-// both sides, so a different artist means a different song), and names the
-// rule that matched.
 func sameSongPair(a, b *Track) (bool, string) {
 	titleA, titleB := normalizeForMatch(a.Title), normalizeForMatch(b.Title)
 	if titleA == "" || titleB == "" {
@@ -202,16 +164,11 @@ func sameSongPair(a, b *Track) (bool, string) {
 	return false, ""
 }
 
-// DuplicateGroup is a set of library tracks that look like one song.
 type DuplicateGroup struct {
 	Reason string  `json:"reason"`
 	Tracks []Track `json:"tracks"`
 }
 
-// handleLibraryDuplicates: GET /api/library/duplicates — every group of
-// tracks in the library that look like the same song, for someone to go
-// through and thin out. Groups are built by joining pairs that match, so
-// three copies with slightly different titles end up together.
 func (s *Server) handleLibraryDuplicates(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	rows, err := s.db.Query(trackSelect+` ORDER BY t.created_at ASC`, trackSelectArgs(u.ID)...)
@@ -227,8 +184,6 @@ func (s *Server) handleLibraryDuplicates(w http.ResponseWriter, r *http.Request)
 	}
 	rows.Close()
 
-	// Only tracks sharing a core title can pair up, so compare within those
-	// buckets rather than every track with every other.
 	buckets := map[string][]int{}
 	for i, t := range tracks {
 		if key := coreTitle(t.Title); key != "" {
@@ -268,7 +223,7 @@ func (s *Server) handleLibraryDuplicates(w http.ResponseWriter, r *http.Request)
 	for i, t := range tracks {
 		root := find(i)
 		if root == i && reasons[i] == "" {
-			continue // alone
+			continue
 		}
 		g := groupsByRoot[root]
 		if g == nil {
@@ -297,8 +252,6 @@ func firstWord(s string) string {
 	return s
 }
 
-// ---- held uploads ------------------------------------------------------------
-
 var pendingUploads = struct {
 	sync.Mutex
 	byID map[string]*pendingUpload
@@ -326,7 +279,6 @@ func (s *Server) takePendingUpload(id, userID string) *pendingUpload {
 	return up
 }
 
-// expirePendingUploads deletes held files nobody decided on. Run periodically.
 func (s *Server) expirePendingUploads() {
 	pendingUploads.Lock()
 	var stale []*pendingUpload
@@ -351,8 +303,6 @@ func (s *Server) startPendingUploadSweeper() {
 	}()
 }
 
-// handleConfirmUpload: POST /api/uploads/pending/{id} — add the held file
-// after all. Same result as an upload that found no duplicates.
 func (s *Server) handleConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	up := s.takePendingUpload(r.PathValue("id"), u.ID)
@@ -367,8 +317,6 @@ func (s *Server) handleConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	s.finalizeUpload(w, r, up)
 }
 
-// handleDiscardUpload: DELETE /api/uploads/pending/{id} — the person chose
-// not to add it; the held file goes.
 func (s *Server) handleDiscardUpload(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	if up := s.takePendingUpload(r.PathValue("id"), u.ID); up != nil {
@@ -377,8 +325,6 @@ func (s *Server) handleDiscardUpload(w http.ResponseWriter, r *http.Request) {
 	writeNoContent(w)
 }
 
-// backfillFileHashes computes hashes for tracks stored before duplicate
-// detection existed, one at a time in the background.
 func (s *Server) backfillFileHashes() {
 	rows, err := s.db.Query(`SELECT id, file_path FROM tracks WHERE COALESCE(file_hash, '') = ''`)
 	if err != nil {

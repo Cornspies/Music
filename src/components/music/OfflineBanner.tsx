@@ -4,7 +4,6 @@ import { WifiOff } from "lucide-react"
 import { useOfflineStore } from "@/stores/offline"
 import { useUIStore } from "@/stores/ui"
 
-/** Thin strip shown while the server can't be reached. */
 export function OfflineBanner() {
   const offline = useOfflineStore((s) => s.offline)
   const count = useOfflineStore((s) => s.tracks.length)

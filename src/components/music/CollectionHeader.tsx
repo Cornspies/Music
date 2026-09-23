@@ -8,7 +8,6 @@ import { usePlayerStore } from "@/stores/player"
 import { Button } from "@/components/ui/button"
 
 interface CollectionHeaderProps {
-  /** big cover element (optional — falls back to icon tile) */
   cover?: React.ReactNode
   icon: LucideIcon
   iconGradient?: string
@@ -19,7 +18,6 @@ interface CollectionHeaderProps {
   actions?: React.ReactNode
 }
 
-/** Shared hero header for album / artist / playlist / favorites views. */
 export function CollectionHeader({
   cover,
   icon: Icon,
@@ -49,7 +47,6 @@ export function CollectionHeader({
         "bg-linear-to-b from-zinc-800/80 via-zinc-900/60 to-transparent px-4 pt-10 pb-6 md:px-6 md:pt-14"
       )}
     >
-      {/* ambient glow */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-24 -right-10 size-64 rounded-full bg-emerald-500/10 blur-3xl"
@@ -105,7 +102,6 @@ export function CollectionHeader({
   )
 }
 
-/** Small ghost dropdown trigger used as an extra header action. */
 export function HeaderMenuTrigger(props: React.ComponentProps<typeof Button>) {
   return (
     <Button

@@ -9,20 +9,9 @@ import (
         "time"
 )
 
-// PlaybackState is what a client needs to pick up where the listener left
-// off — in a new tab after this one was closed, or on another device. The
-// track and queue are returned as full objects so a client can restore them
-// without a second round of requests.
-//
-// Devices keep each other up to date through UpdatedAt: a save answers with
-// the stamp it produced, the GET carries it as an ETag, and a client coming
-// back to the foreground asks with If-None-Match — a 304 means nothing
-// happened elsewhere, a 200 is the other device's state to adopt.
 type PlaybackState struct {
         Track    Track   `json:"track"`
         Position float64 `json:"position"`
-        // Queue is the "up next" list, current track included, with any track
-        // deleted since it was saved already dropped.
         Queue      []Track `json:"queue"`
         QueueIndex int     `json:"queueIndex"`
         UpdatedAt  string  `json:"updatedAt"`
@@ -31,28 +20,17 @@ type PlaybackState struct {
 type playbackRequest struct {
         TrackID  string  `json:"trackId"`
         Position float64 `json:"position"`
-        // Queue is the full "up next" list as track IDs. Nil means "unchanged":
-        // clients send it only when it actually changes, so the frequent
-        // position-only saves stay a few dozen bytes.
         Queue []string `json:"queue"`
 }
 
-// maxSavedQueue caps how much of a queue is remembered. "Play all" on a big
-// library would otherwise store the whole library per save; a window around
-// the current track is what "continue listening" needs.
 const maxSavedQueue = 500
 
-// playbackStamp is updated_at for playback_state: RFC 3339 with
-// milliseconds, so two saves in the same second still get distinct stamps
-// (they double as the ETag).
 func playbackStamp() string {
         return time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
 
 func playbackETag(updatedAt string) string { return `"` + updatedAt + `"` }
 
-// handleGetPlayback returns the caller's saved position, or 204 when there is
-// nothing to resume.
 func (s *Server) handleGetPlayback(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
 
@@ -71,8 +49,6 @@ func (s *Server) handleGetPlayback(w http.ResponseWriter, r *http.Request) {
                 s.internalErr(w, "fetch playback", err)
                 return
         }
-        // The browser must not answer from its own cache: the conditional
-        // request is the client's, made against the stamp it last saw.
         w.Header().Set("Cache-Control", "no-store")
         w.Header().Set("ETag", playbackETag(updatedAt))
         if match := r.Header.Get("If-None-Match"); match != "" && match == playbackETag(updatedAt) {
@@ -83,8 +59,6 @@ func (s *Server) handleGetPlayback(w http.ResponseWriter, r *http.Request) {
         row := s.db.QueryRow(trackSelect+` WHERE t.id = ?`, append(trackSelectArgs(u.ID), trackID)...)
         track, _, _, err := scanTrack(row.Scan)
         if errors.Is(err, sql.ErrNoRows) {
-                // The cascade normally clears this, but never resurrect a
-                // deleted track either way.
                 _, _ = s.db.Exec(`DELETE FROM playback_state WHERE user_id = ?`, u.ID)
                 writeNoContent(w)
                 return
@@ -94,7 +68,7 @@ func (s *Server) handleGetPlayback(w http.ResponseWriter, r *http.Request) {
         }
 
         var ids []string
-        _ = json.Unmarshal([]byte(queueJSON), &ids) // a bad blob just means an empty queue
+        _ = json.Unmarshal([]byte(queueJSON), &ids)
         queue, err := s.tracksByIDs(u.ID, ids)
         if err != nil {
                 s.internalErr(w, "fetch playback queue", err)
@@ -108,14 +82,10 @@ func (s *Server) handleGetPlayback(w http.ResponseWriter, r *http.Request) {
                 }
         }
         if index == -1 {
-                // The queue never lacked the current track when saved, but a
-                // trimmed or partially deleted one might: keep it playable.
                 queue = append([]Track{*track}, queue...)
                 index = 0
         }
 
-        // A track that was played to (within a second of) its end starts over
-        // rather than resuming on its final moment.
         if track.Duration > 0 && position >= track.Duration-1 {
                 position = 0
         }
@@ -125,10 +95,6 @@ func (s *Server) handleGetPlayback(w http.ResponseWriter, r *http.Request) {
         })
 }
 
-// handlePutPlayback records where the caller is. Position-only saves leave
-// the stored queue as it is; a save that carries a queue replaces it.
-// Answers with the new updatedAt, which the client keeps to tell its own
-// state from another device's.
 func (s *Server) handlePutPlayback(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
         var body playbackRequest
@@ -187,8 +153,6 @@ func (s *Server) handlePutPlayback(w http.ResponseWriter, r *http.Request) {
         writeJSON(w, http.StatusOK, map[string]string{"updatedAt": now})
 }
 
-// trimQueue keeps at most maxSavedQueue IDs, as a window around the current
-// track biased towards what comes next — that's the part that gets played.
 func trimQueue(ids []string, current string) []string {
         out := make([]string, 0, min(len(ids), maxSavedQueue))
         for _, id := range ids {
@@ -215,8 +179,6 @@ func trimQueue(ids []string, current string) []string {
         return out[start:end]
 }
 
-// tracksByIDs resolves IDs to tracks in the order given, silently dropping
-// any that no longer exist.
 func (s *Server) tracksByIDs(userID string, ids []string) ([]Track, error) {
         if len(ids) == 0 {
                 return []Track{}, nil

@@ -39,14 +39,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import androidx.core.content.edit
 
-/**
- * Home-screen "now playing" widget.
- *
- * State comes from [NowPlayingWidgetState], which the playback service writes
- * whenever the track or play state changes. The buttons send media-button
- * intents to the service, so they work even when the app's UI isn't running —
- * the service handles them exactly like a headset press.
- */
 class NowPlayingWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -115,11 +107,6 @@ class NowPlayingWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = NowPlayingWidget()
 }
 
-/**
- * The little bit of state the widget shows, kept in its own prefs file so
- * the widget process can read it without the app running. Written by
- * [PlaybackService].
- */
 object NowPlayingWidgetState {
     data class Snapshot(val title: String, val artist: String, val playing: Boolean, val hasItem: Boolean)
 

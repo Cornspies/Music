@@ -8,11 +8,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import com.music.app.ui.theme.Emerald
 
-/**
- * The server's waveform peaks as a row of bars, the played part tinted.
- * Purely a picture: the Slider below it does the dragging, so touch handling
- * and accessibility stay with the standard control.
- */
 @Composable
 fun WaveformBar(
     peaks: List<Int>,

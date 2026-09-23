@@ -20,15 +20,6 @@ import com.music.app.LocalAppModel
 import com.music.app.offline.DownloadQuality
 import kotlinx.coroutines.launch
 
-// Download preferences, shown on the profile screen. Kept together because
-// they all govern what happens when a download is started, not the list of
-// what's already on the device.
-
-/**
- * Wi-Fi-only downloads and the "keep offline" sync status. Playlists marked
- * "keep offline" on their own screen are re-synced on every launch; this is
- * where that can be triggered by hand and where the last run is reported.
- */
 @Composable
 fun SyncSettings() {
     val model = LocalAppModel.current
@@ -72,14 +63,6 @@ fun SyncSettings() {
     }
 }
 
-/**
- * Which version to keep for the handful of tracks stored twice.
- *
- * Shown here rather than on a settings screen of its own: it affects nothing
- * but downloads, and this is where downloads live. Tracks with only one stored
- * version — most of the library — ignore it entirely, which the caption says
- * plainly so the setting doesn't look broken.
- */
 @Composable
 fun DownloadQualitySetting() {
     val model = LocalAppModel.current

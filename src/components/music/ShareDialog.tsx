@@ -11,11 +11,6 @@ import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
-/**
- * A link to one track that plays for whoever opens it — no account on this
- * server needed. The link is made on demand (nothing is public until it is),
- * the same track always reuses the same link, and "Stop sharing" kills it.
- */
 export function ShareDialog() {
   const track = useUIStore((s) => s.shareTrack)
   const close = () => useUIStore.getState().setShareTrack(null)
@@ -35,8 +30,6 @@ function ShareBody({ track, onClose }: { track: Track; onClose: () => void }) {
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  // An existing link is shown as it is; the first "create" is a deliberate
-  // press, so nothing becomes reachable by opening this dialog.
   useEffect(() => {
     let alive = true
     fetchTrackShare(track.id).then((s) => alive && setShare(s))

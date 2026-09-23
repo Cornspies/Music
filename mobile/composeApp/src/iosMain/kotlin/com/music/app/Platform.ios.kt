@@ -28,22 +28,11 @@ import platform.UIKit.UIWindow
 import platform.darwin.NSObject
 import platform.posix.memcpy
 
-// ---------------------------------------------------------------------------
-// Uploads: the system document picker (Files app, iCloud Drive, other apps'
-// documents). Picked files are copied into the app's temp directory by the
-// picker itself (import mode), so no security-scoped bookmarks are needed.
-// ---------------------------------------------------------------------------
-
 internal actual val canUploadFromDevice: Boolean = true
 
-/**
- * The picker's delegate has to be strongly held while the sheet is up —
- * UIKit only keeps a weak reference — so it lives here until it fires.
- */
 private var activeDocumentDelegate: NSObject? = null
 private var activeImageDelegate: NSObject? = null
 
-/** The view controller to present system sheets from. */
 private fun topViewController(): UIViewController? {
     val window = UIApplication.sharedApplication.keyWindow
         ?: UIApplication.sharedApplication.windows.firstOrNull { (it as? UIWindow)?.isKeyWindow() == true } as? UIWindow
@@ -77,9 +66,6 @@ internal actual fun rememberAudioPickerLauncher(
             }
         }
         activeDocumentDelegate = delegate
-        // "public.audio" covers every container the server accepts; the
-        // import mode copies the file so it stays readable after the sheet
-        // closes.
         val picker = UIDocumentPickerViewController(
             documentTypes = listOf("public.audio"),
             inMode = UIDocumentPickerMode.UIDocumentPickerModeImport,
@@ -121,19 +107,8 @@ private fun NSData.toByteArray(): ByteArray {
     return out
 }
 
-// ---------------------------------------------------------------------------
-// Avatars: the photo library via UIImagePickerController. The picked image is
-// re-encoded as JPEG here; the server re-encodes it again anyway.
-// ---------------------------------------------------------------------------
-
 internal actual val canPickImageFromDevice: Boolean = true
 
-/**
- * AVFoundation cannot open the Ogg container in any form, and does not handle
- * WebM or WMA. FLAC, ALAC, AAC, MP3, WAV and AIFF are all fine, so lossless
- * audio needs no conversion — only these get swapped for the compatible copy
- * the server made at upload time.
- */
 internal actual val unplayableMimeTypes: Set<String> = setOf(
     "audio/ogg",
     "application/ogg",

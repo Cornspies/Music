@@ -11,33 +11,21 @@ import (
 	"time"
 )
 
-// Single-use invite links.
-//
-// An admin mints a link for one friend; it works exactly once, expires on its
-// own (24 hours by default), can be revoked, and records who used it. This
-// sits alongside the static MUSIC_INVITE_CODE: an invite link always lets its
-// holder register — even while sign-ups are otherwise closed — which is the
-// point of handing one out.
-
 const (
 	defaultInviteHours = 24
 	maxInviteHours     = 24 * 30
 )
 
-// Invite is an invite link as the admin console sees it.
 type Invite struct {
-	Code      string `json:"code"`
-	Note      string `json:"note"`
-	CreatedBy string `json:"createdBy"`
-	CreatedAt string `json:"createdAt"`
-	ExpiresAt string `json:"expiresAt"`
-	// UsedBy is the username of the account that registered with it.
+	Code      string  `json:"code"`
+	Note      string  `json:"note"`
+	CreatedBy string  `json:"createdBy"`
+	CreatedAt string  `json:"createdAt"`
+	ExpiresAt string  `json:"expiresAt"`
 	UsedBy    *string `json:"usedBy"`
 	UsedAt    *string `json:"usedAt"`
 	RevokedAt *string `json:"revokedAt"`
-	// Status is "pending", "used", "expired" or "revoked", worked out on the
-	// server so every client agrees.
-	Status string `json:"status"`
+	Status    string  `json:"status"`
 }
 
 func newInviteCode() (string, error) {
@@ -45,7 +33,6 @@ func newInviteCode() (string, error) {
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	// URL-safe, no padding: it goes straight into a query string.
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
@@ -97,9 +84,6 @@ func (s *Server) getInvite(code string) (*Invite, error) {
 	return scanInvite(row.Scan)
 }
 
-// consumeInvite marks a pending invite as used by the new account. It fails
-// (without side effects) when the invite is missing, used, expired or
-// revoked, so a second registration with the same link is refused.
 func (s *Server) consumeInvite(code, userID string) error {
 	res, err := s.db.Exec(`
 		UPDATE invites SET used_by = ?, used_at = ?
@@ -114,7 +98,6 @@ func (s *Server) consumeInvite(code, userID string) error {
 	return nil
 }
 
-// invitePending reports whether a code is a live single-use invite.
 func (s *Server) invitePending(code string) bool {
 	if code == "" {
 		return false
@@ -123,22 +106,14 @@ func (s *Server) invitePending(code string) bool {
 	return err == nil && inv.Status == "pending"
 }
 
-// ---- public: let the sign-up form validate a link before the user types ----
-
-// InviteCheck is what GET /api/auth/invite/{code} returns. It reveals nothing
-// beyond whether the link works and how long it has left — codes are 144
-// random bits, so this can't be used to enumerate them.
 type InviteCheck struct {
 	Valid     bool   `json:"valid"`
 	Status    string `json:"status"`
 	ExpiresAt string `json:"expiresAt,omitempty"`
-	// InvitedBy is the admin who made the link, so the page can say
-	// "alice invited you".
 	InvitedBy string `json:"invitedBy,omitempty"`
 }
 
 func (s *Server) handleCheckInvite(w http.ResponseWriter, r *http.Request) {
-	// Same limiter as sign-in: a wrong code counts as a failed attempt.
 	if blocked, retry := rateLimitAuth(r); blocked {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
 		writeErr(w, http.StatusTooManyRequests, "too many attempts, try again later")
@@ -158,8 +133,6 @@ func (s *Server) handleCheckInvite(w http.ResponseWriter, r *http.Request) {
 		Valid: inv.Status == "pending", Status: inv.Status, ExpiresAt: inv.ExpiresAt, InvitedBy: inv.CreatedBy,
 	})
 }
-
-// ---- admin ----
 
 func (s *Server) handleAdminListInvites(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(inviteSelect + ` ORDER BY i.created_at DESC LIMIT 500`)
@@ -183,11 +156,8 @@ func (s *Server) handleAdminListInvites(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleAdminCreateInvite(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	var body struct {
-		// Note is who it's for — shown in the list so the admin can tell
-		// links apart and see who has signed up.
-		Note string `json:"note"`
-		// ExpiresHours defaults to 24; capped at 30 days.
-		ExpiresHours int `json:"expiresHours"`
+		Note         string `json:"note"`
+		ExpiresHours int    `json:"expiresHours"`
 	}
 	if err := jsonDecodeStrict(r, w, &body); err != nil {
 		return
@@ -222,8 +192,6 @@ func (s *Server) handleAdminCreateInvite(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, inv)
 }
 
-// handleAdminRevokeInvite invalidates a link. Used ones are kept (they're the
-// record of who joined how); revoking one of those is a no-op.
 func (s *Server) handleAdminRevokeInvite(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	res, err := s.db.Exec(`UPDATE invites SET revoked_at = ? WHERE code = ? AND revoked_at IS NULL AND used_by IS NULL`,
@@ -248,7 +216,6 @@ func (s *Server) handleAdminRevokeInvite(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, inv)
 }
 
-// handleAdminDeleteInvite removes a link from the list entirely.
 func (s *Server) handleAdminDeleteInvite(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.db.Exec(`DELETE FROM invites WHERE code = ?`, r.PathValue("code")); err != nil {
 		s.internalErr(w, "delete invite", err)

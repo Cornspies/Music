@@ -13,7 +13,6 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 
-/** Crossfade + volume normalisation. Opened from the player bar. */
 export function PlaybackSettingsDialog() {
   const open = useUIStore((s) => s.playbackSettingsOpen)
   const setOpen = useUIStore((s) => s.setPlaybackSettingsOpen)

@@ -72,9 +72,13 @@ Notes:
 - **iOS**: the audio session is set to playback, what's playing is published to
   the lock screen / Control Centre, and the remote command centre drives
   play/pause/skip/scrub. A **WidgetKit** widget lives in `iosApp/MusicWidget/`;
-  it needs a one-time Xcode step (add a Widget Extension target and the
-  `group.com.music.app` App Group to both targets — see the comments at the top
-  of `MusicWidget.swift`).
+  it needs a one-time Xcode setup:
+  1. File → New → Target → Widget Extension, name it "MusicWidget", untick
+     "Include Configuration Intent", and replace its generated Swift file with
+     `MusicWidget.swift`.
+  2. Add the App Groups capability to both the iosApp and MusicWidget targets
+     with the group `group.com.music.app` (it matches `WIDGET_APP_GROUP` in
+     `PlayerController.ios.kt`).
 
 ## Offline
 

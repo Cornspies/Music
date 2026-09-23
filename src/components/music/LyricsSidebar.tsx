@@ -9,19 +9,11 @@ import { Button } from "@/components/ui/button"
 import { CoverArt } from "@/components/music/CoverArt"
 import { LyricsPanel } from "@/components/music/LyricsPanel"
 
-/**
- * Lyrics docked to the right of the main area, the way Spotify's desktop app
- * does it: painted in the cover's colour, following the track as it plays,
- * without covering anything. Opened from the mic button in the player bar;
- * the choice sticks per browser. Desktop only — phones use the full-screen
- * player for this.
- */
 export function LyricsSidebar() {
   const open = useUIStore((s) => s.lyricsPanelOpen)
   const track = usePlayerStore((s) => s.currentTrack)
   const position = usePlayerStore((s) => s.position)
 
-  // Restore last time's choice once on the client (see readLyricsPanelPref).
   useEffect(() => {
     if (readLyricsPanelPref()) useUIStore.getState().setLyricsPanelOpen(true)
   }, [])

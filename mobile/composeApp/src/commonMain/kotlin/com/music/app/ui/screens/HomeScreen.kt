@@ -53,7 +53,6 @@ import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc400
 
-/** Home: stats header, recently added (horizontal cards), most played list. */
 @Composable
 fun HomeScreen() {
     val model = LocalAppModel.current
@@ -65,7 +64,6 @@ fun HomeScreen() {
     val stats = model.stats
 
     RefreshableContent(
-        // Home summarises the whole library, so a pull re-fetches all of it.
         isRefreshing = model.tracksLoading || model.statsLoading,
         onRefresh = { model.refreshAll() },
     ) {
@@ -73,7 +71,6 @@ fun HomeScreen() {
         Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(bottom = 16.dp),
     ) {
-        // ---- header ----
         item {
             Row(
                 Modifier
@@ -101,12 +98,10 @@ fun HomeScreen() {
                 IconButton(onClick = { model.push(Screen.Upload) }) {
                     Icon(Icons.Filled.CloudUpload, contentDescription = "Upload music")
                 }
-                // Profile: picture, password, sign out, download preferences.
                 AvatarButton()
             }
         }
 
-        // ---- stats ----
         when {
             stats != null -> item { StatsHeader(stats) }
             model.statsLoading -> item { LoadingBox() }
@@ -115,13 +110,11 @@ fun HomeScreen() {
             }
         }
 
-        // ---- recently played (server history, every device) ----
         if (stats != null && stats.recentlyPlayed.isNotEmpty()) {
             item { SectionHeader("Recently played") }
             item { RecentlyAddedRow(stats.recentlyPlayed.take(10)) }
         }
 
-        // ---- recently added ----
         val tracks = model.tracks
         when {
             tracks == null && model.tracksLoading -> item { LoadingBox() }
@@ -137,7 +130,6 @@ fun HomeScreen() {
             }
         }
 
-        // ---- most played ----
         if (stats != null) {
             if (stats.mostPlayed.isEmpty()) {
                 item {
@@ -209,7 +201,6 @@ private fun StatChip(value: String, label: String) {
     }
 }
 
-/** Horizontal cards for the 10 most recently added tracks. */
 @Composable
 private fun RecentlyAddedRow(tracks: List<Track>) {
     val model = LocalAppModel.current

@@ -19,7 +19,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-/** Colour-code the provider so the origin of a suggestion is obvious at a glance. */
 const SOURCE_STYLES: Record<string, string> = {
   MusicBrainz: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
   Deezer: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
@@ -27,15 +26,6 @@ const SOURCE_STYLES: Record<string, string> = {
   YouTube: "bg-red-500/15 text-red-300 ring-red-500/30",
 }
 
-/**
- * Thumbnail of a suggestion's cover art, so the right release can be told
- * apart at a glance. The image is fetched lazily through the server. Two
- * distinct fallbacks, because they mean different things to the person
- * choosing: a candidate that simply has no artwork shows a neutral image
- * icon, while one that *should* have artwork but couldn't be fetched (the
- * server answers 404 for an expired list or an unreachable provider) shows a
- * broken-image icon — the art may still arrive when the candidate is applied.
- */
 function CandidateThumb({ trackId, candidate }: { trackId: string; candidate: MetadataCandidate }) {
   const [failed, setFailed] = useState(false)
   const frame = "flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-zinc-800/80 ring-1 ring-white/5"
@@ -73,7 +63,6 @@ function confidenceLabel(c: number): { text: string; className: string } {
 }
 
 interface Props {
-  /** Tracks to review, in order. The dialog closes when the last one is resolved. */
   tracks: Track[]
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -86,14 +75,10 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
   const [applyingId, setApplyingId] = useState<string | null>(null)
   const [lookupDisabled, setLookupDisabled] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Queue state of the current track's lookup, from the last response.
   const [queue, setQueue] = useState<Pick<MetadataCandidatesResponse, "pending" | "queuePosition" | "partial" | "attempts" | "retryAt" | "paused"> | null>(null)
-  // Provider tab, keyed by track so a new track starts back on "all".
   const [tab, setTab] = useState<{ id: string; tab: string } | null>(null)
-  // "Paste a YouTube link" row.
   const [ytUrl, setYtUrl] = useState("")
   const [ytBusy, setYtBusy] = useState(false)
-  // Tracks the user has already resolved, so revisiting shows the outcome.
   const [resolved, setResolved] = useState<Record<string, string>>({})
 
   const abortRef = useRef<AbortController | null>(null)
@@ -129,8 +114,6 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
     return () => abortRef.current?.abort()
   }, [open, track, load])
 
-  // While the lookup is queued or running, ask again every few seconds; the
-  // list grows as providers answer and the "position" counts down.
   useEffect(() => {
     if (!open || !track || !queue?.pending) return
     const t = setInterval(() => load(track.id, true), 2500)
@@ -173,7 +156,6 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
   const setSourceTab = (t: string) => track && setTab({ id: track.id, tab: t })
   const shown = sourceTab === "all" ? candidates : candidates.filter((c) => c.source === sourceTab)
 
-  // Reset position whenever a fresh batch is handed to the dialog.
   useEffect(() => {
     if (open) {
       setIndex(0)
@@ -208,11 +190,6 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* min-w-0 on the grid children below is load-bearing: DialogContent is a
-          CSS grid, whose items default to min-width:auto and so refuse to shrink
-          below the intrinsic width of their content. Combined with `truncate`
-          (white-space: nowrap) on the long title/album lines, that made the list
-          overflow the dialog panel instead of ellipsising. */}
       <DialogContent
         aria-describedby={undefined}
         className="flex max-h-[92vh] max-w-3xl flex-col gap-0 overflow-hidden border-zinc-800 bg-zinc-900 p-0 sm:max-w-3xl"
@@ -478,7 +455,6 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
   )
 }
 
-/** "in 10 min", "in 12 h", "in a day" — when a parked retry runs. */
 function formatIn(iso: string): string {
   const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60_000)
   if (minutes < 1) return "any moment"

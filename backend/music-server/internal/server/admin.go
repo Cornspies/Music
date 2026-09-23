@@ -9,16 +9,10 @@ import (
 	"strings"
 )
 
-// Admin: user management and runtime settings. The first account on a server
-// is its admin; admins can promote others. Everything here is behind
-// requireAdmin.
-
-// AdminUser is a user as the admin screen sees them.
 type AdminUser struct {
 	publicUser
-	TrackCount int   `json:"trackCount"`
-	BytesUsed  int64 `json:"bytesUsed"`
-	// LastPlayedAt is the most recent listen, or null.
+	TrackCount   int     `json:"trackCount"`
+	BytesUsed    int64   `json:"bytesUsed"`
 	LastPlayedAt *string `json:"lastPlayedAt"`
 }
 
@@ -54,10 +48,6 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, users)
 }
 
-// handleAdminDeleteUser removes an account and everything it uploaded. The
-// files go with it — a shared library still shouldn't keep audio nobody is
-// accountable for. Admins can't delete themselves, so a server always keeps
-// at least one.
 func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	me := userFrom(r)
 	id := r.PathValue("id")
@@ -79,8 +69,6 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Their tracks first, one by one, so files and tombstones are handled the
-	// same way as a normal delete rather than left behind by the cascade.
 	rows, err := s.db.Query(`SELECT id FROM tracks WHERE user_id = ?`, id)
 	if err != nil {
 		s.internalErr(w, "list user tracks", err)
@@ -111,13 +99,10 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 type adminUserPatch struct {
-	Role *string `json:"role"`
-	// SignOut revokes every session the user has.
-	SignOut bool `json:"signOut"`
+	Role    *string `json:"role"`
+	SignOut bool    `json:"signOut"`
 }
 
-// handleAdminUpdateUser changes a user's role and/or signs them out
-// everywhere. Admins can't demote themselves — promote someone else first.
 func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	me := userFrom(r)
 	id := r.PathValue("id")
@@ -159,22 +144,13 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	writeNoContent(w)
 }
 
-// AdminSettings is the runtime configuration an admin can change without
-// restarting the server.
 type AdminSettings struct {
-	RegistrationOpen bool `json:"registrationOpen"`
-	// RegistrationPinned is true when MUSIC_ALLOW_REGISTRATION is set in the
-	// environment, in which case the toggle is read-only.
-	RegistrationPinned bool `json:"registrationPinned"`
-	InviteRequired     bool `json:"inviteRequired"`
-	// Informational: what the server can do, so the screen can explain
-	// missing features.
-	TranscodingAvailable bool `json:"transcodingAvailable"`
-	// UserQuotaBytes is the per-user storage cap, 0 for none.
-	UserQuotaBytes int64 `json:"userQuotaBytes"`
-	// MetadataLookupPaused holds the lookup queue: new tracks still join
-	// it, none are looked up until it is resumed.
-	MetadataLookupPaused bool `json:"metadataLookupPaused"`
+	RegistrationOpen     bool  `json:"registrationOpen"`
+	RegistrationPinned   bool  `json:"registrationPinned"`
+	InviteRequired       bool  `json:"inviteRequired"`
+	TranscodingAvailable bool  `json:"transcodingAvailable"`
+	UserQuotaBytes       int64 `json:"userQuotaBytes"`
+	MetadataLookupPaused bool  `json:"metadataLookupPaused"`
 }
 
 func (s *Server) adminSettings() AdminSettings {

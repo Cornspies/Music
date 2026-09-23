@@ -61,7 +61,6 @@ private val SORT_OPTIONS = listOf(
     "plays" to "Most played",
 )
 
-/** Library: all tracks with server-side sorting and an entry point to upload. */
 @Composable
 fun LibraryScreen() {
     val model = LocalAppModel.current
@@ -143,24 +142,12 @@ private fun TrackList(tracks: List<Track>) {
     }
 }
 
-/**
- * Swipe a row far enough and a confirmation dialog appears — the standard
- * Android pattern. The row always springs back; nothing is removed until the
- * dialog is confirmed, so a stray swipe costs nothing.
- *
- * Only the uploader can delete a track (the server answers 403 otherwise), so
- * everyone else's rows are not swipeable at all rather than offering an action
- * that would fail — and nobody's are until swiping is switched on in the
- * profile.
- */
 @Composable
 private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     val model = LocalAppModel.current
     val scope = rememberCoroutineScope()
-    // The uploader may edit or delete; so may an admin (the server enforces both).
     val mine = model.user?.let { it.id == track.uploadedBy.id || it.isAdmin } == true
 
-    // Swipe-to-delete is opt-in (Profile → Library).
     if (!mine || !model.swipeToDelete) {
         row()
         return
@@ -169,13 +156,6 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     var confirming by remember(track.id) { mutableStateOf(false) }
     var error by remember(track.id) { mutableStateOf<String?>(null) }
 
-    // A right-to-left drag slides the row aside to reveal a bin; letting go
-    // past the threshold asks for confirmation, and the row springs back
-    // either way — the dialog decides, not the gesture. (A left-to-right
-    // drag is what people do to scroll or go back, so it does nothing here.)
-    // Material's SwipeToDismissBox can't veto a dismissal any more, and it
-    // would animate the row off-screen before the user had agreed to
-    // anything, hence the hand-rolled drag.
     val offset = remember(track.id) { Animatable(0f) }
     val density = LocalDensity.current
     val threshold = with(density) { 160.dp.toPx() }
@@ -183,16 +163,12 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     val revealed = offset.value < 0f
 
     Box(Modifier.fillMaxWidth()) {
-        // Only drawn while a swipe is actually in progress. The box sits
-        // behind the row at all times, so painting it unconditionally left
-        // a red stripe and a bin icon visible on every row.
         if (revealed) {
             Box(
                 Modifier
                     .matchParentSize()
                     .background(MaterialTheme.colorScheme.errorContainer)
                     .padding(horizontal = 20.dp),
-                // The row slides left, so the bin is revealed on the right.
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Icon(
@@ -202,9 +178,6 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
                 )
             }
         }
-        // TrackRow itself is transparent, so the row needs an opaque
-        // backdrop of its own or the background shows through it as it
-        // slides rather than being revealed from behind.
         Box(
             Modifier
                 .offset { IntOffset(offset.value.roundToInt(), 0) }

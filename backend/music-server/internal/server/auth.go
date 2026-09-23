@@ -19,45 +19,24 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// defaultSessionDays is how long a token stays valid without being used.
-// Sessions are sliding: every authenticated request that is past the halfway
-// mark gets a fresh token back, so the window keeps moving forward and you
-// stay signed in indefinitely as long as you open the app now and then.
-// A token that is genuinely abandoned (or stolen and sat on) still expires.
 const defaultSessionDays = 30
 
-// defaultSessionMaxDays is the absolute ceiling on a session's life,
-// counted from the original sign-in rather than the last refresh. Sliding
-// alone would let a stolen token be kept alive forever by whoever holds it;
-// this makes them sign in again eventually no matter what.
 const defaultSessionMaxDays = 90
 
-// mediaTokenTTL is the life of a media token: a short, read-only token that
-// clients put in <audio>/<img> URLs instead of the session token, so a copied
-// or logged URL is worth a few hours of listening rather than the whole
-// account. Long enough that a track started near the end of one token's life
-// can still seek (every range request re-authenticates with the same URL).
 const mediaTokenTTL = 6 * time.Hour
 
-// refreshedTokenHeader carries a renewed token back to the client.
 const refreshedTokenHeader = "X-Refreshed-Token"
 
-// Audience values telling the two token kinds apart.
 const (
 	audienceSession = "session"
 	audienceMedia   = "media"
 )
 
-// Roles. Admins can manage users and runtime settings and may edit or
-// delete anyone's track.
 const (
 	roleUser  = "user"
 	roleAdmin = "admin"
 )
 
-// sessionTTL resolves MUSIC_SESSION_DAYS, falling back to the default.
-// Set it to 0 or a negative number for a very long session (10 years), which
-// is effectively "never sign me out".
 func sessionTTL() time.Duration {
 	raw := config.Value("MUSIC_SESSION_DAYS")
 	if raw == "" {
@@ -73,9 +52,6 @@ func sessionTTL() time.Duration {
 	return time.Duration(days) * 24 * time.Hour
 }
 
-// sessionMaxTTL resolves MUSIC_SESSION_MAX_DAYS: how long a session may be
-// kept alive by refreshes before a real sign-in is required. 0 or negative
-// disables the ceiling.
 func sessionMaxTTL() time.Duration {
 	raw := config.Value("MUSIC_SESSION_MAX_DAYS")
 	if raw == "" {
@@ -92,25 +68,15 @@ func sessionMaxTTL() time.Duration {
 }
 
 type authRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	// InviteCode is checked only when MUSIC_INVITE_CODE is configured.
+	Username   string `json:"username"`
+	Password   string `json:"password"`
 	InviteCode string `json:"inviteCode"`
 }
 
-// minPasswordLength applies to new accounts and password changes. Existing
-// shorter passwords keep working until they are changed.
 const minPasswordLength = 8
 
-// settingRegistrationOpen is the settings-table key an admin toggles.
 const settingRegistrationOpen = "registration_open"
 
-// registrationOpen reports whether new accounts may be created.
-//
-// Precedence: MUSIC_ALLOW_REGISTRATION when set (an explicit env value pins
-// it and disables the admin toggle), then the admin's runtime setting, then a
-// default that is open while the server has no accounts at all (so the first
-// person can sign up) or an invite code is configured, and closed otherwise.
 func (s *Server) registrationOpen() bool {
 	if raw := strings.ToLower(strings.TrimSpace(config.Value("MUSIC_ALLOW_REGISTRATION"))); raw != "" {
 		switch raw {
@@ -136,8 +102,6 @@ func (s *Server) registrationOpen() bool {
 
 func inviteRequired() bool { return config.Value("MUSIC_INVITE_CODE") != "" }
 
-// registrationPinnedByEnv is true when the environment decides and the admin
-// toggle would have no effect.
 func registrationPinnedByEnv() bool {
 	return strings.TrimSpace(config.Value("MUSIC_ALLOW_REGISTRATION")) != ""
 }
@@ -165,19 +129,12 @@ type publicUser struct {
 	Role      string `json:"role"`
 }
 
-// ---- token version / role cache ----
-//
-// Every request needs the user's current token version (to reject revoked
-// tokens) and role. Both change rarely, so they're cached per user and the
-// entry is dropped whenever this process changes either. Single-process by
-// design: the SQLite backend already assumes one server per database.
-
 type authInfo struct {
 	version int
 	role    string
 }
 
-var authInfoCache sync.Map // user id -> authInfo
+var authInfoCache sync.Map
 
 func (s *Server) lookupAuthInfo(userID string) (authInfo, error) {
 	if v, ok := authInfoCache.Load(userID); ok {
@@ -195,18 +152,12 @@ func (s *Server) lookupAuthInfo(userID string) (authInfo, error) {
 
 func forgetAuthInfo(userID string) { authInfoCache.Delete(userID) }
 
-// bumpTokenVersion invalidates every token the user currently holds.
 func (s *Server) bumpTokenVersion(userID string) error {
 	_, err := s.db.Exec(`UPDATE users SET token_version = token_version + 1 WHERE id = ?`, userID)
 	forgetAuthInfo(userID)
 	return err
 }
 
-// ---- token issue / verify ----
-
-// issueToken mints a session token. origIAT is the original sign-in time
-// carried across refreshes, so the absolute lifetime is measured from the
-// real sign-in; zero means "this is a fresh sign-in".
 func (s *Server) issueToken(u *User, origIAT time.Time) (string, error) {
 	info, err := s.lookupAuthInfo(u.ID)
 	if err != nil {
@@ -235,7 +186,6 @@ func (s *Server) issueToken(u *User, origIAT time.Time) (string, error) {
 	return tok.SignedString(s.secret)
 }
 
-// issueMediaToken mints the short-lived, read-only token used in media URLs.
 func (s *Server) issueMediaToken(u *User) (string, time.Time, error) {
 	info, err := s.lookupAuthInfo(u.ID)
 	if err != nil {
@@ -256,10 +206,6 @@ func (s *Server) issueMediaToken(u *User) (string, time.Time, error) {
 	return signed, exp, err
 }
 
-// authUser extracts and validates the token from the Authorization header,
-// or — on media routes only — the "token" query parameter that <audio>/<img>
-// elements have to use. Media tokens are accepted only on media routes;
-// session tokens work everywhere.
 func (s *Server) authUser(r *http.Request, mediaRoute bool) (*User, error) {
 	raw := ""
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
@@ -290,8 +236,6 @@ func (s *Server) authUser(r *http.Request, mediaRoute bool) (*User, error) {
 		return nil, errors.New("invalid subject")
 	}
 	aud, _ := claims["aud"].(string)
-	// Tokens from before audiences existed carry none; treat them as
-	// session tokens so nobody is signed out by the upgrade.
 	if aud == "" {
 		aud = audienceSession
 	}
@@ -306,9 +250,6 @@ func (s *Server) authUser(r *http.Request, mediaRoute bool) (*User, error) {
 	if err != nil {
 		return nil, errors.New("unknown user")
 	}
-	// Tokens issued before versioning have no "ver" and are read as 0,
-	// which matches the column default — so they stay valid until the user
-	// changes their password or signs out everywhere.
 	ver := 0
 	if v, ok := claims["ver"].(float64); ok {
 		ver = int(v)
@@ -337,9 +278,6 @@ func (s *Server) requireAuth(next func(http.ResponseWriter, *http.Request)) http
 	return s.requireAuthKind(next, false)
 }
 
-// requireMediaAuth is requireAuth for routes that browsers and native players
-// fetch without headers: these also accept media tokens and the ?token=
-// query parameter.
 func (s *Server) requireMediaAuth(next func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return s.requireAuthKind(next, true)
 }
@@ -358,7 +296,6 @@ func (s *Server) requireAuthKind(next func(http.ResponseWriter, *http.Request), 
 	}
 }
 
-// requireAdmin is requireAuth plus a role check.
 func (s *Server) requireAdmin(next func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if userFrom(r).Role != roleAdmin {
@@ -369,12 +306,6 @@ func (s *Server) requireAdmin(next func(http.ResponseWriter, *http.Request)) htt
 	})
 }
 
-// maybeRefreshToken slides the session forward. Once a token is past the
-// halfway point of its life, the response carries a replacement that clients
-// store in place of the old one. Refreshing on the second half rather than on
-// every request keeps tokens stable enough to cache and avoids re-signing on
-// every image and range request. The original sign-in time is carried
-// across so the absolute ceiling still applies.
 func (s *Server) maybeRefreshToken(w http.ResponseWriter, u *User) {
 	if u.ExpiresAt.IsZero() {
 		return
@@ -383,8 +314,6 @@ func (s *Server) maybeRefreshToken(w http.ResponseWriter, u *User) {
 	if time.Until(u.ExpiresAt) > ttl/2 {
 		return
 	}
-	// Once the absolute ceiling is what's limiting the token, a refresh
-	// would only hand back the same expiry — don't re-sign on every request.
 	if maxTTL := sessionMaxTTL(); maxTTL > 0 && !u.OrigIssuedAt.IsZero() {
 		if hard := u.OrigIssuedAt.Add(maxTTL); !hard.After(u.ExpiresAt.Add(time.Minute)) {
 			return
@@ -398,18 +327,10 @@ func (s *Server) maybeRefreshToken(w http.ResponseWriter, u *User) {
 	w.Header().Set(refreshedTokenHeader, fresh)
 }
 
-// AuthConfig tells a client what the sign-up form should look like before it
-// asks the user for anything. Unauthenticated by design — it exposes only
-// policy, never whether a particular username exists.
 type AuthConfig struct {
-	// RegistrationOpen is false when new accounts are disabled entirely.
-	RegistrationOpen bool `json:"registrationOpen"`
-	// InviteRequired is true when MUSIC_INVITE_CODE is set, so the client
-	// should show an invite-code field.
-	InviteRequired bool `json:"inviteRequired"`
-	// MinPasswordLength lets clients validate before a round trip and keeps
-	// their message in step with the server's rule.
-	MinPasswordLength int `json:"minPasswordLength"`
+	RegistrationOpen  bool `json:"registrationOpen"`
+	InviteRequired    bool `json:"inviteRequired"`
+	MinPasswordLength int  `json:"minPasswordLength"`
 }
 
 func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
@@ -432,18 +353,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	// A single-use invite link (see invites.go) is its holder's ticket in,
-	// whatever the general policy says: it works while sign-ups are closed
-	// and stands in for MUSIC_INVITE_CODE. It's only consumed once the
-	// account has actually been created, so a typo in the password doesn't
-	// burn the link.
 	inviteLink := strings.TrimSpace(req.InviteCode)
 	usingLink := s.invitePending(inviteLink)
 
-	// Otherwise registration is open only if you allow it. On a server
-	// shared with friends you typically create the accounts once and then
-	// close it, or hand out MUSIC_INVITE_CODE instead of leaving signup open
-	// to anyone who finds the URL.
 	if !usingLink && !s.registrationOpen() {
 		if inviteLink != "" {
 			noteAuthFailure(r)
@@ -489,7 +401,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	id := uuid.NewString()
 	createdAt := nowRFC3339()
-	// The first account on a server is its admin.
 	role := roleUser
 	var total int
 	if err := s.db.QueryRow(`SELECT COUNT(1) FROM users WHERE id <> ?`, deletedUserID).Scan(&total); err == nil && total == 0 {
@@ -501,8 +412,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if usingLink {
-		// Two people racing on the same link: the second UPDATE matches no
-		// row, and that account is rolled back.
 		if err := s.consumeInvite(inviteLink, id); err != nil {
 			_, _ = s.db.Exec(`DELETE FROM users WHERE id = ?`, id)
 			noteAuthFailure(r)
@@ -524,9 +433,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// dummyHash is compared against when the username doesn't exist, so a
-// missing account costs the same bcrypt work as a wrong password and the
-// response time can't be used to enumerate usernames.
 var dummyHash = func() []byte {
 	h, _ := bcrypt.GenerateFromPassword([]byte("not-a-real-password"), bcrypt.DefaultCost)
 	return h
@@ -584,8 +490,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	// From the database rather than the token: the name may have been
-	// changed on another device since this token was issued.
 	user, err := s.publicUserByID(userFrom(r).ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusUnauthorized, "user no longer exists")
@@ -597,15 +501,11 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
-// MediaToken is what GET /api/auth/media-token returns.
 type MediaToken struct {
 	Token     string `json:"token"`
 	ExpiresAt string `json:"expiresAt"`
 }
 
-// handleMediaToken hands out a short-lived token for media URLs. Clients
-// refresh it before it expires; it is never written to persistent storage
-// and can't be used for anything but streaming, covers and avatars.
 func (s *Server) handleMediaToken(w http.ResponseWriter, r *http.Request) {
 	tok, exp, err := s.issueMediaToken(userFrom(r))
 	if err != nil {
@@ -615,8 +515,6 @@ func (s *Server) handleMediaToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, MediaToken{Token: tok, ExpiresAt: exp.UTC().Format(time.RFC3339)})
 }
 
-// handleLogoutAll signs the user out on every device by invalidating every
-// token issued so far, including the one making this request.
 func (s *Server) handleLogoutAll(w http.ResponseWriter, r *http.Request) {
 	if err := s.bumpTokenVersion(userFrom(r).ID); err != nil {
 		s.internalErr(w, "revoke tokens", err)
@@ -630,10 +528,6 @@ type changePasswordRequest struct {
 	NewPassword     string `json:"newPassword"`
 }
 
-// handleChangePassword verifies the current password, then updates the
-// stored bcrypt hash. Every existing token is revoked — the whole point of
-// changing a password is usually that someone else might have the old
-// session — and a fresh one is returned so this client stays signed in.
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	var req changePasswordRequest
@@ -660,7 +554,6 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Same rule as register.
 	if len(req.NewPassword) < minPasswordLength {
 		writeErr(w, http.StatusBadRequest,
 			fmt.Sprintf("new password must be at least %d characters", minPasswordLength))

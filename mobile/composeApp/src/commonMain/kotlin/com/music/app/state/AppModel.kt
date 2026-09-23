@@ -44,25 +44,16 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
-/** Repeat modes for the player (off / repeat queue / repeat current track). */
 enum class RepeatMode { OFF, ALL, ONE }
 
-/** How often the playback position is written to the server while playing. */
 private const val LISTEN_REPORT_INTERVAL_S = 15.0
 private const val KEY_SWIPE_TO_DELETE = "ui.swipeToDelete"
 private const val PLAYBACK_SAVE_INTERVAL_MS = 10_000L
 
-/** How often to check whether the media token wants renewing. */
 private const val MEDIA_TOKEN_CHECK_INTERVAL_MS = 5L * 60_000L
 
-/** Thrown by login/register when the server URL is plain http off the LAN. */
 class InsecureServerException(message: String) : Exception(message)
 
-/**
- * Whether a plain-http server address is somewhere the session token may
- * safely travel unencrypted: this machine, an emulator's host, or a private
- * (RFC 1918 / link-local / ULA) address on the same network.
- */
 fun isPrivateHost(host: String): Boolean {
     val h = host.trim().trimStart('[').trimEnd(']').lowercase()
     if (h == "localhost" || h.endsWith(".local") || h == "::1") return true
@@ -74,10 +65,6 @@ fun isPrivateHost(host: String): Boolean {
     return a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && b in 16..31) || (a == 169 && b == 254)
 }
 
-/**
- * The warning to show before signing in to [baseUrl], or null when the
- * address is fine: https anywhere, or http to a private address.
- */
 fun insecureServerWarning(baseUrl: String): String? {
     val url = baseUrl.trim()
     if (!url.startsWith("http://", ignoreCase = true)) return null
@@ -86,14 +73,6 @@ fun insecureServerWarning(baseUrl: String): String? {
     return "Plain http:// outside your local network sends your password unencrypted. Use https://."
 }
 
-/**
- * The single observable app state holder (ViewModel-lite).
- *
- * Holds: auth/user, the back stack, all loaded collections (tracks / stats / favorites /
- * playlists / playlist detail / search), and the player queue. Data is fetched with
- * coroutines on [scope] (main dispatcher) through [api]; all fields are Compose snapshot
- * state so any @Composable observing them recomposes automatically.
- */
 class AppModel(
     val store: TokenStore = TokenStore(),
     val player: PlayerController = PlayerController(),
@@ -101,17 +80,10 @@ class AppModel(
     val api = ApiClient(store)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    /** On-device key/value storage, shared by the downloads and the few local settings. */
     private val localStore = OfflineStore()
 
-    /** Offline downloads: the on-device library and its download/remove actions. */
     val downloads = DownloadManager(api, localStore)
 
-    /**
-     * Swiping a library row away to delete it. Off until turned on in the
-     * profile: a stray swipe on a phone is easy, and the track would be gone
-     * for everyone. Kept per device, across sign-outs.
-     */
     var swipeToDelete by mutableStateOf(localStore.loadMeta(KEY_SWIPE_TO_DELETE) == "1")
         private set
 
@@ -120,30 +92,18 @@ class AppModel(
         localStore.saveMeta(KEY_SWIPE_TO_DELETE, if (on) "1" else null)
     }
 
-    /**
-     * True when the app started from a cached session because the server
-     * couldn't be reached. Downloaded tracks still play; anything needing the
-     * server (library, search, upload) will show its own error state.
-     */
     var offlineMode by mutableStateOf(false)
         private set
 
-    /** True while the Reconnect button is working. */
     var reconnecting by mutableStateOf(false)
         private set
-
-    // ------------------------------------------------------------ auth
 
     var user by mutableStateOf<User?>(null)
         private set
     var bootstrapping by mutableStateOf(true)
         private set
 
-    // ------------------------------------------------------------ navigation (simple back stack)
-
     val backStack = mutableStateListOf<Screen>()
-
-    // ------------------------------------------------------------ library data
 
     var tracks by mutableStateOf<List<Track>?>(null)
         private set
@@ -175,7 +135,6 @@ class AppModel(
     var playlistsError by mutableStateOf<String?>(null)
         private set
 
-    /** Playlists other people have shared publicly (excludes your own). */
     var publicPlaylists by mutableStateOf<List<Playlist>>(emptyList())
         private set
 
@@ -191,8 +150,6 @@ class AppModel(
     var searchLoading by mutableStateOf(false)
         private set
 
-    // ------------------------------------------------------------ player queue
-
     var currentTrack by mutableStateOf<Track?>(null)
         private set
     var queue by mutableStateOf<List<Track>>(emptyList())
@@ -205,15 +162,10 @@ class AppModel(
 
     init {
         backStack.add(Screen.Home)
-        // Player end-of-track → advance the queue on the main thread.
         player.onEnded = { scope.launch { onTrackEnded() } }
-        // Lock screen / headset / notification skips: the queue is ours.
         player.onNext = { scope.launch { next() } }
         player.onPrevious = { scope.launch { previous() } }
 
-        // Media URLs carry a short-lived token; keep one in hand while signed
-        // in so a track that starts near the end of a token's life can still
-        // seek hours later.
         scope.launch {
             while (true) {
                 if (user != null && !offlineMode && api.mediaTokenNeedsRefresh) {
@@ -223,10 +175,6 @@ class AppModel(
             }
         }
 
-        // Continue listening: save the position every few seconds while
-        // something plays, and the moment playback pauses (which also covers
-        // the end of a track and the app being sent to the background by a
-        // phone call or the like).
         scope.launch {
             while (true) {
                 delay(PLAYBACK_SAVE_INTERVAL_MS.milliseconds)
@@ -237,10 +185,6 @@ class AppModel(
             player.isPlaying.collect { playing -> if (!playing) savePlayback() }
         }
 
-        // Listening time: the history counts what was actually heard, not
-        // track lengths. Progress is accumulated in small steps (a jump of
-        // more than a couple of seconds is a seek) and sent every so often
-        // and whenever playback stops. A lost report costs one interval.
         scope.launch {
             player.positionSec.collect { position ->
                 val track = currentTrack ?: return@collect
@@ -261,7 +205,6 @@ class AppModel(
             player.isPlaying.collect { playing -> if (!playing) flushListening() }
         }
 
-        // Restore a previous session (the JWT may have expired — verify it).
         val token = store.loadToken()
         if (token.isNullOrBlank()) {
             bootstrapping = false
@@ -273,10 +216,6 @@ class AppModel(
                     downloads.cacheUser(user!!)
                     onAuthenticated()
                 } catch (e: Exception) {
-                    // An ApiException means the server answered and rejected us
-                    // (expired/invalid token) — that token is genuinely dead.
-                    // Anything else is a transport failure: keep the session and
-                    // start offline so downloaded music is still playable.
                     val cached = if (e is ApiException) null else downloads.cachedUser()
                     if (cached != null) {
                         user = cached
@@ -292,13 +231,6 @@ class AppModel(
         }
     }
 
-    // ------------------------------------------------------------ auth actions
-
-    /**
-     * @throws InsecureServerException when [baseUrl] is plain http off the
-     *   LAN and [acceptInsecure] is false; the screen shows the warning.
-     * @throws Exception on network / credential problems (screens handle the message).
-     */
     suspend fun login(baseUrl: String, username: String, password: String, acceptInsecure: Boolean = false) {
         guardInsecure(baseUrl, acceptInsecure)
         api.baseUrl = baseUrl
@@ -315,11 +247,6 @@ class AppModel(
         if (!accepted) throw InsecureServerException(warning)
     }
 
-    /**
-     * Sign-up policy, loaded when the auth screen appears. Falls back to
-     * permissive defaults if the server is older or unreachable, so the form
-     * still renders.
-     */
     var authConfig by mutableStateOf(AuthConfig())
         private set
 
@@ -347,12 +274,6 @@ class AppModel(
         onAuthenticated()
     }
 
-    /**
-     * Replaces the signed-in user's avatar. The library is refreshed afterwards
-     * because every track carries its uploader's avatar flag, so rows for this
-     * user's tracks need to pick up the change.
-     * @throws Exception on network / server problems (the caller shows it).
-     */
     suspend fun updateAvatar(
         fileName: String,
         mimeType: String,
@@ -365,7 +286,6 @@ class AppModel(
         loadLibrary()
     }
 
-    /** Removes the signed-in user's avatar. @throws Exception on failure. */
     suspend fun clearAvatar() {
         val updated = api.deleteAvatar()
         user = updated
@@ -373,22 +293,15 @@ class AppModel(
         loadLibrary()
     }
 
-    /**
-     * Signs out on every device by revoking all of this account's sessions on
-     * the server, then locally. @throws Exception when the server can't be
-     * reached — nothing is forgotten locally in that case.
-     */
     suspend fun logoutEverywhere() {
         api.logoutEverywhere()
         logout()
     }
 
-    /** @throws Exception with the server's message (wrong password, name taken…). */
     suspend fun renameAccount(username: String, password: String) {
         user = api.renameAccount(username, password)
     }
 
-    /** Deletes the account, then signs out here; the tracks stay on the server. */
     suspend fun deleteAccount(password: String) {
         api.deleteAccount(password)
         logout()
@@ -397,8 +310,6 @@ class AppModel(
     fun logout() {
         store.saveToken(null)
         api.clearMediaToken()
-        // Downloads belong to the signed-in account, so they go with the session —
-        // otherwise the next user on this device inherits the previous one's music.
         downloads.clearForLogout()
         offlineMode = false
         user = null
@@ -422,14 +333,9 @@ class AppModel(
         backStack.clear()
         backStack.add(Screen.Home)
         scope.launch {
-            // The media token goes into every cover and stream URL, so fetch
-            // it before the library renders any. Offline, the fallback is the
-            // session token — and downloaded tracks don't need one at all.
             if (!offlineMode) runCatching { api.refreshMediaToken() }
             refreshAll()
             restorePlayback()
-            // Kept-offline playlists follow the server; do it after the
-            // library is up so the first screen isn't waiting on downloads.
             if (!offlineMode) downloads.syncAll()
         }
     }
@@ -441,8 +347,6 @@ class AppModel(
         scope.launch { loadPlaylistsInternal() }
     }
 
-    // ------------------------------------------------------------ navigation actions
-
     fun push(screen: Screen) {
         if (backStack.lastOrNull() != screen) backStack.add(screen)
     }
@@ -451,14 +355,11 @@ class AppModel(
         if (backStack.size > 1) backStack.removeAt(backStack.size - 1)
     }
 
-    /** Bottom tab tap — reset the stack so "back" never crosses tabs. */
     fun selectTab(screen: Screen) {
         if (backStack.size == 1 && backStack[0] == screen) return
         backStack.clear()
         backStack.add(screen)
     }
-
-    // ------------------------------------------------------------ data loaders
 
     fun loadLibrary(sort: String = tracksSort) {
         tracksSort = sort
@@ -473,7 +374,6 @@ class AppModel(
             noteOnline()
         } catch (e: Exception) {
             if (noteFailure(e)) {
-                // Offline: show what's on the device rather than an error page.
                 tracks = downloads.tracks
                 tracksError = null
             } else {
@@ -484,32 +384,16 @@ class AppModel(
         }
     }
 
-    /**
-     * Records that the server answered. Clears offline mode so the banner and
-     * the offline fallbacks go away as soon as anything succeeds.
-     */
     private fun noteOnline() {
         if (offlineMode) offlineMode = false
     }
 
-    /**
-     * Classifies a failed request. Returns true when it looks like a lost
-     * connection rather than a real server answer, in which case callers fall
-     * back to downloaded content instead of surfacing an error.
-     *
-     * An ApiException means the server replied (4xx/5xx) — that is a genuine
-     * error and must not be disguised as "offline".
-     */
     private fun noteFailure(e: Exception): Boolean {
         if (e is ApiException) return false
         offlineMode = true
         return true
     }
 
-    /**
-     * Retry the connection after a failure — the Reconnect button. Re-checks
-     * the session too, so a token refreshed while offline is picked up.
-     */
     fun reconnect() {
         scope.launch {
             reconnecting = true
@@ -519,8 +403,6 @@ class AppModel(
                 offlineMode = false
                 refreshAll()
             } catch (e: Exception) {
-                // The server answering with a rejection means the session is
-                // genuinely over — reconnecting can't fix that.
                 if (e is ApiException) {
                     logout()
                 } else {
@@ -544,8 +426,6 @@ class AppModel(
             noteOnline()
         } catch (e: Exception) {
             if (noteFailure(e)) {
-                // Offline: describe the on-device library instead of an error,
-                // so Home still shows meaningful numbers.
                 val offline = downloads.tracks
                 stats = Stats(
                     trackCount = offline.size,
@@ -577,8 +457,6 @@ class AppModel(
             noteOnline()
         } catch (e: Exception) {
             if (noteFailure(e)) {
-                // Favourites aren't cached; offline we simply show the ones
-                // that happen to be downloaded rather than an error.
                 favorites = downloads.tracks.filter { it.isFavorite }
                 favoritesError = null
             } else {
@@ -597,16 +475,12 @@ class AppModel(
         playlistsLoading = true
         playlistsError = null
         try {
-            // /api/playlists already returns your own plus anything you pinned;
-            // the public list is what's available to pin.
             playlists = api.playlists()
             publicPlaylists = runCatching { api.publicPlaylists() }.getOrDefault(emptyList())
             downloads.cachePlaylists(playlists ?: emptyList())
             noteOnline()
         } catch (e: Exception) {
             if (noteFailure(e)) {
-                // Offline: the playlists you downloaded, plus the last list the
-                // server sent, so the screen still looks like itself.
                 playlists = downloads.offlinePlaylists()
                 publicPlaylists = emptyList()
                 playlistsError = null
@@ -618,18 +492,12 @@ class AppModel(
         }
     }
 
-    /**
-     * Pin or unpin someone else's public playlist. The lists are refetched
-     * because pinning adds an entry that wasn't in `playlists` at all.
-     * @throws Exception on failure, for the caller to surface.
-     */
     suspend fun setPlaylistPinned(id: String, pinned: Boolean) {
         if (pinned) api.pinPlaylist(id) else api.unpinPlaylist(id)
         loadPlaylistsInternal()
         if (playlistDetail?.id == id) loadPlaylistInternal(id)
     }
 
-    /** Share or unshare one of your own playlists. @throws Exception on failure. */
     suspend fun setPlaylistPublic(id: String, isPublic: Boolean) {
         api.setPlaylistPublic(id, isPublic)
         loadPlaylistsInternal()
@@ -652,8 +520,6 @@ class AppModel(
                 playlistDetail = cached
                 playlistDetailError = null
             } else {
-                // Offline and not downloaded: say so plainly rather than
-                // showing a generic network error.
                 playlistDetailError = if (offlineMode) {
                     "This playlist isn't downloaded"
                 } else {
@@ -665,16 +531,6 @@ class AppModel(
         }
     }
 
-    /**
-     * Opens a playlist that arrived as a share link. Resets the back stack to
-     * Home first so "back" leaves the playlist and lands somewhere sensible,
-     * rather than exiting the app.
-     */
-    /**
-     * Downloads a playlist from a screen that only has its summary — the
-     * overview list has no track data, so the detail is fetched first.
-     * @throws Exception on failure, for the caller to surface.
-     */
     suspend fun downloadPlaylistById(
         playlist: Playlist,
         progress: (done: Int, total: Int) -> Unit = { _, _ -> },
@@ -683,11 +539,6 @@ class AppModel(
         downloads.downloadPlaylist(detail.toPlaylist(), detail.tracks, progress)
     }
 
-    /**
-     * Deletes a track and drops it from every list in memory.
-     * Only the uploader may delete; the server answers 403 otherwise.
-     * @throws Exception on failure, for the caller to surface.
-     */
     suspend fun deleteTrack(track: Track) {
         api.deleteTrack(track.id)
         tracks = tracks?.filterNot { it.id == track.id }
@@ -698,30 +549,21 @@ class AppModel(
         searchResults = searchResults?.let { r ->
             r.copy(tracks = r.tracks.filterNot { it.id == track.id })
         }
-        // The audio is gone from the server, so a downloaded copy is stale.
         downloads.remove(track.id)
         loadStats()
     }
 
-    /**
-     * The share link for a track, making one if there isn't one yet, and
-     * when it stops working (links last a week at most).
-     * @throws Exception with the server's message.
-     */
     suspend fun shareLinkFor(track: Track): Pair<String, String?> {
         val share = api.trackShare(track.id) ?: api.createTrackShare(track.id)
         return DeepLinks.trackShareUrl(api.baseUrl, share.token) to share.expiresAt
     }
 
-    /** Turns the link off; it stops working at once. */
     suspend fun stopSharing(track: Track) {
         api.deleteTrackShare(track.id)
     }
 
-    /** Error from the last shared-track link, for the UI to show once. */
     var shareLinkError by mutableStateOf<String?>(null)
 
-    /** Plays the track behind a share link someone sent. */
     fun openSharedTrack(token: String) {
         scope.launch {
             try {
@@ -740,15 +582,12 @@ class AppModel(
         loadPlaylist(id)
     }
 
-    /** Debounced by SearchScreen (350 ms) before calling this. */
     fun search(query: String) {
         scope.launch {
             searchLoading = true
             try {
                 searchResults = api.search(query.trim())
-            } catch (_: Exception) {
-                // Keep previous results; transient search failures are non-fatal.
-            } finally {
+            } catch (_: Exception) {} finally {
                 searchLoading = false
             }
         }
@@ -758,9 +597,6 @@ class AppModel(
         searchResults = null
     }
 
-    // ------------------------------------------------------------ discover
-
-    /** Catalogues the server can search; null until asked, empty when off. */
     var discoverSources by mutableStateOf<List<DiscoverSource>?>(null)
         private set
     var discoverResults by mutableStateOf<DiscoverSearch?>(null)
@@ -769,7 +605,7 @@ class AppModel(
         private set
     var discoverError by mutableStateOf<String?>(null)
         private set
-    private var discoverQuery: Pair<String, String>? = null // source to query
+    private var discoverQuery: Pair<String, String>? = null
 
     fun loadDiscoverSources() {
         if (discoverSources != null) return
@@ -778,7 +614,6 @@ class AppModel(
         }
     }
 
-    /** Debounced by SearchScreen, like [search]. */
     fun discoverSearch(source: String, query: String) {
         val q = query.trim()
         discoverQuery = source to q
@@ -807,9 +642,7 @@ class AppModel(
                 if (discoverQuery == source to q) {
                     discoverResults = next.copy(results = current.results + next.results)
                 }
-            } catch (_: Exception) {
-                // Keep what's shown; "load more" can be tapped again.
-            } finally {
+            } catch (_: Exception) {} finally {
                 discoverLoading = false
             }
         }
@@ -821,7 +654,6 @@ class AppModel(
         discoverError = null
     }
 
-    /** Adds one result to the library and marks it in the shown results. */
     suspend fun discoverAdd(result: DiscoverResult): Track {
         val track = api.discoverAdd(result.source, result.id)
         discoverResults = discoverResults?.let { r ->
@@ -831,15 +663,12 @@ class AppModel(
         return track
     }
 
-    // ---- playlist imports: server-side jobs, polled while one runs ----
-
     var playlistImports by mutableStateOf<List<PlaylistImport>>(emptyList())
         private set
     private var dismissedImports by mutableStateOf<Set<String>>(emptySet())
     private var importsFinishedSeen = mutableSetOf<String>()
     private var importPolling = false
 
-    /** Imports worth showing: running ones, and finished ones not dismissed. */
     val shownImports: List<PlaylistImport> get() = playlistImports.filter { it.id !in dismissedImports }
 
     fun loadImports() {
@@ -855,7 +684,6 @@ class AppModel(
                         continue
                     }
                     playlistImports = list
-                    // A playlist that just got created or filled: show it.
                     for (job in list) {
                         if (!job.active && importsFinishedSeen.add(job.id)) loadPlaylists()
                     }
@@ -868,7 +696,6 @@ class AppModel(
         }
     }
 
-    /** @throws Exception with the server's message. */
     suspend fun startImport(source: String, url: String): PlaylistImport {
         val job = api.discoverImport(source, url)
         if (playlistImports.none { it.id == job.id }) playlistImports = listOf(job) + playlistImports
@@ -888,9 +715,6 @@ class AppModel(
         dismissedImports = dismissedImports + id
     }
 
-    // ------------------------------------------------------------ playlist mutations
-
-    /** @throws Exception with the server message (e.g. name too long). */
     suspend fun createPlaylist(name: String): Playlist {
         val created = api.createPlaylist(name.trim())
         loadPlaylists()
@@ -912,7 +736,6 @@ class AppModel(
         }
     }
 
-    /** @throws Exception (e.g. 409 track already in playlist). */
     suspend fun addTrackToPlaylist(playlistId: String, trackId: String) {
         api.addPlaylistTrack(playlistId, trackId)
         loadPlaylistInternal(playlistId)
@@ -934,9 +757,6 @@ class AppModel(
         }
     }
 
-    // ------------------------------------------------------------ playback
-
-    /** Play [track] now, using [context] as the "up next" queue. */
     fun playTrack(track: Track, context: List<Track>) {
         val idx = context.indexOfFirst { it.id == track.id }
         queue = if (idx >= 0) context else listOf(track)
@@ -957,27 +777,19 @@ class AppModel(
         savePlayback()
     }
 
-    /** One more play of [track]: in the server's history and on the local counter. */
     private fun countPlay(track: Track) {
         scope.launch {
             try {
                 api.reportPlay(track.id)
                 bumpPlays(track.id)
-            } catch (_: Exception) {
-                // Play counter is best-effort.
-            }
+            } catch (_: Exception) {}
         }
     }
 
-    /** Puts queue[queueIndex] into the player; returns it, or null if the queue is empty. */
     private fun loadCurrent(autoplay: Boolean): Track? {
         val track = queue.getOrNull(queueIndex) ?: return null
         currentTrack = track
         prefetchNeighbours()
-        // Downloaded copy wins over streaming: instant start, no data used, and
-        // it's the only thing that works with no connection.
-        // The Track overload asks for the compatible copy when this platform
-        // cannot decode the original (Ogg on iOS).
         val source = downloads.localPathFor(track.id) ?: api.trackStreamUrl(track)
         player.load(
             source,
@@ -993,26 +805,14 @@ class AppModel(
         return track
     }
 
-    // ------------------------------------------------------------ waveform
-
-    /**
-     * Peaks by track id. Kept for the whole session (200 ints a track) so
-     * skipping back to something already heard shows its waveform at once.
-     */
     private val waveforms = mutableStateMapOf<String, List<Int>>()
 
-    /** Ids a fetch is already in flight for, so neighbours aren't requested twice. */
     private val waveformRequests = mutableSetOf<String>()
 
-    /** Peaks for [track]'s seek bar, or null while loading / unavailable. */
-    // The peaks describe the audio, which can change under the same id (a
-    // trim re-analyses the file), so they are kept against the track's
-    // updatedAt — a changed track is simply a different entry.
     private fun waveformKey(track: Track) = "${track.id}:${track.updatedAt}"
 
     fun waveformFor(track: Track): List<Int>? = waveforms[waveformKey(track)]
 
-    /** Fetches the waveform for [track] if the server has one and it isn't cached yet. */
     fun loadWaveform(track: Track) {
         if (!track.hasWaveform || offlineMode) return
         val key = waveformKey(track)
@@ -1026,16 +826,11 @@ class AppModel(
         }
     }
 
-    // ------------------------------------------------------------ lyrics
-
-    /** Lyrics by track id, including misses, for the session. */
     private val lyrics = mutableStateMapOf<String, Lyrics>()
     private val lyricsRequests = mutableSetOf<String>()
 
-    /** Lyrics for [track], or null while they haven't been fetched yet. */
     fun lyricsFor(track: Track): Lyrics? = lyrics[track.id]
 
-    /** When a miss was cached, so it can be asked again after a while. */
     private val lyricsMissAt = mutableMapOf<String, Long>()
 
     @OptIn(ExperimentalTime::class)
@@ -1044,9 +839,6 @@ class AppModel(
     fun loadLyrics(track: Track) {
         if (offlineMode) return
         val cached = lyrics[track.id]
-        // Hits are kept for the session. A miss may be the provider having
-        // been down (the server doesn't remember those), so it's re-asked
-        // after a few minutes.
         val missFresh = (lyricsMissAt[track.id] ?: 0L) > nowMs() - 5 * 60_000
         if (cached != null && (cached.found || missFresh)) return
         if (!lyricsRequests.add(track.id)) return
@@ -1062,12 +854,6 @@ class AppModel(
         }
     }
 
-    /**
-     * Warms the caches for the tracks either side of the current one, so a
-     * skip lands on a seek bar that's already a waveform (instead of flashing
-     * the plain slider first) and a lyrics strip that's already there.
-     * (Shuffle picks are unpredictable; those still load on arrival.)
-     */
     private fun prefetchNeighbours() {
         if (queue.isEmpty()) return
         listOf(queueIndex, queueIndex + 1, queueIndex - 1)
@@ -1085,10 +871,8 @@ class AppModel(
         if (player.isPlaying.value) player.pause() else player.play()
     }
 
-    /** Manual "next" (button): wraps around at the end of the queue. */
     fun next() = advance(auto = false)
 
-    /** Auto-advance (end of track): respects repeat mode, stops at the end otherwise. */
     private fun advance(auto: Boolean) {
         if (queue.isEmpty()) return
         val i = if (shuffle && queue.size > 1) randomOtherIndex() else queueIndex + 1
@@ -1097,7 +881,7 @@ class AppModel(
                 queueIndex = i
                 startCurrent()
             }
-            !auto -> { // manual next on the last track → wrap to the first
+            !auto -> {
                 queueIndex = 0
                 startCurrent()
             }
@@ -1105,7 +889,7 @@ class AppModel(
                 queueIndex = 0
                 startCurrent()
             }
-            else -> { // end of queue, no repeat → stop, keep the track loaded
+            else -> {
                 player.pause()
                 player.seekTo(0.0)
             }
@@ -1118,12 +902,6 @@ class AppModel(
         return candidate
     }
 
-    /**
-     * Back to the previous track — or, like every player's ⏮ button, to the
-     * start of this one when it's more than a few seconds in. [restartFirst]
-     * false always changes track: the cover swipe slides the art away, so
-     * restarting the same song would look like a skip that didn't happen.
-     */
     fun previous(restartFirst: Boolean = true) {
         if (queue.isEmpty()) return
         if (restartFirst && player.positionSec.value > 3.0) {
@@ -1139,23 +917,12 @@ class AppModel(
         savePlayback()
     }
 
-    // ------------------------------------------------------------ continue listening
-    //
-    // The server remembers what each user last had loaded — track, position and
-    // the up-next queue — so the app can pick up where they left off after
-    // being closed, or on another device. Restored paused: an app opened by
-    // accident shouldn't start making noise.
-
     private var lastSavedQueueIds: List<String> = emptyList()
 
-    // The server's stamp on the state this device has: what it restored, or
-    // what its latest save produced. Sent back when asking whether another
-    // device saved since.
     private var knownPlaybackUpdatedAt = ""
     private var syncingPlayback = false
 
     private fun notePlaybackStamp(stamp: String) {
-        // Responses can come back out of order; the stamps sort as text.
         if (stamp > knownPlaybackUpdatedAt) knownPlaybackUpdatedAt = stamp
     }
 
@@ -1183,9 +950,7 @@ class AppModel(
             try {
                 notePlaybackStamp(api.savePlayback(track.id, position, if (queueChanged) ids else null))
                 if (queueChanged) lastSavedQueueIds = ids
-            } catch (_: Exception) {
-                // Best-effort: the next save carries the same information.
-            }
+            } catch (_: Exception) {}
         }
     }
 
@@ -1196,17 +961,10 @@ class AppModel(
         } catch (_: Exception) {
             null
         } ?: return
-        // The user may have started something while the request was in flight.
         if (currentTrack != null) return
         applyServerPlayback(state)
     }
 
-    /**
-     * Catches the app up with what another device did, on coming back to the
-     * foreground. Nothing happens while this device is playing (it is the
-     * source of truth then); otherwise the server is asked for anything newer
-     * than the state here, and that is shown — paused, where it was left.
-     */
     fun onForeground() {
         if (user == null || offlineMode || syncingPlayback || player.isPlaying.value) return
         syncingPlayback = true
@@ -1214,20 +972,16 @@ class AppModel(
             try {
                 val state = api.playbackState(knownPlaybackUpdatedAt.ifBlank { null })
                 if (state != null && !player.isPlaying.value) applyServerPlayback(state)
-            } catch (_: Exception) {
-                // Best-effort; the next foreground tries again.
-            } finally {
+            } catch (_: Exception) {} finally {
                 syncingPlayback = false
             }
         }
     }
 
-    /** Puts the server's state into the player, paused, at the saved position. */
     private fun applyServerPlayback(state: PlaybackState) {
         val same = currentTrack?.id == state.track.id &&
             abs(player.positionSec.value - state.position) < 1 &&
             queue.map { it.id } == state.queue.map { it.id }
-        // What's loaded is exactly what the server has.
         lastSavedQueueIds = state.queue.map { it.id }
         notePlaybackStamp(state.updatedAt)
         if (same) return
@@ -1240,8 +994,6 @@ class AppModel(
     private fun onTrackEnded() {
         when (repeatMode) {
             RepeatMode.ONE -> {
-                // Starting over is another play, as it would be from the
-                // queue; what was heard so far belongs to the previous one.
                 flushListening()
                 player.seekTo(0.0)
                 player.play()
@@ -1251,18 +1003,11 @@ class AppModel(
         }
     }
 
-    // ------------------------------------------------------------ favorites
-
-    /** Optimistic toggle, reverted on failure. Updates every loaded collection. */
     fun toggleFavorite(track: Track) {
         val newValue = !track.isFavorite
         val updated = track.copy(isFavorite = newValue)
         replaceTrack(updated)
-        // replaceTrack only rewrites entries already in a list, so the
-        // favourites list needs the add and remove done explicitly — otherwise
-        // a newly favourited track doesn't show up until the app restarts.
         favorites = if (newValue) {
-            // The server returns favourites newest-first, so match that here.
             val rest = favorites?.filterNot { it.id == track.id } ?: emptyList()
             listOf(updated) + rest
         } else {
@@ -1272,14 +1017,12 @@ class AppModel(
             try {
                 if (newValue) api.addFavorite(track.id) else api.removeFavorite(track.id)
             } catch (_: Exception) {
-                // Put it back the way it was, including the favourites list.
                 replaceTrack(track)
                 loadFavoritesInternal()
             }
         }
     }
 
-    /** Swap [updated] into every collection that contains the track (by id). */
     private fun replaceTrack(updated: Track) {
         fun List<Track>?.withUpdated(): List<Track>? =
             this?.map { if (it.id == updated.id) updated else it }
@@ -1299,8 +1042,6 @@ class AppModel(
             ?: return
         replaceTrack(source.copy(plays = source.plays + 1))
     }
-
-    // ------------------------------------------------------------ lifecycle
 
     fun destroy() {
         scope.cancel()

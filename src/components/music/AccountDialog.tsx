@@ -11,11 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-/**
- * Account settings: the sign-in name, the password (its own dialog), and
- * deleting the account. Both the rename and the delete ask for the current
- * password, like a password change does.
- */
 export function AccountDialog() {
   const open = useUIStore((s) => s.accountOpen)
   const setOpen = useUIStore((s) => s.setAccountOpen)

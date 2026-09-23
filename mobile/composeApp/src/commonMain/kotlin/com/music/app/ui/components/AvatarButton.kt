@@ -32,14 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Largest avatar the server accepts. */
 private const val MAX_AVATAR_BYTES = 8 * 1024 * 1024
 
-/**
- * The signed-in user's avatar in the Home header. Tapping it opens the
- * profile screen, where the picture (and everything else about the account)
- * is managed.
- */
 @Composable
 fun AvatarButton() {
     val model = LocalAppModel.current
@@ -60,11 +54,6 @@ fun AvatarButton() {
     }
 }
 
-/**
- * A large avatar with "change" / "remove" beneath it: the profile screen's
- * picture editor. Picking an image opens the crop dialog; the upload happens
- * once the user has framed it.
- */
 @Composable
 fun AvatarEditor(size: Dp = 96.dp) {
     val model = LocalAppModel.current
@@ -73,11 +62,8 @@ fun AvatarEditor(size: Dp = 96.dp) {
 
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    /** Image chosen but not yet framed and uploaded. */
     var pending by remember { mutableStateOf<Pair<PickedImage, ByteArray>?>(null) }
 
-    // Picking an image opens the crop dialog; the upload happens once the
-    // user has framed it.
     fun prepare(picked: PickedImage) {
         scope.launch {
             busy = true

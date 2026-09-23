@@ -34,13 +34,9 @@ import { Slider } from "@/components/ui/slider"
 const SEEK_SLIDER_CLASS =
   "[&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:bg-zinc-700/70 [&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-range]]:shadow-[0_0_10px_rgba(16,185,129,0.45)] [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:shadow-md [&_[data-slot=slider-thumb]]:opacity-0 group-hover/seek:[&_[data-slot=slider-thumb]]:opacity-100 [&_[data-slot=slider-thumb]]:transition-opacity"
 
-// The whole 32px-tall root takes clicks and drags (Radix reads the pointer
-// anywhere on it), while the visible track stays a thin line: an easy
-// target without a chunky look. Hovering thickens the track and fills it.
 const VOLUME_SLIDER_CLASS =
   "h-8 cursor-pointer [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:transition-[height] hover:[&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-range]]:bg-zinc-400 hover:[&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-zinc-300 [&_[data-slot=slider-thumb]]:cursor-grab"
 
-/** Shows/hides the lyrics panel docked beside the main area. */
 function LyricsToggle() {
   const open = useUIStore((s) => s.lyricsPanelOpen)
   return (
@@ -108,7 +104,6 @@ export function PlayerBar() {
       role="region"
       aria-label="Player"
     >
-      {/* mobile thin seek bar */}
       <div className="px-2 pt-1 md:hidden">
         <Slider
           aria-label="Seek"
@@ -126,9 +121,6 @@ export function PlayerBar() {
       </div>
 
       <div className="flex h-16 items-center gap-2 px-3 pb-1 md:h-24 md:gap-4 md:px-4 md:pb-0 md:pt-0">
-        {/* left — now playing info (click → full-screen player). The info
-            button hugs a short title but shrinks for a long one (which then
-            truncates), so the heart and menu stay inside this column. */}
         <div className="flex min-w-0 flex-1 items-center gap-3 md:w-72 md:flex-none lg:w-80 xl:w-96">
           <button
             type="button"
@@ -194,7 +186,6 @@ export function PlayerBar() {
           {currentTrack && <TrackMenu track={currentTrack} side="top" showPlay={false} />}
         </div>
 
-        {/* center — controls + seek (desktop) */}
         <div className="hidden flex-1 flex-col items-center gap-1.5 md:flex">
           <div className="flex items-center gap-1">
             <ControlButton
@@ -286,7 +277,6 @@ export function PlayerBar() {
           </div>
         </div>
 
-        {/* mobile compact controls */}
         <div className="flex shrink-0 items-center gap-0.5 md:hidden">
           <Button
             variant="ghost"
@@ -333,7 +323,6 @@ export function PlayerBar() {
           </Button>
         </div>
 
-        {/* right — add to playlist + sleep timer + queue + volume (desktop) */}
         <div className="hidden items-center justify-end gap-0.5 md:flex md:w-72 lg:w-80 xl:w-96">
           {currentTrack ? <AddToPlaylistButton track={currentTrack} /> : null}
           <ControlButton
@@ -351,8 +340,6 @@ export function PlayerBar() {
           >
             <ListMusic className="size-4" />
           </ControlButton>
-          {/* The slider gives way when the column is short of room, rather
-              than the buttons spilling over the seek bar. */}
           <div className="flex min-w-0 items-center gap-2 pl-2">
             <ControlButton
               label={muted ? "Unmute" : "Mute"}

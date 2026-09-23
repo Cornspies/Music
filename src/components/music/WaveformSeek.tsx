@@ -13,18 +13,10 @@ interface WaveformSeekProps {
   onSeek: (seconds: number) => void
   disabled?: boolean
   className?: string
-  /** bar height in px */
   height?: number
-  /** rendered when the track has no waveform yet */
   fallback: React.ReactNode
 }
 
-/**
- * Waveform seek bar: the server's 200 peaks drawn as bars, the played part
- * tinted. Click or drag anywhere to seek. When a track hasn't been analysed
- * (no ffmpeg on the server, or not yet) it renders `fallback` — the plain
- * slider — so the layout never jumps.
- */
 export function WaveformSeek({
   track,
   position,
@@ -36,14 +28,10 @@ export function WaveformSeek({
   height = 28,
   fallback,
 }: WaveformSeekProps) {
-  // Peaks are remembered together with the version of the track they
-  // belong to, so a track change — or the same track re-analysed after a
-  // trim — simply stops matching rather than needing a reset in the effect.
   const version = `${track.id}:${track.updatedAt}`
   const [loaded, setLoaded] = useState<{ version: string; peaks: number[] | null } | null>(null)
   const [dragging, setDragging] = useState<number | null>(null)
   const ref = useRef<HTMLDivElement>(null)
-  // The player bar and the full-screen view can both show the same track.
   const clipId = useId()
 
   useEffect(() => {
@@ -57,8 +45,6 @@ export function WaveformSeek({
     }
   }, [track.id, track.updatedAt, track.hasWaveform, version])
 
-  // While a re-analysis is pending the track has no waveform, and the old
-  // one no longer matches the audio — the plain slider stands in.
   const peaks = track.hasWaveform && loaded?.version === version ? loaded.peaks : null
   if (!peaks || peaks.length === 0) return <>{fallback}</>
 
@@ -146,14 +132,12 @@ export function WaveformSeek({
             <rect x="0" y="0" width={peaks.length * fraction} height="100" />
           </clipPath>
         </defs>
-        {/* unplayed */}
         <g className="fill-zinc-600/70">
           {peaks.map((p, i) => {
             const h = Math.max(4, p)
             return <rect key={i} x={i + 0.15} y={(100 - h) / 2} width={0.7} height={h} rx={0.3} />
           })}
         </g>
-        {/* played, clipped to the position */}
         <g className="fill-emerald-500" clipPath={`url(#${clipId})`}>
           {peaks.map((p, i) => {
             const h = Math.max(4, p)
@@ -161,7 +145,6 @@ export function WaveformSeek({
           })}
         </g>
       </svg>
-      {/* playhead */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute top-0 bottom-0 w-px bg-white/80 shadow-[0_0_6px_rgba(255,255,255,0.6)]"

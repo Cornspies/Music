@@ -63,7 +63,6 @@ import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc500
 import kotlinx.coroutines.launch
 
-/** Playlist detail: ordered tracks, play-all, add tracks dialog, remove tracks. */
 @Composable
 fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
     val model = LocalAppModel.current
@@ -106,15 +105,12 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
             }
             val header = model.playlistDetail
             if (header != null && header.isPublic) {
-                // Public playlists are reachable by anyone signed in, so they
-                // are the only ones worth handing out a link to.
                 SharePlaylistButton(header)
             }
             if (header != null) {
                 PlaylistDownloadButton(header)
             }
             if (header != null && !header.isMine) {
-                // Someone else's: you may keep it in your list, not edit it.
                 IconButton(
                     enabled = !actionBusy,
                     onClick = {
@@ -243,7 +239,6 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
     }
 }
 
-/** Picker listing the whole library; already-added tracks show a check. */
 @Composable
 private fun AddTracksDialog(playlistId: String, onDismiss: () -> Unit) {
     val model = LocalAppModel.current
@@ -344,11 +339,6 @@ private fun AddTracksDialog(playlistId: String, onDismiss: () -> Unit) {
 }
 
 
-/**
- * Downloads every track in a playlist for offline listening, or removes it
- * again. While it runs the icon is replaced by progress, because a playlist of
- * any size takes long enough that a static spinner would look stuck.
- */
 @Composable
 private fun PlaylistDownloadButton(detail: PlaylistDetail) {
     val model = LocalAppModel.current
@@ -440,11 +430,6 @@ private fun PlaylistDownloadButton(detail: PlaylistDetail) {
 }
 
 
-/**
- * Copies a link to this playlist. The link is the web app's own URL, so it
- * opens in a browser for anyone, and opens the app directly on Android when
- * the build's musicHost matches the server.
- */
 @Composable
 private fun SharePlaylistButton(detail: PlaylistDetail) {
     val model = LocalAppModel.current

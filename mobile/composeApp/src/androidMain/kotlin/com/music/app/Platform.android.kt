@@ -9,10 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
-// ---------------------------------------------------------------------------
-// Audio file picker (SAF) + byte reading, resolved against the Activity context.
-// ---------------------------------------------------------------------------
-
 internal actual val canUploadFromDevice: Boolean = true
 
 @Composable
@@ -43,12 +39,9 @@ internal actual fun rememberAudioPickerLauncher(
         }
         if (picked.isNotEmpty()) onPicked(picked)
     }
-    // audio/* misses .ogx, which Android reports as application/ogg, so the
-    // picker would grey out a file the server happily accepts.
     return { launcher.launch(arrayOf("audio/*", "application/ogg")) }
 }
 
-/** Duration via MediaMetadataRetriever (release() explicitly: close() needs API 29). */
 private fun queryDuration(context: Context, uri: Uri): Double? {
     val retriever = MediaMetadataRetriever()
     return try {
@@ -75,14 +68,8 @@ internal actual suspend fun PickedAudio.readBytes(): ByteArray {
         ?: throw IllegalStateException("cannot read file")
 }
 
-// ---------------------------------------------------------------------------
-// Image picker (SAF) for the user's avatar.
-// ---------------------------------------------------------------------------
-
 internal actual val canPickImageFromDevice: Boolean = true
 
-// ExoPlayer handles Ogg/Vorbis, Opus, FLAC, WebM and the rest, so the original
-// upload is always the one to stream.
 internal actual val unplayableMimeTypes: Set<String> = emptySet()
 
 @Composable

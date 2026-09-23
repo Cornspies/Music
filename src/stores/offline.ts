@@ -1,9 +1,5 @@
 "use client"
 
-// Offline store — which tracks are on this device, what's downloading, and
-// whether we're currently cut off from the server. The bytes live in Cache
-// Storage (see lib/offline.ts); this holds the bookkeeping the UI renders.
-
 import { create } from "zustand"
 import { toast } from "sonner"
 import type { Track } from "@/lib/types"
@@ -25,13 +21,10 @@ interface DownloadJob {
 
 interface OfflineState {
   supported: boolean
-  /** Downloaded tracks, newest first. */
   tracks: Track[]
   ids: Set<string>
   bytesUsed: number
-  /** In-flight downloads keyed by track id. */
   jobs: Record<string, DownloadJob>
-  /** True when the last server request failed with a network error. */
   offline: boolean
   initialized: boolean
   init: () => Promise<void>
@@ -40,7 +33,6 @@ interface OfflineState {
   remove: (id: string) => Promise<void>
   removeAll: () => Promise<void>
   setOffline: (offline: boolean) => void
-  /** Keeps stored metadata in step when a track is edited. */
   replaceTrack: (track: Track) => void
 }
 

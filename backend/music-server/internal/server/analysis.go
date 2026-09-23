@@ -19,33 +19,16 @@ import (
 	"music-server/internal/config"
 )
 
-// Audio analysis runs in the background after upload (and, on start-up, for
-// anything uploaded before it existed). Two numbers come out of it:
-//
-//   - integrated loudness in LUFS (EBU R128, via ffmpeg's ebur128 filter),
-//     so clients can normalise volume between quiet and loud masters;
-//   - a coarse waveform: waveformBuckets peak values in 0-100, enough to draw
-//     a seek bar, small enough to keep in the database.
-//
-// Both are best-effort: no ffmpeg, or a file ffmpeg can't decode, simply
-// leaves the track without them, exactly as before the feature existed.
-
 const (
-	waveformBuckets = 200
-	// Decoded mono at this rate; three hours of audio is ~86 MB of samples,
-	// and the read is capped below that anyway.
+	waveformBuckets    = 200
 	waveformSampleRate = 4000
 	maxWaveformBytes   = 96 << 20
 	analysisTimeout    = 5 * time.Minute
-	// Queue depth. Uploads past this are picked up by the start-up backfill.
 	analysisQueueDepth = 4096
 )
 
 var analysisQueue = make(chan string, analysisQueueDepth)
 
-// queueAnalysis schedules a track for loudness + waveform analysis. It never
-// blocks the caller: a full queue means the next restart's backfill will get
-// to it instead.
 func (s *Server) queueAnalysis(trackID string) {
 	if config.Flag("MUSIC_DISABLE_ANALYSIS") {
 		return
@@ -57,9 +40,6 @@ func (s *Server) queueAnalysis(trackID string) {
 	}
 }
 
-// StartBackgroundWork launches the analysis worker and queues every track
-// that has never been analysed. Called once from main after the server is
-// constructed.
 func (s *Server) StartBackgroundWork() {
 	s.initDiscoverSources()
 	s.startImportWorker()
@@ -85,10 +65,6 @@ func (s *Server) StartBackgroundWork() {
 	}
 }
 
-// backfillEdgeChecks sends every analysed track the automatic silence trim
-// hasn't looked at yet through the analysis worker once — the library that
-// was there before the trim existed. Tracks not yet analysed get it as part
-// of their analysis anyway.
 func (s *Server) backfillEdgeChecks() {
 	defer logPanic("silence trim backfill")
 	rows, err := s.db.Query(`SELECT id FROM tracks WHERE edges_checked = 0 AND COALESCE(analyzed_at, '') <> '' ORDER BY created_at ASC`)
@@ -109,14 +85,12 @@ func (s *Server) backfillEdgeChecks() {
 	}
 	log.Printf("trim: checking %d track(s) for silence at the start and end, in the background", len(ids))
 	for _, id := range ids {
-		analysisQueue <- id // blocking is fine here, this is its own goroutine
+		analysisQueue <- id
 	}
 }
 
 func (s *Server) analysisWorker() {
 	for id := range analysisQueue {
-		// Share the CPU cap with transcoding: a bulk upload should not run
-		// two ffmpegs per file on top of each other.
 		func() {
 			transcodeSlots <- struct{}{}
 			defer func() { <-transcodeSlots }()
@@ -145,27 +119,22 @@ func (s *Server) backfillAnalysis() {
 	}
 	log.Printf("analysis: %d track(s) to analyse in the background", len(ids))
 	for _, id := range ids {
-		analysisQueue <- id // blocking is fine here, this is its own goroutine
+		analysisQueue <- id
 	}
 }
 
-// analyzeTrack runs both passes and records the result. Failures are logged
-// and the track is marked as attempted so it isn't retried on every start.
 func (s *Server) analyzeTrack(trackID string) {
 	var rel, analyzedAt string
 	var edgesChecked int
 	if err := s.db.QueryRow(`SELECT file_path, COALESCE(analyzed_at, ''), edges_checked FROM tracks WHERE id = ?`, trackID).
 		Scan(&rel, &analyzedAt, &edgesChecked); err != nil {
-		return // deleted while queued
+		return
 	}
 	abs := filepath.Join(s.dataDir, rel)
 
 	ctx, cancel := context.WithTimeout(context.Background(), analysisTimeout)
 	defer cancel()
 
-	// First the silence at either end, so what's measured below is the
-	// audio as it will stay. Once per track, whatever the outcome: a file
-	// ffmpeg can't cut isn't tried again on every start.
 	if edgesChecked == 0 && autoTrimEnabled() {
 		trimmed, err := s.trimSilentEdges(ctx, trackID, rel)
 		if err != nil {
@@ -173,7 +142,7 @@ func (s *Server) analyzeTrack(trackID string) {
 		}
 		_, _ = s.db.Exec(`UPDATE tracks SET edges_checked = 1 WHERE id = ?`, trackID)
 		if !trimmed && analyzedAt != "" {
-			return // measured before, and the audio didn't change
+			return
 		}
 	}
 
@@ -214,7 +183,6 @@ func (s *Server) analyzeTrack(trackID string) {
 
 var integratedLoudnessRE = regexp.MustCompile(`I:\s+(-?[0-9]+(?:\.[0-9]+)?)\s+LUFS`)
 
-// measureLoudness returns the integrated loudness of a file in LUFS.
 func measureLoudness(ctx context.Context, path string) (float64, error) {
 	bin := ffmpegBinary()
 	if bin == "" {
@@ -237,15 +205,12 @@ func measureLoudness(ctx context.Context, path string) (float64, error) {
 	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0, fmt.Errorf("unparseable loudness")
 	}
-	// -70 LUFS is ebur128's floor and means silence; not useful for gain.
 	if v <= -69.9 {
 		return 0, fmt.Errorf("track is silent")
 	}
 	return v, nil
 }
 
-// computeWaveform decodes the file to low-rate mono PCM and reduces it to
-// waveformBuckets peak values scaled 0-100.
 func computeWaveform(ctx context.Context, path string) ([]int, error) {
 	bin := ffmpegBinary()
 	if bin == "" {
@@ -265,8 +230,6 @@ func computeWaveform(ctx context.Context, path string) ([]int, error) {
 		return nil, err
 	}
 	raw, readErr := io.ReadAll(io.LimitReader(stdout, maxWaveformBytes))
-	// Drain anything past the cap so ffmpeg can finish instead of blocking
-	// on a full pipe.
 	_, _ = io.Copy(io.Discard, stdout)
 	waitErr := cmd.Wait()
 	if readErr != nil {
@@ -300,8 +263,6 @@ func computeWaveform(ctx context.Context, path string) ([]int, error) {
 		}
 		peaks[b] = maxAbs / 32768
 	}
-	// Normalise so the loudest bucket is full height; a quiet master would
-	// otherwise draw as a flat line.
 	var top float64
 	for _, p := range peaks {
 		if p > top {
@@ -313,7 +274,6 @@ func computeWaveform(ctx context.Context, path string) ([]int, error) {
 		if top > 0 {
 			p /= top
 		}
-		// Slight curve so quiet passages stay visible.
 		out[i] = int(math.Round(math.Pow(p, 0.7) * 100))
 	}
 	return out, nil
@@ -327,9 +287,7 @@ func lastLine(s string) string {
 	return s
 }
 
-// Waveform is what GET /api/tracks/{id}/waveform returns.
 type Waveform struct {
-	// Peaks are waveformBuckets values in 0-100, left to right.
 	Peaks []int `json:"peaks"`
 }
 
@@ -342,11 +300,6 @@ func (s *Server) handleTrackWaveform(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no waveform for this track")
 		return
 	}
-	// The peaks describe the audio, and the audio can change under the same
-	// id — a trim re-analyses the file. So the browser has to ask whether
-	// what it holds is still current instead of keeping it for a day; the
-	// ETag carries updated_at, which every such change bumps, and an
-	// unchanged track is answered with an empty 304.
 	etag := `"wave-` + id + `-` + updatedAt + `"`
 	w.Header().Set("Cache-Control", "private, no-cache")
 	w.Header().Set("ETag", etag)

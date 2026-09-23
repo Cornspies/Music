@@ -5,22 +5,6 @@ import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 
-/**
- * Global keyboard shortcuts:
- *   Space        play/pause
- *   ← / →        seek -/+ 10 s
- *   ↑ / ↓        volume ±5%
- *   M            mute toggle
- *   N / P        next / previous track
- *   S            shuffle toggle
- *   R            cycle repeat
- *   F            favorite current track
- *   Q            toggle queue panel
- *   O            toggle now playing overlay
- *   /            go to search + focus input
- *   ?            shortcuts help dialog
- * Skipped while typing in inputs/sliders or when a dialog/menu is open.
- */
 export function useKeyboardShortcuts() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -31,17 +15,10 @@ export function useKeyboardShortcuts() {
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.tagName === "SELECT" ||
-          // isContentEditable lives on HTMLElement, not Element
           (target instanceof HTMLElement && target.isContentEditable) ||
           target.closest('[data-slot="slider"], [role="slider"]') !== null)
       if (typing) return
 
-      // An open dialog/menu/sheet takes over the keyboard, so its own keys
-      // (Escape, arrows, typing) work — except for overlays that opt back in
-      // with data-shortcuts-allowed. Those are passive surfaces (queue panel,
-      // now playing, this app's shortcut list) where the transport keys are
-      // still what the user expects. If a real input dialog is stacked on top
-      // of one of those, the querySelector below still finds it and bails.
       const overlay =
         document.querySelector('[role="dialog"]:not([data-shortcuts-allowed])') !== null ||
         document.querySelector('[role="menu"]') !== null

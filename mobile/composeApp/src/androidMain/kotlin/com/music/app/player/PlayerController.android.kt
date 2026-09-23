@@ -17,15 +17,6 @@ import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import androidx.core.net.toUri
 
-/**
- * Media3 implementation. The player itself lives in [PlaybackService] so
- * audio keeps going in the background and the system shows controls for it;
- * this class is a [MediaController] over it. The controller connects
- * asynchronously, so calls made before it's ready are queued and replayed.
- *
- * Position is polled every 250 ms on the main thread — plenty for a seek bar;
- * isPlaying updates via Player.Listener.
- */
 actual class PlayerController actual constructor() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -95,7 +86,6 @@ actual class PlayerController actual constructor() {
         mainHandler.post(positionPoller)
     }
 
-    /** Runs [block] now if connected, otherwise once the controller is ready. */
     private fun withController(block: (MediaController) -> Unit) {
         val c = controller
         if (c != null) block(c) else pending.addLast(block)
@@ -103,9 +93,6 @@ actual class PlayerController actual constructor() {
 
     actual fun load(url: String, autoplay: Boolean, info: NowPlayingInfo?) {
         _positionSec.value = 0.0
-        // Offline playback passes a plain filesystem path; streaming passes an
-        // http(s) URL. Uri.fromFile handles the escaping a raw "file://" + path
-        // string would get wrong for names containing spaces or '#'.
         val uri = if (url.startsWith("/")) Uri.fromFile(File(url)) else url.toUri()
         val metadata = MediaMetadata.Builder().apply {
             if (info != null) {
@@ -144,8 +131,6 @@ actual class PlayerController actual constructor() {
         skipForward = null
         skipBack = null
         controller?.removeListener(listener)
-        // Releasing the controller only disconnects this client; the service
-        // keeps playing until the user pauses or the task is removed.
         controller?.release()
         controller = null
         controllerFuture?.let { MediaController.releaseFuture(it) }
@@ -153,11 +138,6 @@ actual class PlayerController actual constructor() {
     }
 
     companion object {
-        /**
-         * Skip handlers the service's player forwards to. Process-global
-         * because the service can't reach the AppModel any other way, and
-         * there is exactly one player per process.
-         */
         @Volatile internal var skipForward: (() -> Unit)? = null
         @Volatile internal var skipBack: (() -> Unit)? = null
     }

@@ -18,20 +18,13 @@ import (
         "strconv"
         "strings"
 
-        // Registered for their decoders only; everything is re-encoded as JPEG.
         _ "image/gif"
         _ "image/png"
 )
 
-// Avatars are small and displayed at ~20px next to every track, so the upload
-// is capped tightly and re-encoded to a square JPEG. Re-encoding also strips
-// EXIF (which can carry GPS) and guarantees the stored bytes are really an
-// image rather than something disguised as one.
 const (
-        maxAvatarUploadBytes = 8 << 20 // 8 MB accepted from the client
-        avatarSize           = 256     // stored square edge, in pixels
-        // Upper bound on decoded pixels (~50 megapixels, roughly 200 MB as
-        // RGBA). Generous for a real photo, fatal for a decompression bomb.
+        maxAvatarUploadBytes = 8 << 20
+        avatarSize           = 256
         maxAvatarPixels = 50_000_000
 )
 
@@ -39,8 +32,6 @@ func (s *Server) avatarPath(userID string) string {
         return filepath.Join(s.avaDir, userID+".jpg")
 }
 
-// handleUploadAvatar accepts a multipart "file" field and stores a normalized
-// square JPEG for the signed-in user.
 func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
         u := userFrom(r)
 
@@ -78,7 +69,6 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
                 s.internalErr(w, "create avatar dir", err)
                 return
         }
-        // Write-then-rename so a failed write can't leave a truncated avatar.
         target := s.avatarPath(u.ID)
         tmp := target + ".part"
         if err := os.WriteFile(tmp, square, 0o644); err != nil {
@@ -108,8 +98,6 @@ func (s *Server) handleDeleteAvatar(w http.ResponseWriter, r *http.Request) {
         s.writeCurrentUser(w, u)
 }
 
-// handleUserAvatar serves another user's avatar. Any signed-in user may fetch
-// any avatar — they're shown next to every track in the shared library.
 func (s *Server) handleUserAvatar(w http.ResponseWriter, r *http.Request) {
         id := r.PathValue("id")
 
@@ -145,8 +133,6 @@ func (s *Server) handleUserAvatar(w http.ResponseWriter, r *http.Request) {
         }
 }
 
-// writeCurrentUser re-reads and returns the signed-in user so the client can
-// refresh its cached profile after an avatar change.
 func (s *Server) writeCurrentUser(w http.ResponseWriter, u *User) {
         user, err := s.publicUserByID(u.ID)
         if err != nil {
@@ -156,23 +142,12 @@ func (s *Server) writeCurrentUser(w http.ResponseWriter, u *User) {
         writeJSON(w, http.StatusOK, user)
 }
 
-// decodeSquareJPEG centre-crops to a square, scales to avatarSize and encodes
-// as JPEG. Scaling is a simple nearest-neighbour sample: at 256px for a 20px
-// display that's indistinguishable from a filtered resize and avoids pulling
-// in an image-processing dependency.
-// cropRect is the region of the source image to keep, in fractions of the
-// image's own width and height so it survives any resizing the client did for
-// display. A zero value means "centre crop", which is what happens when a
-// client doesn't send one.
 type cropRect struct {
-        X, Y, Size float64 // size is a fraction of the shorter edge
+        X, Y, Size float64
 }
 
 func (c cropRect) isSet() bool { return c.Size > 0 }
 
-// parseCropRect reads the optional crop fields from the upload form. Anything
-// missing, unparseable or out of range falls back to a centre crop rather than
-// failing the upload — a bad crop is not worth rejecting a picture over.
 func parseCropRect(r *http.Request) cropRect {
         num := func(name string) (float64, bool) {
                 v := strings.TrimSpace(r.FormValue(name))
@@ -198,9 +173,6 @@ func parseCropRect(r *http.Request) cropRect {
 }
 
 func decodeSquareJPEG(raw []byte, crop cropRect) ([]byte, error) {
-        // Check the declared dimensions before decoding: a ~1 MB PNG can declare
-        // 30000x30000, which image.Decode would happily expand into gigabytes of
-        // RGBA. DecodeConfig reads only the header.
         cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
         if err != nil {
                 return nil, err
@@ -221,8 +193,6 @@ func decodeSquareJPEG(raw []byte, crop cropRect) ([]byte, error) {
                 return nil, fmt.Errorf("empty image")
         }
 
-        // Pick the square to keep. The client sends one when the user framed
-        // the picture themselves; otherwise fall back to the centre.
         shorter := b.Dx()
         if b.Dy() < shorter {
                 shorter = b.Dy()
@@ -238,8 +208,6 @@ func decodeSquareJPEG(raw []byte, crop cropRect) ([]byte, error) {
                 }
                 offX = b.Min.X + int(crop.X*float64(b.Dx()))
                 offY = b.Min.Y + int(crop.Y*float64(b.Dy()))
-                // Clamp so a rounding error or a hostile request can never read
-                // outside the image.
                 if offX+edge > b.Max.X {
                         offX = b.Max.X - edge
                 }
@@ -255,8 +223,6 @@ func decodeSquareJPEG(raw []byte, crop cropRect) ([]byte, error) {
         }
 
         out := image.NewRGBA(image.Rect(0, 0, avatarSize, avatarSize))
-        // Fill first: source images with transparency would otherwise land on
-        // black, which looks wrong against the app's dark-but-not-black surfaces.
         draw.Draw(out, out.Bounds(), image.White, image.Point{}, draw.Src)
 
         for y := 0; y < avatarSize; y++ {
