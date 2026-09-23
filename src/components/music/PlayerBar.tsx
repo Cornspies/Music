@@ -126,14 +126,16 @@ export function PlayerBar() {
       </div>
 
       <div className="flex h-16 items-center gap-2 px-3 pb-1 md:h-24 md:gap-4 md:px-4 md:pb-0 md:pt-0">
-        {/* left — now playing info (click → full-screen player) */}
-        <div className="flex min-w-0 flex-1 items-center gap-3 md:w-72 md:flex-none lg:w-80">
+        {/* left — now playing info (click → full-screen player). The info
+            button hugs a short title but shrinks for a long one (which then
+            truncates), so the heart and menu stay inside this column. */}
+        <div className="flex min-w-0 flex-1 items-center gap-3 md:w-72 md:flex-none lg:w-80 xl:w-96">
           <button
             type="button"
             onClick={() => useUIStore.getState().setNowPlayingOpen(true)}
             disabled={!currentTrack}
             aria-label={currentTrack ? "Open now playing view" : "Nothing playing"}
-            className="group/np flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left transition-colors enabled:hover:bg-zinc-800/60 disabled:cursor-default md:w-auto md:flex-none md:gap-3"
+            className="group/np flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left transition-colors enabled:hover:bg-zinc-800/60 disabled:cursor-default md:w-auto md:flex-initial md:gap-3"
           >
             <div className="relative shrink-0">
               <div className="size-10 md:size-12">
@@ -332,7 +334,7 @@ export function PlayerBar() {
         </div>
 
         {/* right — add to playlist + sleep timer + queue + volume (desktop) */}
-        <div className="hidden items-center justify-end gap-0.5 md:flex md:w-72 lg:w-80">
+        <div className="hidden items-center justify-end gap-0.5 md:flex md:w-72 lg:w-80 xl:w-96">
           {currentTrack ? <AddToPlaylistButton track={currentTrack} /> : null}
           <ControlButton
             label={`Playback settings${crossfade > 0 ? ` · crossfade ${crossfade}s` : ""}${normalize ? " · normalized" : ""}`}
@@ -349,7 +351,9 @@ export function PlayerBar() {
           >
             <ListMusic className="size-4" />
           </ControlButton>
-          <div className="flex items-center gap-2 pl-2">
+          {/* The slider gives way when the column is short of room, rather
+              than the buttons spilling over the seek bar. */}
+          <div className="flex min-w-0 items-center gap-2 pl-2">
             <ControlButton
               label={muted ? "Unmute" : "Mute"}
               onClick={() => usePlayerStore.getState().toggleMute()}
@@ -362,7 +366,7 @@ export function PlayerBar() {
               max={100}
               step={1}
               onValueChange={([v]) => usePlayerStore.getState().setVolume(v / 100)}
-              className={cn(VOLUME_SLIDER_CLASS, "w-28")}
+              className={cn(VOLUME_SLIDER_CLASS, "w-28 min-w-12")}
             />
           </div>
         </div>
