@@ -93,19 +93,19 @@ class SkipForwardingPlayer(private val exo: ExoPlayer) : ForwardingPlayer(exo) {
     override fun getAvailableCommands(): Player.Commands =
         super.getAvailableCommands().buildUpon()
             .addAll(
-                Player.COMMAND_SEEK_TO_NEXT,
-                Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-                Player.COMMAND_SEEK_TO_PREVIOUS,
-                Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                COMMAND_SEEK_TO_NEXT,
+                COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                COMMAND_SEEK_TO_PREVIOUS,
+                COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
             )
             .build()
 
     override fun isCommandAvailable(command: Int): Boolean =
         when (command) {
-            Player.COMMAND_SEEK_TO_NEXT,
-            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-            Player.COMMAND_SEEK_TO_PREVIOUS,
-            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+            COMMAND_SEEK_TO_NEXT,
+            COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            COMMAND_SEEK_TO_PREVIOUS,
+            COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
             -> true
             else -> super.isCommandAvailable(command)
         }

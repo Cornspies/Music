@@ -184,7 +184,7 @@ class DownloadManager(
             for (playlistId in keptPlaylists.keys.toList()) {
                 val detail = try {
                     api.playlist(playlistId)
-                } catch (e: com.music.app.api.ApiException) {
+                } catch (_: com.music.app.api.ApiException) {
                     keptPlaylists.remove(playlistId)
                     removePlaylist(playlistId)
                     continue
