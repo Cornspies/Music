@@ -115,9 +115,17 @@ func (t *scTrack) artist() string {
 
 func (t *scTrack) title() string {
 	title := strings.TrimSpace(t.Title)
-	if a := t.artist(); a != "" {
+	a := t.artist()
+	if a == "" {
+		return title
+	}
+	names := []string{a}
+	if i := strings.IndexAny(a, ",&"); i > 0 {
+		names = append(names, strings.TrimSpace(a[:i]))
+	}
+	for _, name := range names {
 		for _, sep := range []string{" - ", " – ", " — "} {
-			if prefix := a + sep; len(title) > len(prefix) && strings.EqualFold(title[:len(prefix)], prefix) {
+			if prefix := name + sep; len(title) > len(prefix) && strings.EqualFold(title[:len(prefix)], prefix) {
 				return strings.TrimSpace(title[len(prefix):])
 			}
 		}
@@ -144,19 +152,47 @@ func (t *scTrack) cover() string {
 	return scArtworkLarge.ReplaceAllString(art, "-t500x500$1")
 }
 
-func (t *scTrack) fullStream() bool {
+func (t *scTrack) streams() (aac, mp3 *scTranscoding) {
+	for i := range t.Media.Transcodings {
+		tc := &t.Media.Transcodings[i]
+		if tc.Snipped {
+			continue
+		}
+		switch {
+		case tc.Format.Protocol == "hls" && strings.HasPrefix(tc.Preset, "aac_160") && aac == nil:
+			aac = tc
+		case tc.Format.Protocol == "progressive" && strings.HasPrefix(tc.Format.MimeType, "audio/mpeg") && mp3 == nil:
+			mp3 = tc
+		}
+	}
+	return aac, mp3
+}
+
+func (t *scTrack) unavailable() string {
 	if t.Policy == "BLOCK" || !t.Streamable {
-		return false
+		return "SoundCloud doesn't play this track here"
+	}
+	for _, tc := range t.Media.Transcodings {
+		if strings.Contains(tc.Format.Protocol, "encrypted") {
+			return "SoundCloud only streams this track encrypted, so it can't be downloaded"
+		}
+	}
+	if aac, mp3 := t.streams(); aac != nil || mp3 != nil {
+		return ""
 	}
 	for _, tc := range t.Media.Transcodings {
 		if !tc.Snipped {
-			return true
+			return "SoundCloud offers no stream of this track that the server can download"
 		}
 	}
-	return false
+	return "SoundCloud only offers a preview of this track"
 }
 
 func (t *scTrack) result() discoverResult {
+	license := ""
+	if scIsCreativeCommons(t.License) {
+		license = t.License
+	}
 	return discoverResult{
 		Source:   "soundcloud",
 		ID:       strconv.FormatInt(t.ID, 10),
@@ -167,7 +203,7 @@ func (t *scTrack) result() discoverResult {
 		Duration: float64(t.Duration) / 1000,
 		CoverURL: t.cover(),
 		PageURL:  t.PermalinkURL,
-		License:  t.License,
+		License:  license,
 	}
 }
 
@@ -390,13 +426,11 @@ func scResolveLink(ctx context.Context, link string) (*scTrack, error) {
 		return nil, &statusError{http.StatusUnprocessableEntity, "that link isn't a SoundCloud track"}
 	}
 	t := &out.scTrack
-	switch {
-	case t.Sharing == "private":
+	if t.Sharing == "private" {
 		return nil, &statusError{http.StatusUnprocessableEntity, "that's a private SoundCloud track — only public ones can be added"}
-	case !scIsCreativeCommons(t.License):
-		return nil, &statusError{http.StatusUnprocessableEntity, "This track isn't Creative Commons"}
-	case !t.fullStream():
-		return nil, &statusError{http.StatusUnprocessableEntity, "SoundCloud only offers a preview of that track"}
+	}
+	if why := t.unavailable(); why != "" {
+		return nil, &statusError{http.StatusUnprocessableEntity, why}
 	}
 	return t, nil
 }
@@ -420,10 +454,9 @@ func (soundcloudSource) search(ctx context.Context, query string, page int) ([]d
 		NextHref   string    `json:"next_href"`
 	}
 	q := url.Values{
-		"q":              {query},
-		"filter.license": {"to_share"},
-		"limit":          {strconv.Itoa(scPageSize)},
-		"offset":         {strconv.Itoa((page - 1) * scPageSize)},
+		"q":      {query},
+		"limit":  {strconv.Itoa(scPageSize)},
+		"offset": {strconv.Itoa((page - 1) * scPageSize)},
 	}
 	if err := scAPI(ctx, scAPIBase+"/search/tracks", q, &out); err != nil {
 		return nil, false, err
@@ -431,7 +464,7 @@ func (soundcloudSource) search(ctx context.Context, query string, page int) ([]d
 	results := []discoverResult{}
 	for i := range out.Collection {
 		t := &out.Collection[i]
-		if !scIsCreativeCommons(t.License) || !t.fullStream() {
+		if t.unavailable() != "" {
 			continue
 		}
 		results = append(results, t.result())
@@ -447,11 +480,8 @@ func (soundcloudSource) fetch(ctx context.Context, id string) (*sourceDownload, 
 	if err := scAPI(ctx, scAPIBase+"/tracks/"+id, url.Values{}, &t); err != nil {
 		return nil, err
 	}
-	if !scIsCreativeCommons(t.License) {
-		return nil, &statusError{http.StatusForbidden, "only Creative Commons tracks can be added from SoundCloud"}
-	}
-	if !t.fullStream() {
-		return nil, &statusError{http.StatusBadGateway, "SoundCloud only offers a preview of this track"}
+	if why := t.unavailable(); why != "" {
+		return nil, &statusError{http.StatusUnprocessableEntity, why}
 	}
 
 	dir, err := os.MkdirTemp("", "music-soundcloud-")
@@ -493,19 +523,7 @@ func (soundcloudSource) fetch(ctx context.Context, id string) (*sourceDownload, 
 }
 
 func scDownloadAudio(ctx context.Context, t *scTrack, dir string) (string, string, error) {
-	var aac, mp3 *scTranscoding
-	for i := range t.Media.Transcodings {
-		tc := &t.Media.Transcodings[i]
-		if tc.Snipped {
-			continue
-		}
-		switch {
-		case tc.Format.Protocol == "hls" && strings.HasPrefix(tc.Preset, "aac_160") && aac == nil:
-			aac = tc
-		case tc.Format.Protocol == "progressive" && strings.HasPrefix(tc.Format.MimeType, "audio/mpeg") && mp3 == nil:
-			mp3 = tc
-		}
-	}
+	aac, mp3 := t.streams()
 	if aac != nil {
 		path, err := scDownloadHLS(ctx, t, aac, dir)
 		if err == nil {
