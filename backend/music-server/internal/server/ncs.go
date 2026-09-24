@@ -28,7 +28,7 @@ func (ncsSource) coverAllowed(u string) bool {
 }
 
 func (ncsSource) key() string  { return "ncs" }
-func (ncsSource) name() string { return "NoCopyrightSounds" }
+func (ncsSource) name() string { return "NCS" }
 
 var (
 	ncsRowRe        = regexp.MustCompile(`(?s)<tr>(.*?)</tr>`)

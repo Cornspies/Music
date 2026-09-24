@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -126,10 +128,13 @@ fun SearchScreen() {
             singleLine = true,
         )
         if (sources.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = source == null, onClick = { source = null }, label = { Text("Library") })
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilterChip(selected = source == null, onClick = { source = null }, label = { Text("Library", maxLines = 1) })
                 sources.forEach { s ->
-                    FilterChip(selected = source == s.key, onClick = { source = s.key }, label = { Text(s.name) })
+                    FilterChip(selected = source == s.key, onClick = { source = s.key }, label = { Text(s.name, maxLines = 1) })
                 }
             }
         }
