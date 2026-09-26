@@ -5,19 +5,21 @@ import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 
+const SLIDER_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"])
+
 export function useKeyboardShortcuts() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.isComposing) return
+      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return
       const target = e.target instanceof Element ? e.target : null
       const typing =
         target !== null &&
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.tagName === "SELECT" ||
-          (target instanceof HTMLElement && target.isContentEditable) ||
-          target.closest('[data-slot="slider"], [role="slider"]') !== null)
+          (target instanceof HTMLElement && target.isContentEditable))
       if (typing) return
+      if (SLIDER_KEYS.has(e.key) && target?.closest('[data-slot="slider"], [role="slider"]')) return
 
       const overlay =
         document.querySelector('[role="dialog"]:not([data-shortcuts-allowed])') !== null ||

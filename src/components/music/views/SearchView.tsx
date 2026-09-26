@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { Disc3, ListMusic, Mic2, Music2, Search, SearchX, X } from "lucide-react"
+import { Disc3, ListMusic, Loader2, Mic2, Music2, Search, SearchX, X } from "lucide-react"
 import { api } from "@/lib/api"
 import { formatTotal } from "@/lib/format"
 import type { Album, Artist, Playlist, SearchResults } from "@/lib/types"
 import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { TrackList } from "@/components/music/TrackList"
+import { VirtualTrackList } from "@/components/music/VirtualTrackList"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -36,6 +38,8 @@ export function SearchView() {
   const debounced = useDebounced(query, 350)
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useUIStore((s) => s.navigate)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [loadingAll, setLoadingAll] = useState(false)
 
   useEffect(() => {
     const q = debounced.trim()
@@ -64,6 +68,27 @@ export function SearchView() {
   }, [])
 
   const q = query.trim()
+  const trackTotal = results ? (results.tracksTotal ?? results.tracks.length) : 0
+
+  const showAllTracks = async () => {
+    if (!results) return
+    const forQuery = q
+    if (results.tracks.length < trackTotal) {
+      setLoadingAll(true)
+      try {
+        const all = await api<SearchResults>(`/api/search?q=${encodeURIComponent(forQuery)}&tracks=all`)
+        if (inputRef.current?.value.trim() !== forQuery) return
+        setResults(all)
+      } catch (e) {
+        toast.error((e as Error).message)
+        return
+      } finally {
+        setLoadingAll(false)
+      }
+    }
+    setExpanded(forQuery)
+  }
+
   const hasResults =
     results &&
     (results.tracks.length > 0 ||
@@ -126,7 +151,25 @@ export function SearchView() {
           <>
             {results!.tracks.length > 0 && (
               <Section title="Tracks">
-                <TrackList tracks={results!.tracks} limit={10} />
+                {expanded === q ? (
+                  <VirtualTrackList tracks={results!.tracks} />
+                ) : (
+                  <>
+                    <TrackList tracks={results!.tracks} limit={10} />
+                    {trackTotal > 10 ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={loadingAll}
+                        onClick={showAllTracks}
+                        className="mt-2 h-8 px-3 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                      >
+                        {loadingAll ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+                        Show all {trackTotal} tracks
+                      </Button>
+                    ) : null}
+                  </>
+                )}
               </Section>
             )}
 

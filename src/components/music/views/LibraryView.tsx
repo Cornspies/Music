@@ -1,10 +1,12 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 import { CopyCheck, Music2, Search, Upload } from "lucide-react"
+import type { Track } from "@/lib/types"
 import { useLibraryStore, type TrackSort } from "@/stores/library"
+import { usePlayerStore } from "@/stores/player"
 import { useUIStore } from "@/stores/ui"
-import { TrackList } from "@/components/music/TrackList"
+import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 import { EmptyState } from "@/components/music/EmptyState"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,58 +20,55 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 
 const SORTS: { value: TrackSort; label: string }[] = [
+  { value: "plays", label: "Most played" },
   { value: "created", label: "Recently added" },
   { value: "recent", label: "Recently played" },
   { value: "title", label: "Title" },
   { value: "artist", label: "Artist" },
-  { value: "plays", label: "Most played" },
 ]
 
-const PAGE_ROWS = 50
+const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true })
+
+const newestFirst = (a: Track, b: Track) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0)
+
+function sortTracks(tracks: Track[], sort: TrackSort): Track[] {
+  const list = [...tracks]
+  switch (sort) {
+    case "plays":
+      return list.sort((a, b) => b.plays - a.plays || newestFirst(a, b))
+    case "recent":
+      return list.sort((a, b) =>
+        a.lastPlayedAt && b.lastPlayedAt
+          ? (a.lastPlayedAt < b.lastPlayedAt ? 1 : a.lastPlayedAt > b.lastPlayedAt ? -1 : newestFirst(a, b))
+          : a.lastPlayedAt ? -1 : b.lastPlayedAt ? 1 : newestFirst(a, b)
+      )
+    case "title":
+      return list.sort((a, b) => collator.compare(a.title, b.title))
+    case "artist":
+      return list.sort(
+        (a, b) => collator.compare(a.artist, b.artist) || collator.compare(a.album, b.album) || a.trackNo - b.trackNo
+      )
+    default:
+      return list.sort(newestFirst)
+  }
+}
 
 export function LibraryView() {
   const tracks = useLibraryStore((s) => s.tracks)
-  const fetchTracks = useLibraryStore((s) => s.fetchTracks)
+  const initialized = useLibraryStore((s) => s.initialized)
   const setUploadOpen = useUIStore((s) => s.setUploadOpen)
-
-  const [sort, setSort] = useState<TrackSort>("created")
+  const sort = useUIStore((s) => s.librarySort)
+  const currentId = usePlayerStore((s) => s.currentTrack?.id ?? null)
   const [query, setQuery] = useState("")
-  const [visible, setVisible] = useState(PAGE_ROWS)
-  const sentinelRef = useRef<HTMLDivElement>(null)
-  const [loading, setLoading] = useState(false)
 
-  const onSortChange = (next: string) => {
-    const value = next as TrackSort
-    setSort(value)
-    setLoading(true)
-    fetchTracks(value)
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }
-
+  const sorted = useMemo(() => sortTracks(tracks, sort), [tracks, sort])
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return tracks
-    return tracks.filter((t) =>
+    if (!q) return sorted
+    return sorted.filter((t) =>
       [t.title, t.artist, t.album].some((f) => f.toLowerCase().includes(q))
     )
-  }, [tracks, query])
-
-  const shown = filtered.slice(0, visible)
-  const complete = shown.length >= filtered.length
-
-  useEffect(() => {
-    const el = sentinelRef.current
-    if (!el || complete) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) setVisible((v) => v + PAGE_ROWS)
-      },
-      { root: el.closest("main"), rootMargin: "0px 0px 800px 0px" }
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [visible, complete])
+  }, [sorted, query])
 
   return (
     <div className="p-4 md:p-6">
@@ -93,7 +92,7 @@ export function LibraryView() {
       </header>
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Select value={sort} onValueChange={onSortChange}>
+        <Select value={sort} onValueChange={(v) => useUIStore.getState().setLibrarySort(v as TrackSort)}>
           <SelectTrigger aria-label="Sort tracks" className="h-9 w-full border-zinc-700/80 bg-zinc-900/60 text-sm sm:w-44">
             <SelectValue placeholder="Sort" />
           </SelectTrigger>
@@ -116,17 +115,14 @@ export function LibraryView() {
             aria-label="Filter tracks in library"
             placeholder="Filter by title, artist or album…"
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              setVisible(PAGE_ROWS)
-            }}
+            onChange={(e) => setQuery(e.target.value)}
             className="h-9 border-zinc-700/80 bg-zinc-900/60 pl-9"
           />
         </div>
       </div>
 
       <div className="mt-4">
-        {loading && tracks.length === 0 ? (
+        {!initialized && tracks.length === 0 ? (
           <div className="flex flex-col gap-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-14 w-full rounded-lg" />
@@ -147,15 +143,11 @@ export function LibraryView() {
           />
         ) : (
           <>
-            <TrackList tracks={shown} />
-            {complete ? (
-              <p className="mt-4 text-center text-[11px] text-zinc-600">
-                {filtered.length} track{filtered.length === 1 ? "" : "s"} · sorted by{" "}
-                {SORTS.find((s) => s.value === sort)?.label.toLowerCase()}
-              </p>
-            ) : (
-              <div ref={sentinelRef} aria-hidden="true" className="h-px" />
-            )}
+            <VirtualTrackList tracks={filtered} followTrackId={currentId} />
+            <p className="mt-4 text-center text-[11px] text-zinc-600">
+              {filtered.length} track{filtered.length === 1 ? "" : "s"} · sorted by{" "}
+              {SORTS.find((s) => s.value === sort)?.label.toLowerCase()}
+            </p>
           </>
         )}
       </div>

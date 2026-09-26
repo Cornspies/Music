@@ -1,5 +1,6 @@
 "use client"
 
+import { memo } from "react"
 import { CloudDownload, Heart, Loader2, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatDuration } from "@/lib/format"
@@ -19,7 +20,7 @@ interface TrackRowProps {
   onRemoveFromPlaylist?: (trackId: string) => void
 }
 
-export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: TrackRowProps) {
+export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: TrackRowProps) {
   const isCurrent = usePlayerStore((s) => s.currentTrack?.id === track.id)
   const isPlaying = usePlayerStore((s) => s.isPlaying && s.currentTrack?.id === track.id)
 
@@ -175,4 +176,4 @@ export function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist }: T
       />
     </div>
   )
-}
+})

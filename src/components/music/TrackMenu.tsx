@@ -164,15 +164,6 @@ function TrackMenuContent({
   canManage: boolean
   offline: { supported: boolean; downloaded: boolean; downloading: boolean }
 }) {
-  const playlists = useLibraryStore((s) => s.playlists)
-  const ownPlaylists = playlists.filter((p) => p.isMine)
-  const ui = useUIStore()
-
-  const addTo = async (playlistId: string, name: string) => {
-    const ok = await useLibraryStore.getState().addTrackToPlaylist(playlistId, track.id)
-    if (ok) toast.success(`Added to “${name}”`)
-  }
-
   return (
     <DropdownMenuContent align="end" side={side} className="w-52">
       {showPlay ? (
@@ -205,20 +196,11 @@ function TrackMenuContent({
           <ListPlus className="size-4" /> Add to playlist
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="max-h-72 overflow-y-auto w-48">
-          {ownPlaylists.length === 0 ? (
-            <DropdownMenuItem disabled className="text-zinc-500">
-              No playlists yet
-            </DropdownMenuItem>
-          ) : (
-            ownPlaylists.map((p) => (
-              <DropdownMenuItem key={p.id} onClick={() => addTo(p.id, p.name)}>
-                <Music4 className="size-4" /> {p.name}
-              </DropdownMenuItem>
-            ))
-          )}
+          <PlaylistItems track={track} />
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
+              const ui = useUIStore.getState()
               ui.setPendingPlaylistTrack(track)
               ui.openPlaylistDialog({ mode: "create" })
             }}
@@ -302,5 +284,32 @@ function TrackMenuContent({
         </>
       ) : null}
     </DropdownMenuContent>
+  )
+}
+
+function PlaylistItems({ track }: { track: Track }) {
+  const playlists = useLibraryStore((s) => s.playlists)
+  const own = playlists.filter((p) => p.isMine)
+
+  const addTo = async (playlistId: string, name: string) => {
+    const ok = await useLibraryStore.getState().addTrackToPlaylist(playlistId, track.id)
+    if (ok) toast.success(`Added to “${name}”`)
+  }
+
+  if (own.length === 0) {
+    return (
+      <DropdownMenuItem disabled className="text-zinc-500">
+        No playlists yet
+      </DropdownMenuItem>
+    )
+  }
+  return (
+    <>
+      {own.map((p) => (
+        <DropdownMenuItem key={p.id} onClick={() => addTo(p.id, p.name)}>
+          <Music4 className="size-4" /> {p.name}
+        </DropdownMenuItem>
+      ))}
+    </>
   )
 }

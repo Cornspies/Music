@@ -141,10 +141,15 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
                 return
         }
         like := "%" + likeEscape(q) + "%"
+        match := `(t.title LIKE ? ESCAPE '\' OR t.artist LIKE ? ESCAPE '\' OR t.album LIKE ? ESCAPE '\' OR t.genre LIKE ? ESCAPE '\')`
+        limit := " LIMIT 50"
+        if r.URL.Query().Get("tracks") == "all" {
+                limit = ""
+        }
 
         rows, err := s.db.Query(trackSelect+`
-                WHERE (t.title LIKE ? ESCAPE '\' OR t.artist LIKE ? ESCAPE '\' OR t.album LIKE ? ESCAPE '\' OR t.genre LIKE ? ESCAPE '\')
-                ORDER BY COALESCE(ps.plays, 0) DESC, t.created_at DESC LIMIT 50`,
+                WHERE `+match+`
+                ORDER BY COALESCE(ps.plays, 0) DESC, t.created_at DESC`+limit,
                 append(trackSelectArgs(u.ID), like, like, like, like)...)
         if err != nil {
                 s.internalErr(w, "search tracks", err)
@@ -161,6 +166,11 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
                 tracks = append(tracks, t)
         }
         result["tracks"] = tracks
+        tracksTotal := len(tracks)
+        if limit != "" && len(tracks) == 50 {
+                _ = s.db.QueryRow(`SELECT COUNT(1) FROM tracks t WHERE `+match, like, like, like, like).Scan(&tracksTotal)
+        }
+        result["tracksTotal"] = tracksTotal
 
         rows2, err := s.db.Query(`
                 SELECT COALESCE(NULLIF(t.album,''),'Unknown Album'), COALESCE(NULLIF(t.artist,''),'Unknown Artist'), COUNT(*), COALESCE(SUM(t.duration),0), MAX(t.has_cover),

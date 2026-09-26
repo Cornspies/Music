@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import type { Track } from "@/lib/types"
+import type { TrackSort } from "@/stores/library"
 import { routeToPath } from "@/lib/routes"
 
 export type View =
@@ -65,6 +66,8 @@ interface UIState {
   closePlaylistDialog: () => void
   pendingPlaylistTrack: Track | null
   setPendingPlaylistTrack: (track: Track | null) => void
+  librarySort: TrackSort
+  setLibrarySort: (sort: TrackSort) => void
 }
 
 const LYRICS_PANEL_PREF = "lyrics-panel"
@@ -129,4 +132,6 @@ export const useUIStore = create<UIState>()((set) => ({
   closePlaylistDialog: () => set({ playlistDialog: null }),
   pendingPlaylistTrack: null,
   setPendingPlaylistTrack: (track) => set({ pendingPlaylistTrack: track }),
+  librarySort: "plays",
+  setLibrarySort: (librarySort) => set({ librarySort }),
 }))

@@ -256,6 +256,8 @@ export interface AdminSettings {
 
 export interface SearchResults {
   tracks: Track[]
+  /** How many tracks match in all; `tracks` holds the first 50 unless all were asked for. */
+  tracksTotal?: number
   albums: Album[]
   artists: Artist[]
   playlists: Playlist[]
