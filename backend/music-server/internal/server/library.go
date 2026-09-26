@@ -41,20 +41,35 @@ func (s *Server) handleAddFavorite(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "track not found")
 		return
 	}
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO favorites (user_id, track_id, created_at) VALUES (?,?,?)`,
-		u.ID, trackID, nowRFC3339()); err != nil {
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO favorites (user_id, track_id, created_at) VALUES (?,?,?)`,
+		u.ID, trackID, nowRFC3339())
+	if err != nil {
 		s.internalErr(w, "add favorite", err)
 		return
 	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		s.noteFavoriteChange(u.ID, trackID)
+	}
 	writeNoContent(w)
+}
+
+func (s *Server) noteFavoriteChange(userID, trackID string) {
+	if _, err := s.db.Exec(`INSERT INTO favorite_changes (user_id, track_id, changed_at) VALUES (?, ?, ?)
+		ON CONFLICT(user_id, track_id) DO UPDATE SET changed_at = excluded.changed_at`, userID, trackID, nowRFC3339()); err != nil {
+		logErr("note favorite change", err)
+	}
 }
 
 func (s *Server) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	trackID := r.PathValue("trackId")
-	if _, err := s.db.Exec(`DELETE FROM favorites WHERE user_id = ? AND track_id = ?`, u.ID, trackID); err != nil {
+	res, err := s.db.Exec(`DELETE FROM favorites WHERE user_id = ? AND track_id = ?`, u.ID, trackID)
+	if err != nil {
 		s.internalErr(w, "remove favorite", err)
 		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		s.noteFavoriteChange(u.ID, trackID)
 	}
 	writeNoContent(w)
 }

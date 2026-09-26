@@ -152,10 +152,45 @@ class DownloadManager(
     }
 
     fun refreshMetadata(track: Track) {
-        if (index.containsKey(track.id)) {
+        if (index.containsKey(track.id) && index[track.id] != track) {
             index[track.id] = track
             persist()
         }
+    }
+
+    fun refreshFrom(tracks: List<Track>) {
+        var changed = false
+        for (track in tracks) {
+            if (index.containsKey(track.id) && index[track.id] != track) {
+                index[track.id] = track
+                changed = true
+            }
+        }
+        if (changed) persist()
+    }
+
+    suspend fun syncChanges(): List<Track> {
+        val since = store.loadMeta(KEY_SYNC_SINCE)
+        val changes = api.trackChanges(since)
+        var changed = false
+        for (track in changes.tracks) {
+            if (index.containsKey(track.id) && index[track.id] != track) {
+                index[track.id] = track
+                changed = true
+            }
+        }
+        for (id in changes.deleted) {
+            if (index.containsKey(id)) {
+                store.delete(id)
+                index.remove(id)
+                changed = true
+            }
+        }
+        if (changed) persist()
+        store.saveMeta(KEY_SYNC_SINCE, changes.now)
+        lastSyncedAt = changes.now
+        store.saveMeta(KEY_SYNC_AT, changes.now)
+        return changes.tracks
     }
 
     fun isKeptOffline(playlistId: String): Boolean = keptPlaylists[playlistId] == true
@@ -202,26 +237,7 @@ class DownloadManager(
             persistKept()
             persistPlaylists()
 
-            val since = store.loadMeta(KEY_SYNC_SINCE)
-            val changes = api.trackChanges(since)
-            var changed = false
-            for (track in changes.tracks) {
-                if (index.containsKey(track.id) && index[track.id] != track) {
-                    index[track.id] = track
-                    changed = true
-                }
-            }
-            for (id in changes.deleted) {
-                if (index.containsKey(id)) {
-                    store.delete(id)
-                    index.remove(id)
-                    changed = true
-                }
-            }
-            if (changed) persist()
-            store.saveMeta(KEY_SYNC_SINCE, changes.now)
-            lastSyncedAt = changes.now
-            store.saveMeta(KEY_SYNC_AT, changes.now)
+            syncChanges()
         } catch (e: Exception) {
             lastError = friendlyError(e)
         } finally {

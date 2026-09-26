@@ -148,6 +148,13 @@ func migrate(db *sql.DB) error {
                         deleted_at TEXT NOT NULL
                 )`,
 		`CREATE INDEX IF NOT EXISTS idx_deleted_tracks_at ON deleted_tracks(deleted_at)`,
+		`CREATE TABLE IF NOT EXISTS favorite_changes (
+			user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			track_id   TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+			changed_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, track_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_favorite_changes_at ON favorite_changes(user_id, changed_at)`,
 		`CREATE TABLE IF NOT EXISTS settings (
                         key   TEXT PRIMARY KEY,
                         value TEXT NOT NULL

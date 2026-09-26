@@ -112,10 +112,31 @@ export async function downloadTrackOffline(
   )
 }
 
-export async function removeTrackOffline(id: string): Promise<void> {
-  const cache = await openCache()
-  if (!cache) return
-  await Promise.all([cache.delete(audioKey(id)), cache.delete(coverKey(id)), cache.delete(metaKey(id))])
+let metaWrites: Promise<unknown> = Promise.resolve()
+
+function inOrder<T>(task: () => Promise<T>): Promise<T> {
+  const run = metaWrites.then(task)
+  metaWrites = run.catch(() => {})
+  return run
+}
+
+export function updateOfflineTrack(track: Track): Promise<void> {
+  return inOrder(async () => {
+    const cache = await openCache()
+    if (!cache || !(await cache.match(metaKey(track.id))) || !(await cache.match(audioKey(track.id)))) return
+    await cache.put(
+      metaKey(track.id),
+      new Response(JSON.stringify(track), { headers: { "Content-Type": "application/json" } })
+    )
+  })
+}
+
+export function removeTrackOffline(id: string): Promise<void> {
+  return inOrder(async () => {
+    const cache = await openCache()
+    if (!cache) return
+    await Promise.all([cache.delete(audioKey(id)), cache.delete(coverKey(id)), cache.delete(metaKey(id))])
+  })
 }
 
 export async function clearOffline(): Promise<void> {

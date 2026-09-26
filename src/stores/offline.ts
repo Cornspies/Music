@@ -11,6 +11,7 @@ import {
   offlineSupported,
   removeTrackOffline,
   requestPersistentStorage,
+  updateOfflineTrack,
 } from "@/lib/offline"
 
 interface DownloadJob {
@@ -34,7 +35,13 @@ interface OfflineState {
   removeAll: () => Promise<void>
   setOffline: (offline: boolean) => void
   replaceTrack: (track: Track) => void
+  refreshFrom: (tracks: Track[]) => void
 }
+
+const sameTrack = (a: Track, b: Track) =>
+  (Object.keys({ ...a, ...b }) as (keyof Track)[]).every(
+    (k) => k === "updatedAt" || JSON.stringify(a[k]) === JSON.stringify(b[k])
+  )
 
 export const useOfflineStore = create<OfflineState>()((set, get) => ({
   supported: offlineSupported(),
@@ -106,7 +113,23 @@ export const useOfflineStore = create<OfflineState>()((set, get) => ({
 
   replaceTrack: (track) => {
     if (!get().ids.has(track.id)) return
-    set({ tracks: get().tracks.map((t) => (t.id === track.id ? { ...track, updatedAt: t.updatedAt } : t)) })
+    get().refreshFrom([track])
+  },
+
+  refreshFrom: (fresh) => {
+    if (get().tracks.length === 0) return
+    const byId = new Map(fresh.map((t) => [t.id, t]))
+    const changed: Track[] = []
+    const tracks = get().tracks.map((old) => {
+      const track = byId.get(old.id)
+      if (!track || sameTrack(old, track)) return old
+      const next = { ...track, updatedAt: old.updatedAt }
+      changed.push(next)
+      return next
+    })
+    if (changed.length === 0) return
+    set({ tracks })
+    for (const track of changed) updateOfflineTrack(track).catch(() => {})
   },
 }))
 

@@ -52,6 +52,7 @@ private const val LISTEN_REPORT_INTERVAL_S = 15.0
 private const val KEY_SWIPE_TO_DELETE = "ui.swipeToDelete"
 private const val KEY_UPDATE_DISMISSED = "update.dismissed"
 private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
+private const val CHANGE_CHECK_INTERVAL_MS = 30_000L
 private const val PLAYBACK_SAVE_INTERVAL_MS = 10_000L
 
 private const val MEDIA_TOKEN_CHECK_INTERVAL_MS = 5L * 60_000L
@@ -401,7 +402,9 @@ class AppModel(
         tracksLoading = true
         tracksError = null
         try {
-            tracks = api.tracks(sort = sort)
+            val loaded = api.tracks(sort = sort)
+            tracks = loaded
+            downloads.refreshFrom(loaded)
             noteOnline()
         } catch (e: Exception) {
             if (noteFailure(e)) {
@@ -484,7 +487,9 @@ class AppModel(
         favoritesLoading = true
         favoritesError = null
         try {
-            favorites = api.favorites()
+            val loaded = api.favorites()
+            favorites = loaded
+            downloads.refreshFrom(loaded)
             noteOnline()
         } catch (e: Exception) {
             if (noteFailure(e)) {
@@ -1013,8 +1018,26 @@ class AppModel(
         applyServerPlayback(state)
     }
 
+    private var lastChangeCheckMs = 0L
+
+    private suspend fun applyServerChanges() {
+        if (downloads.syncing) return
+        val changed = try {
+            downloads.syncChanges()
+        } catch (_: Exception) {
+            return
+        }
+        val favoriteIds = favorites?.map { it.id }?.toSet()
+        replaceTracks(changed)
+        if (favoriteIds != null && changed.any { (it.id in favoriteIds) != it.isFavorite }) loadFavoritesInternal()
+    }
+
     fun onForeground() {
         if (nowMs() - lastUpdateCheckMs > UPDATE_CHECK_INTERVAL_MS) checkForUpdate()
+        if (user != null && !offlineMode && nowMs() - lastChangeCheckMs > CHANGE_CHECK_INTERVAL_MS) {
+            lastChangeCheckMs = nowMs()
+            scope.launch { applyServerChanges() }
+        }
         if (user == null || offlineMode || syncingPlayback || player.isPlaying.value) return
         syncingPlayback = true
         scope.launch {
@@ -1072,16 +1095,21 @@ class AppModel(
         }
     }
 
-    private fun replaceTrack(updated: Track) {
+    private fun replaceTrack(updated: Track) = replaceTracks(listOf(updated))
+
+    private fun replaceTracks(updated: List<Track>) {
+        if (updated.isEmpty()) return
+        val byId = updated.associateBy { it.id }
         fun List<Track>?.withUpdated(): List<Track>? =
-            this?.map { if (it.id == updated.id) updated else it }
+            this?.map { byId[it.id] ?: it }
 
         tracks = tracks.withUpdated()
         favorites = favorites.withUpdated()
         searchResults = searchResults?.let { it.copy(tracks = it.tracks.withUpdated() ?: emptyList()) }
         playlistDetail = playlistDetail?.let { it.copy(tracks = it.tracks.withUpdated() ?: emptyList()) }
         stats = stats?.let { it.copy(mostPlayed = it.mostPlayed.withUpdated() ?: emptyList()) }
-        if (currentTrack?.id == updated.id) currentTrack = updated
+        currentTrack?.let { current -> byId[current.id]?.let { currentTrack = it } }
+        downloads.refreshFrom(updated)
     }
 
     private fun bumpPlays(trackId: String) {

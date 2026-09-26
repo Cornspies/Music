@@ -78,6 +78,7 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
   fetchTracks: async (sort: TrackSort = "created") => {
     const tracks = await api<Track[]>(`/api/tracks?sort=${sort}`)
     set({ tracks, initialized: true })
+    useOfflineStore.getState().refreshFrom(tracks)
   },
 
   fetchPlaylists: async () => {
@@ -121,6 +122,7 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
   fetchFavorites: async () => {
     const favorites = await api<Track[]>("/api/favorites")
     set({ favorites })
+    useOfflineStore.getState().refreshFrom(favorites)
   },
 
   fetchStats: async () => {
@@ -146,6 +148,9 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     if (current?.id === trackId) {
       player.replaceTrack({ ...current, isFavorite: !wasFav })
     }
+    const offline = useOfflineStore.getState()
+    const stored = offline.tracks.find((t) => t.id === trackId)
+    if (stored) offline.replaceTrack({ ...stored, isFavorite: !wasFav })
 
     try {
       if (wasFav) {
@@ -158,6 +163,7 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
         tracks: get().tracks.map((t) => (t.id === trackId ? { ...t, isFavorite: wasFav } : t)),
         favorites: get().favorites,
       })
+      if (stored) useOfflineStore.getState().replaceTrack({ ...stored, isFavorite: wasFav })
       toast.error((e as Error).message)
     }
   },

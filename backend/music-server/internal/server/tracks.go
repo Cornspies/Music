@@ -691,8 +691,10 @@ func (s *Server) handleTrackChanges(w http.ResponseWriter, r *http.Request) {
 	}
 	now := nowRFC3339()
 
-	rows, err := s.db.Query(trackSelect+` WHERE t.updated_at > ? ORDER BY t.updated_at ASC`,
-		append(trackSelectArgs(u.ID), since)...)
+	rows, err := s.db.Query(trackSelect+` WHERE t.updated_at >= ?
+		OR t.id IN (SELECT track_id FROM favorite_changes WHERE user_id = ? AND changed_at >= ?)
+		ORDER BY t.updated_at ASC`,
+		append(trackSelectArgs(u.ID), since, u.ID, since)...)
 	if err != nil {
 		s.internalErr(w, "list changes", err)
 		return
@@ -713,7 +715,7 @@ func (s *Server) handleTrackChanges(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if since != "" {
-		del, err := s.db.Query(`SELECT id FROM deleted_tracks WHERE deleted_at > ?`, since)
+		del, err := s.db.Query(`SELECT id FROM deleted_tracks WHERE deleted_at >= ?`, since)
 		if err != nil {
 			s.internalErr(w, "list deleted", err)
 			return
