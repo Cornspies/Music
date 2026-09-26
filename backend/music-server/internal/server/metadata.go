@@ -244,7 +244,20 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), metadataLookupTimeout)
 	defer cancel()
+	if err := s.applyChosenCandidate(ctx, track, chosen, coverChosen); err != nil {
+		s.internalErr(w, "apply metadata", err)
+		return
+	}
 
+	t, _, _, ok := s.getTrack(w, r, u.ID, id)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *Server) applyChosenCandidate(ctx context.Context, track *Track, chosen *scoredCandidate, coverSource string) error {
+	id := track.ID
 	meta := fileMetadata{}
 	applyCandidate(ctx, &meta, chosen.metadataCandidate, true)
 
@@ -274,10 +287,9 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
 	if _, err := s.db.Exec(
 		`UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, has_cover = ?, updated_at = ?,
 		cover_source = CASE WHEN ? = 1 THEN ? ELSE cover_source END WHERE id = ?`,
-		title, artist, album, genre, year, boolToInt(hasCover), nowRFC3339(), boolToInt(wroteCover), coverChosen, id,
+		title, artist, album, genre, year, boolToInt(hasCover), nowRFC3339(), boolToInt(wroteCover), coverSource, id,
 	); err != nil {
-		s.internalErr(w, "apply metadata", err)
-		return
+		return err
 	}
 
 	_, _ = s.db.Exec(`UPDATE metadata_jobs SET applied_id = ? WHERE track_id = ?`, chosen.id, id)
@@ -285,12 +297,7 @@ func (s *Server) handleApplyTrackMetadata(w http.ResponseWriter, r *http.Request
 	if len(meta.picture) > 0 && hasCover {
 		go s.updateCoverColor(id)
 	}
-
-	t, _, _, ok := s.getTrack(w, r, u.ID, id)
-	if !ok {
-		return
-	}
-	writeJSON(w, http.StatusOK, t)
+	return nil
 }
 
 func boolToInt(b bool) int {

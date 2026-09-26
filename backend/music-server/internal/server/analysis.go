@@ -50,6 +50,7 @@ func (s *Server) StartBackgroundWork() {
 	s.loadTrimmedTracks()
 	s.startPendingUploadSweeper()
 	go s.backfillFileHashes()
+	go s.repairMissingCovers()
 	if config.Flag("MUSIC_DISABLE_ANALYSIS") {
 		log.Printf("music-server analysis: disabled")
 		return

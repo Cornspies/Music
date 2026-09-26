@@ -393,8 +393,9 @@ class ApiClient(private val store: TokenStore) {
         expectNoContent(client.delete(url("/api/playlists/$playlistId/tracks/$trackId")) { auth() })
     }
 
-    suspend fun search(query: String): SearchResults = getJson("/api/search") {
+    suspend fun search(query: String, allTracks: Boolean = false): SearchResults = getJson("/api/search") {
         parameter("q", query)
+        if (allTracks) parameter("tracks", "all")
     }
 
     suspend fun stats(): Stats = getJson("/api/stats")

@@ -613,11 +613,28 @@ class AppModel(
         loadPlaylist(id)
     }
 
+    private var lastSearchQuery = ""
+
     fun search(query: String) {
+        lastSearchQuery = query.trim()
         scope.launch {
             searchLoading = true
             try {
                 searchResults = api.search(query.trim())
+            } catch (_: Exception) {} finally {
+                searchLoading = false
+            }
+        }
+    }
+
+    fun searchAllTracks() {
+        val query = lastSearchQuery
+        if (query.isEmpty()) return
+        scope.launch {
+            searchLoading = true
+            try {
+                val all = api.search(query, allTracks = true)
+                if (query == lastSearchQuery) searchResults = all
             } catch (_: Exception) {} finally {
                 searchLoading = false
             }

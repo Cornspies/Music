@@ -11,11 +11,13 @@ export function VirtualTrackList({
   followTrackId,
   onRemoveFromPlaylist,
   onDismissAttention,
+  onRestoreAttention,
 }: {
   tracks: Track[]
   followTrackId?: string | null
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
+  onRestoreAttention?: (trackId: string) => void
 }) {
   const listRef = useRef<HTMLDivElement>(null)
   const rowsRef = useRef<HTMLDivElement>(null)
@@ -100,6 +102,7 @@ export function VirtualTrackList({
             contextQueue={tracks}
             onRemoveFromPlaylist={onRemoveFromPlaylist}
             onDismissAttention={onDismissAttention}
+            onRestoreAttention={onRestoreAttention}
           />
         ))}
       </div>

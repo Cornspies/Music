@@ -164,6 +164,14 @@ fun SearchScreen() {
                     items(tracks, key = { "t-${it.id}" }) { track ->
                         TrackRow(track = track, context = tracks)
                     }
+                    val total = results?.tracksTotal ?: tracks.size
+                    if (total > tracks.size) {
+                        item {
+                            TextButton(onClick = { model.searchAllTracks() }, enabled = !model.searchLoading) {
+                                Text("Show all $total tracks")
+                            }
+                        }
+                    }
                 }
                 val albums = results?.albums.orEmpty()
                 if (albums.isNotEmpty()) {

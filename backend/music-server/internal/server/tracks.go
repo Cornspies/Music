@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"mime"
 	"net/http"
@@ -786,6 +787,40 @@ func swapExtension(name, ext string) string {
 	return strings.TrimSuffix(name, filepath.Ext(name)) + ext
 }
 
+func (s *Server) forgetMissingCover(id string) {
+	res, err := s.db.Exec(`UPDATE tracks SET has_cover = 0, cover_source = '', cover_color = '', updated_at = ? WHERE id = ? AND has_cover = 1`,
+		nowRFC3339(), id)
+	if err != nil {
+		logErr("forget missing cover", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		log.Printf("cover: track %s has no cover file any more; marked as coverless", id)
+	}
+}
+
+func (s *Server) repairMissingCovers() {
+	defer logPanic("missing cover sweep")
+	rows, err := s.db.Query(`SELECT id FROM tracks WHERE has_cover = 1`)
+	if err != nil {
+		logErr("missing cover sweep", err)
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		if _, err := os.Stat(filepath.Join(s.covDir, id+".img")); errors.Is(err, fs.ErrNotExist) {
+			s.forgetMissingCover(id)
+		}
+	}
+}
+
 func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
@@ -806,6 +841,11 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b, err := os.ReadFile(filepath.Join(s.covDir, id+".img"))
+	if errors.Is(err, fs.ErrNotExist) {
+		s.forgetMissingCover(id)
+		writeErr(w, http.StatusNotFound, "no cover art")
+		return
+	}
 	if err != nil {
 		s.internalErr(w, "read cover", err)
 		return

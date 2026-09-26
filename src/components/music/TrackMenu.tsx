@@ -65,6 +65,7 @@ interface TrackMenuProps {
   track: Track
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
+  onRestoreAttention?: (trackId: string) => void
   triggerClassName?: string
   side?: "top" | "bottom"
   showPlay?: boolean
@@ -74,6 +75,7 @@ export function TrackMenu({
   track,
   onRemoveFromPlaylist,
   onDismissAttention,
+  onRestoreAttention,
   triggerClassName,
   side = "bottom",
   showPlay = true,
@@ -109,6 +111,7 @@ export function TrackMenu({
           showPlay={showPlay}
           onRemoveFromPlaylist={onRemoveFromPlaylist}
           onDismissAttention={onDismissAttention}
+          onRestoreAttention={onRestoreAttention}
           onDelete={() => setDeleteOpen(true)}
           canManage={canManage}
           offline={{
@@ -158,6 +161,7 @@ function TrackMenuContent({
   showPlay,
   onRemoveFromPlaylist,
   onDismissAttention,
+  onRestoreAttention,
   onDelete,
   canManage,
   offline,
@@ -167,6 +171,7 @@ function TrackMenuContent({
   showPlay: boolean
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
+  onRestoreAttention?: (trackId: string) => void
   onDelete: () => void
   canManage: boolean
   offline: { supported: boolean; downloaded: boolean; downloading: boolean }
@@ -252,6 +257,11 @@ function TrackMenuContent({
           {onDismissAttention ? (
             <DropdownMenuItem onClick={() => onDismissAttention(track.id)}>
               <Check className="size-4" /> Looks fine
+            </DropdownMenuItem>
+          ) : null}
+          {onRestoreAttention ? (
+            <DropdownMenuItem onClick={() => onRestoreAttention(track.id)}>
+              <Undo2 className="size-4" /> Show in Needs attention
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem onClick={() => useUIStore.getState().setTrimTrack(track)}>

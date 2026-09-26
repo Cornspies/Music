@@ -239,6 +239,7 @@ data class Artist(
 @Serializable
 data class SearchResults(
     val tracks: List<Track> = emptyList(),
+    val tracksTotal: Int? = null,
     val albums: List<Album> = emptyList(),
     val artists: List<Artist> = emptyList(),
     val playlists: List<Playlist> = emptyList(),

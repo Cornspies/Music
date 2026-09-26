@@ -395,3 +395,16 @@ export interface ActivityStatus {
   disk: { libraryBytes: number; databaseBytes: number; freeBytes: number; totalBytes: number }
   errors: ActivityEvent[]
 }
+
+export interface BulkApplyStatus {
+  running: boolean
+  total: number
+  done: number
+  failed: number
+}
+
+export interface BulkApplyResult {
+  applying: number
+  lookups: number
+  uncertain: number
+}

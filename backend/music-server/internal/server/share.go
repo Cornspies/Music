@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -236,6 +237,9 @@ func (s *Server) handleSharedCover(w http.ResponseWriter, r *http.Request) {
 	}
 	b, err := os.ReadFile(filepath.Join(s.covDir, trackID+".img"))
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			s.forgetMissingCover(trackID)
+		}
 		writeErr(w, http.StatusNotFound, "no cover art")
 		return
 	}

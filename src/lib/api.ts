@@ -24,6 +24,8 @@ import type {
   MetadataCandidate,
   ActivityStatus,
   AttentionItem,
+  BulkApplyResult,
+  BulkApplyStatus,
   FileTagDiff,
   TagChange,
 } from "@/lib/types"
@@ -349,12 +351,28 @@ export function restoreLibraryTags(trackIds: string[]): Promise<{ restored: numb
   })
 }
 
-export function fetchAttention(): Promise<AttentionItem[]> {
-  return api<AttentionItem[]>("/api/library/attention")
+export function fetchAttention(hidden = false): Promise<AttentionItem[]> {
+  return api<AttentionItem[]>(`/api/library/attention${hidden ? "?hidden=1" : ""}`)
 }
 
 export function dismissAttention(trackId: string): Promise<void> {
   return api<void>(`/api/tracks/${trackId}/attention/dismiss`, { method: "POST" })
+}
+
+export function restoreAttention(trackId: string): Promise<void> {
+  return api<void>(`/api/tracks/${trackId}/attention/restore`, { method: "POST" })
+}
+
+export function applyConfidentMatches(trackIds: string[]): Promise<BulkApplyResult> {
+  return api<BulkApplyResult>("/api/library/attention/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trackIds }),
+  })
+}
+
+export function fetchApplyStatus(): Promise<BulkApplyStatus> {
+  return api<BulkApplyStatus>("/api/library/attention/apply")
 }
 
 export const discover = {

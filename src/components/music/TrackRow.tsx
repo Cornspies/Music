@@ -19,9 +19,10 @@ interface TrackRowProps {
   contextQueue?: Track[]
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
+  onRestoreAttention?: (trackId: string) => void
 }
 
-export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist, onDismissAttention }: TrackRowProps) {
+export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onRemoveFromPlaylist, onDismissAttention, onRestoreAttention }: TrackRowProps) {
   const isCurrent = usePlayerStore((s) => s.currentTrack?.id === track.id)
   const isPlaying = usePlayerStore((s) => s.isPlaying && s.currentTrack?.id === track.id)
 
@@ -174,6 +175,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
         track={track}
         onRemoveFromPlaylist={onRemoveFromPlaylist}
         onDismissAttention={onDismissAttention}
+        onRestoreAttention={onRestoreAttention}
         triggerClassName="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
       />
     </div>
