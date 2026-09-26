@@ -30,6 +30,25 @@ func (s *Server) apkDir() string {
 }
 
 func (s *Server) handleAppReleases(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, s.appReleases())
+}
+
+func (s *Server) handleLatestAppRelease(w http.ResponseWriter, r *http.Request) {
+	current := strings.TrimSpace(r.URL.Query().Get("current"))
+	var out struct {
+		Latest          *AppRelease `json:"latest"`
+		UpdateAvailable bool        `json:"updateAvailable"`
+	}
+	if releases := s.appReleases(); len(releases) > 0 {
+		out.Latest = &releases[0]
+		out.UpdateAvailable = current != "" && compareVersions(releases[0].Version, current) > 0
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) appReleases() []AppRelease {
 	entries, err := os.ReadDir(s.apkDir())
 	out := []AppRelease{}
 	if err == nil {
@@ -50,8 +69,7 @@ func (s *Server) handleAppReleases(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return compareVersions(out[i].Version, out[j].Version) > 0 })
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, out)
+	return out
 }
 
 func (s *Server) handleAppReleaseDownload(w http.ResponseWriter, r *http.Request) {

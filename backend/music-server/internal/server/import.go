@@ -339,6 +339,7 @@ func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResu
 	fetchCtx, cancel := context.WithTimeout(ctx, importFetchTime)
 	defer cancel()
 	dl, err := job.src.fetch(fetchCtx, e.ID)
+	noteSource(job.src.key(), err)
 	if err != nil {
 		return "", false, "", nil, err
 	}

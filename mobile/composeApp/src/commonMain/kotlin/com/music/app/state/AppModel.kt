@@ -1,5 +1,7 @@
 package com.music.app.state
 
+import com.music.app.appVersionName
+import com.music.app.api.AppRelease
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -48,6 +50,8 @@ enum class RepeatMode { OFF, ALL, ONE }
 
 private const val LISTEN_REPORT_INTERVAL_S = 15.0
 private const val KEY_SWIPE_TO_DELETE = "ui.swipeToDelete"
+private const val KEY_UPDATE_DISMISSED = "update.dismissed"
+private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 private const val PLAYBACK_SAVE_INTERVAL_MS = 10_000L
 
 private const val MEDIA_TOKEN_CHECK_INTERVAL_MS = 5L * 60_000L
@@ -91,6 +95,32 @@ class AppModel(
         swipeToDelete = on
         localStore.saveMeta(KEY_SWIPE_TO_DELETE, if (on) "1" else null)
     }
+
+    var availableUpdate by mutableStateOf<AppRelease?>(null)
+        private set
+    var dismissedUpdateVersion by mutableStateOf(localStore.loadMeta(KEY_UPDATE_DISMISSED))
+        private set
+    private var lastUpdateCheckMs = 0L
+
+    fun checkForUpdate() {
+        if (offlineMode || user == null) return
+        val current = appVersionName() ?: return
+        lastUpdateCheckMs = nowMs()
+        scope.launch {
+            try {
+                val check = api.appUpdate(current)
+                availableUpdate = check.latest?.takeIf { check.updateAvailable }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun dismissUpdate() {
+        val version = availableUpdate?.version ?: return
+        localStore.saveMeta(KEY_UPDATE_DISMISSED, version)
+        dismissedUpdateVersion = version
+    }
+
+    fun updateDownloadUrl(): String? = availableUpdate?.let { api.appDownloadUrl(it.fileName) }
 
     var offlineMode by mutableStateOf(false)
         private set
@@ -338,6 +368,7 @@ class AppModel(
             restorePlayback()
             if (!offlineMode) downloads.syncAll()
         }
+        checkForUpdate()
     }
 
     fun refreshAll() {
@@ -966,6 +997,7 @@ class AppModel(
     }
 
     fun onForeground() {
+        if (nowMs() - lastUpdateCheckMs > UPDATE_CHECK_INTERVAL_MS) checkForUpdate()
         if (user == null || offlineMode || syncingPlayback || player.isPlaying.value) return
         syncingPlayback = true
         scope.launch {

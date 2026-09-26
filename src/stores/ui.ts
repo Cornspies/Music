@@ -20,6 +20,7 @@ export type View =
   | "history"
   | "discover"
   | "duplicates"
+  | "filetags"
   | "share"
   | "admin"
 
@@ -61,6 +62,8 @@ interface UIState {
   setShareTrack: (track: Track | null) => void
   trimTrack: Track | null
   setTrimTrack: (track: Track | null) => void
+  restoreTagsTrack: Track | null
+  setRestoreTagsTrack: (track: Track | null) => void
   playlistDialog: PlaylistDialogState
   openPlaylistDialog: (dialog: NonNullable<PlaylistDialogState>) => void
   closePlaylistDialog: () => void
@@ -126,6 +129,8 @@ export const useUIStore = create<UIState>()((set) => ({
   setShareTrack: (track) => set({ shareTrack: track }),
   trimTrack: null,
   setTrimTrack: (track) => set({ trimTrack: track }),
+  restoreTagsTrack: null,
+  setRestoreTagsTrack: (track) => set({ restoreTagsTrack: track }),
   setEditTrackId: (id) => set({ editTrackId: id }),
   playlistDialog: null,
   openPlaylistDialog: (dialog) => set({ playlistDialog: dialog }),

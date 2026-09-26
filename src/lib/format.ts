@@ -1,3 +1,5 @@
+import type { TagChange } from "@/lib/types"
+
 export function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "0:00"
   const s = Math.floor(sec)
@@ -93,4 +95,12 @@ export function initialsOf(text: string): string {
     .map((p) => p[0]!)
     .join("")
     .toUpperCase()
+}
+
+export const TAG_FIELD_LABELS: Record<TagChange["field"], string> = {
+  title: "Title",
+  artist: "Artist",
+  album: "Album",
+  genre: "Genre",
+  year: "Year",
 }

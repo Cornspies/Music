@@ -256,7 +256,6 @@ export interface AdminSettings {
 
 export interface SearchResults {
   tracks: Track[]
-  /** How many tracks match in all; `tracks` holds the first 50 unless all were asked for. */
   tracksTotal?: number
   albums: Album[]
   artists: Artist[]
@@ -343,4 +342,56 @@ export interface InviteCheck {
   status: "pending" | "used" | "expired" | "revoked" | "invalid"
   expiresAt?: string
   invitedBy?: string
+}
+
+export interface TagChange {
+  field: "title" | "artist" | "album" | "genre" | "year"
+  current: string
+  file: string
+}
+
+export interface FileTagDiff {
+  track: Track
+  changes: TagChange[]
+}
+
+export type AttentionReason = "artist" | "album" | "cover" | "thumbnail"
+
+export interface AttentionItem {
+  trackId: string
+  reasons: AttentionReason[]
+}
+
+export interface ActivityEvent {
+  at: string
+  context: string
+  message: string
+  count: number
+}
+
+export interface TrimEvent {
+  at: string
+  trackId: string
+  title: string
+  fromStart: number
+  fromEnd: number
+}
+
+export interface SourceHealth {
+  key: string
+  name: string
+  lastOk?: string
+  lastError?: string
+  lastErrorAt?: string
+  failingSince?: string
+}
+
+export interface ActivityStatus {
+  silence: { enabled: boolean; rule: string; total: number; pending: number; recentCuts: TrimEvent[] }
+  analysis: { enabled: boolean; waiting: number; current: { id: string; title: string } | null }
+  imports: PlaylistImport[]
+  sources: SourceHealth[]
+  ytdlp: { version: string; path: string; jsRuntime: string } | null
+  disk: { libraryBytes: number; databaseBytes: number; freeBytes: number; totalBytes: number }
+  errors: ActivityEvent[]
 }

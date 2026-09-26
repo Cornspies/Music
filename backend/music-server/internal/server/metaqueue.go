@@ -312,11 +312,11 @@ func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMeta
 	if len(filled) == 0 {
 		return false, false
 	}
-	hasCover := t.HasCover
+	hasCover, wroteCover := t.HasCover, false
 	if (!t.HasCover || replaceCover) && len(meta.picture) > 1 {
 		if safeCoverBytes(meta.picture) {
 			if err := os.WriteFile(filepath.Join(s.covDir, t.ID+".img"), meta.picture, 0o644); err == nil {
-				hasCover = true
+				hasCover, wroteCover = true, true
 				coverReplaced = replaceCover
 			}
 		}
@@ -324,8 +324,9 @@ func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMeta
 	title := trimDefault(meta.title, t.Title)
 	artist := trimDefault(meta.artist, "Unknown Artist")
 	album := trimDefault(meta.album, "Unknown Album")
-	if _, err := s.db.Exec(`UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, has_cover = ?, updated_at = ? WHERE id = ?`,
-		title, artist, album, meta.genre, meta.year, boolToInt(hasCover), nowRFC3339(), t.ID); err != nil {
+	if _, err := s.db.Exec(`UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, has_cover = ?, updated_at = ?,
+		cover_source = CASE WHEN ? = 1 THEN ? ELSE cover_source END WHERE id = ?`,
+		title, artist, album, meta.genre, meta.year, boolToInt(hasCover), nowRFC3339(), boolToInt(wroteCover), coverFromMatch, t.ID); err != nil {
 		logErr("metadata queue apply", err)
 		return false, false
 	}

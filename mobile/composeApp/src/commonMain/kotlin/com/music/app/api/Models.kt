@@ -422,3 +422,17 @@ data class ApiError(
 fun prefersCompatible(track: Track): Boolean =
     track.hasCompatible &&
         track.mimeType.substringBefore(';').trim().lowercase() in unplayableMimeTypes
+
+@Serializable
+data class AppRelease(
+    val version: String = "",
+    val fileName: String = "",
+    val size: Long = 0,
+    val modifiedAt: String = "",
+)
+
+@Serializable
+data class AppUpdateCheck(
+    val latest: AppRelease? = null,
+    val updateAvailable: Boolean = false,
+)

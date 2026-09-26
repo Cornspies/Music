@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SwipeLeft
 import androidx.compose.material3.AlertDialog
@@ -57,6 +58,8 @@ import com.music.app.LocalAppModel
 import com.music.app.Screen
 import com.music.app.api.friendlyError
 import com.music.app.ui.components.AvatarEditor
+import androidx.compose.ui.platform.LocalUriHandler
+import com.music.app.appVersionName
 import com.music.app.ui.components.DownloadQualitySetting
 import com.music.app.ui.components.SyncSettings
 import com.music.app.ui.theme.Emerald
@@ -67,6 +70,7 @@ fun ProfileScreen() {
     val model = LocalAppModel.current
     val user = model.user ?: return
     val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
 
     var passwordOpen by remember { mutableStateOf(false) }
     var logoutOpen by remember { mutableStateOf(false) }
@@ -182,6 +186,25 @@ fun ProfileScreen() {
         SectionCard("Download preferences", icon = Icons.Filled.Storage) {
             DownloadQualitySetting()
             SyncSettings()
+        }
+
+        appVersionName()?.let { version ->
+            SectionCard("App", icon = Icons.Filled.SystemUpdate) {
+                model.availableUpdate?.let { update ->
+                    SettingRow(
+                        icon = Icons.Filled.SystemUpdate,
+                        title = "Download version ${update.version}",
+                        onClick = { model.updateDownloadUrl()?.let { uriHandler.openUri(it) } },
+                    )
+                    HorizontalDivider()
+                }
+                Text(
+                    "Version $version",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
         }
 
         Spacer(Modifier.height(24.dp))

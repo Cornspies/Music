@@ -39,6 +39,7 @@ interface LibraryState {
   removePlaylistTrack: (playlistId: string, trackId: string) => Promise<void>
   deleteTrack: (id: string) => Promise<void>
   updateTrack: (id: string, patch: TrackPatch) => Promise<boolean>
+  replaceTrack: (track: Track) => void
   followAnalysis: (trackId: string) => void
   reset: () => void
 }
@@ -263,6 +264,15 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     if (removed) {
       await Promise.allSettled([get().fetchStats(), get().fetchPlaylists()])
     }
+  },
+
+  replaceTrack: (updated) => {
+    set({
+      tracks: get().tracks.map((t) => (t.id === updated.id ? updated : t)),
+      favorites: get().favorites.map((t) => (t.id === updated.id ? updated : t)),
+    })
+    usePlayerStore.getState().replaceTrack(updated)
+    useOfflineStore.getState().replaceTrack(updated)
   },
 
   updateTrack: async (id, patch) => {

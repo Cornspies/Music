@@ -301,6 +301,9 @@ func (s *Server) trimSilentEdges(ctx context.Context, id, rel string) (bool, err
 		s.shiftSyncedLyrics(id, -start, true)
 	}
 	log.Printf("trim: track %s — cut %.2fs of silence from the start, %.2fs from the end", id, start, duration-end)
+	var title string
+	_ = s.db.QueryRow(`SELECT title FROM tracks WHERE id = ?`, id).Scan(&title)
+	recentCuts.add(TrimEvent{At: nowRFC3339(), TrackID: id, Title: title, FromStart: start, FromEnd: duration - end})
 	return true, nil
 }
 

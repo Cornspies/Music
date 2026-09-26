@@ -1,7 +1,9 @@
 package com.music.app
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -71,6 +73,17 @@ internal actual suspend fun PickedAudio.readBytes(): ByteArray {
 internal actual val canPickImageFromDevice: Boolean = true
 
 internal actual val unplayableMimeTypes: Set<String> = emptySet()
+
+internal actual fun appVersionName(): String? = runCatching {
+    val pm = appContext.packageManager
+    val info = if (Build.VERSION.SDK_INT >= 33) {
+        pm.getPackageInfo(appContext.packageName, PackageManager.PackageInfoFlags.of(0))
+    } else {
+        @Suppress("DEPRECATION")
+        pm.getPackageInfo(appContext.packageName, 0)
+    }
+    info.versionName
+}.getOrNull()
 
 @Composable
 internal actual fun rememberImagePickerLauncher(

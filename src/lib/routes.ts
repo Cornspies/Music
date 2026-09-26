@@ -49,6 +49,8 @@ export function routeToPath(view: View, arg: string | null): string {
       return "/discover"
     case "duplicates":
       return "/duplicates"
+    case "filetags":
+      return "/file-tags"
     case "share":
       return arg ? `/s/${encodeURIComponent(arg)}` : "/"
     case "admin":
@@ -87,6 +89,8 @@ export function pathToRoute(pathname: string): Route {
       return { view: "discover", arg: null }
     case "duplicates":
       return { view: "duplicates", arg: null }
+    case "file-tags":
+      return { view: "filetags", arg: null }
     case "s":
       return parts[1] ? { view: "share", arg: parts[1] } : { view: "home", arg: null }
     case "admin":

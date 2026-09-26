@@ -6,7 +6,7 @@ import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { CollectionHeader } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
-import { TrackList } from "@/components/music/TrackList"
+import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 
 export function FavoritesView() {
   const favorites = useLibraryStore((s) => s.favorites)
@@ -45,7 +45,7 @@ export function FavoritesView() {
             onAction={() => navigate("library")}
           />
         ) : (
-          <TrackList tracks={favorites} />
+          <VirtualTrackList tracks={favorites} />
         )}
       </div>
     </div>

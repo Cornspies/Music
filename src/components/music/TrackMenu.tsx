@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import {
+  Check,
   CloudDownload,
   CloudOff,
   Download,
@@ -18,6 +19,7 @@ import {
   Scissors,
   Share2,
   Trash2,
+  Undo2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { downloadUrl, requestMetadataLookup } from "@/lib/api"
@@ -62,6 +64,7 @@ function extForMime(mime: string): string {
 interface TrackMenuProps {
   track: Track
   onRemoveFromPlaylist?: (trackId: string) => void
+  onDismissAttention?: (trackId: string) => void
   triggerClassName?: string
   side?: "top" | "bottom"
   showPlay?: boolean
@@ -70,6 +73,7 @@ interface TrackMenuProps {
 export function TrackMenu({
   track,
   onRemoveFromPlaylist,
+  onDismissAttention,
   triggerClassName,
   side = "bottom",
   showPlay = true,
@@ -104,6 +108,7 @@ export function TrackMenu({
           side={side}
           showPlay={showPlay}
           onRemoveFromPlaylist={onRemoveFromPlaylist}
+          onDismissAttention={onDismissAttention}
           onDelete={() => setDeleteOpen(true)}
           canManage={canManage}
           offline={{
@@ -152,6 +157,7 @@ function TrackMenuContent({
   side,
   showPlay,
   onRemoveFromPlaylist,
+  onDismissAttention,
   onDelete,
   canManage,
   offline,
@@ -160,6 +166,7 @@ function TrackMenuContent({
   side: "top" | "bottom"
   showPlay: boolean
   onRemoveFromPlaylist?: (trackId: string) => void
+  onDismissAttention?: (trackId: string) => void
   onDelete: () => void
   canManage: boolean
   offline: { supported: boolean; downloaded: boolean; downloading: boolean }
@@ -239,6 +246,14 @@ function TrackMenuContent({
           >
             <RefreshCw className="size-4" /> Look up metadata again
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => useUIStore.getState().setRestoreTagsTrack(track)}>
+            <Undo2 className="size-4" /> Restore tags from file…
+          </DropdownMenuItem>
+          {onDismissAttention ? (
+            <DropdownMenuItem onClick={() => onDismissAttention(track.id)}>
+              <Check className="size-4" /> Looks fine
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem onClick={() => useUIStore.getState().setTrimTrack(track)}>
             <Scissors className="size-4" /> Trim silence…
           </DropdownMenuItem>

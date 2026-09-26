@@ -116,6 +116,8 @@ func (s *Server) analysisWorker() {
 			transcodeSlots <- struct{}{}
 			defer func() { <-transcodeSlots }()
 			defer logPanic("analysis of track " + id)
+			setAnalysing(id)
+			defer setAnalysing("")
 			s.analyzeTrack(id)
 		}()
 	}

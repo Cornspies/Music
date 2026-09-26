@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 import {
   Globe,
@@ -23,7 +23,7 @@ import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { CollectionHeader, HeaderMenuTrigger } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
-import { TrackList } from "@/components/music/TrackList"
+import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   AlertDialog,
@@ -76,6 +76,19 @@ export function PlaylistView() {
     }
   }, [viewArg, playlistVersion])
 
+  const removeTrack = useCallback(
+    (trackId: string) => {
+      if (!viewArg) return
+      useLibraryStore.getState().removePlaylistTrack(viewArg, trackId)
+      setDetail((prev) =>
+        prev
+          ? { ...prev, tracks: prev.tracks.filter((t) => t.id !== trackId), trackCount: Math.max(0, prev.trackCount - 1) }
+          : prev
+      )
+    },
+    [viewArg]
+  )
+
   if (error) {
     return (
       <div className="p-4 md:p-6">
@@ -108,16 +121,6 @@ export function PlaylistView() {
   }
 
   const totalDuration = detail.tracks.reduce((sum, t) => sum + t.duration, 0)
-
-  const removeTrack = (trackId: string) => {
-    if (!viewArg) return
-    useLibraryStore.getState().removePlaylistTrack(viewArg, trackId)
-    setDetail((prev) =>
-      prev
-        ? { ...prev, tracks: prev.tracks.filter((t) => t.id !== trackId), trackCount: Math.max(0, prev.trackCount - 1) }
-        : prev
-    )
-  }
 
   const confirmDelete = async () => {
     if (!viewArg) return
@@ -253,7 +256,7 @@ export function PlaylistView() {
             compact
           />
         ) : (
-          <TrackList tracks={detail.tracks} onRemoveFromPlaylist={removeTrack} />
+          <VirtualTrackList tracks={detail.tracks} onRemoveFromPlaylist={removeTrack} />
         )}
       </div>
 

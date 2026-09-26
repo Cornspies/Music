@@ -22,6 +22,10 @@ import type {
   MetadataQueueStatus,
   SilenceInfo,
   MetadataCandidate,
+  ActivityStatus,
+  AttentionItem,
+  FileTagDiff,
+  TagChange,
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
@@ -321,6 +325,38 @@ export function fetchDuplicates(): Promise<DuplicateGroup[]> {
   return api<DuplicateGroup[]>("/api/library/duplicates")
 }
 
+export function fetchFileTagChanges(trackId: string): Promise<{ changes: TagChange[] }> {
+  return api(`/api/tracks/${trackId}/metadata/file-tags`)
+}
+
+export function restoreTrackTags(trackId: string, fields: TagChange["field"][]): Promise<{ track: Track; restored: string[] }> {
+  return api(`/api/tracks/${trackId}/metadata/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  })
+}
+
+export function fetchLibraryFileTags(): Promise<FileTagDiff[]> {
+  return api<FileTagDiff[]>("/api/library/file-tags")
+}
+
+export function restoreLibraryTags(trackIds: string[]): Promise<{ restored: number }> {
+  return api("/api/library/file-tags/restore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trackIds }),
+  })
+}
+
+export function fetchAttention(): Promise<AttentionItem[]> {
+  return api<AttentionItem[]>("/api/library/attention")
+}
+
+export function dismissAttention(trackId: string): Promise<void> {
+  return api<void>(`/api/tracks/${trackId}/attention/dismiss`, { method: "POST" })
+}
+
 export const discover = {
   sources: () => api<DiscoverSource[]>("/api/discover/sources"),
   startImport: (source: string, url: string) =>
@@ -411,6 +447,7 @@ export function fetchWaveform(trackId: string, version = ""): Promise<number[] |
 
 export const admin = {
   users: () => api<AdminUser[]>("/api/admin/users"),
+  activity: () => api<ActivityStatus>("/api/admin/activity"),
   deleteUser: (id: string) => api<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
   updateUser: (id: string, patch: { role?: "user" | "admin"; signOut?: boolean }) =>
     api<void>(`/api/admin/users/${id}`, {

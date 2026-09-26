@@ -108,6 +108,8 @@ private fun NSData.toByteArray(): ByteArray {
 
 internal actual val canPickImageFromDevice: Boolean = true
 
+internal actual fun appVersionName(): String? = null
+
 internal actual val unplayableMimeTypes: Set<String> = setOf(
     "audio/ogg",
     "application/ogg",

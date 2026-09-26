@@ -6,7 +6,17 @@ import { TrackRow } from "@/components/music/TrackRow"
 
 const OVERSCAN = 10
 
-export function VirtualTrackList({ tracks, followTrackId }: { tracks: Track[]; followTrackId?: string | null }) {
+export function VirtualTrackList({
+  tracks,
+  followTrackId,
+  onRemoveFromPlaylist,
+  onDismissAttention,
+}: {
+  tracks: Track[]
+  followTrackId?: string | null
+  onRemoveFromPlaylist?: (trackId: string) => void
+  onDismissAttention?: (trackId: string) => void
+}) {
   const listRef = useRef<HTMLDivElement>(null)
   const rowsRef = useRef<HTMLDivElement>(null)
   const [rowHeight, setRowHeight] = useState(56)
@@ -83,7 +93,14 @@ export function VirtualTrackList({ tracks, followTrackId }: { tracks: Track[]; f
         style={{ transform: `translateY(${range.start * rowHeight}px)` }}
       >
         {tracks.slice(range.start, range.end).map((track, i) => (
-          <TrackRow key={track.id} track={track} index={range.start + i} contextQueue={tracks} />
+          <TrackRow
+            key={`${track.id}-${range.start + i}`}
+            track={track}
+            index={range.start + i}
+            contextQueue={tracks}
+            onRemoveFromPlaylist={onRemoveFromPlaylist}
+            onDismissAttention={onDismissAttention}
+          />
         ))}
       </div>
     </div>

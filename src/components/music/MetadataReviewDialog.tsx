@@ -66,9 +66,10 @@ interface Props {
   tracks: Track[]
   open: boolean
   onOpenChange: (open: boolean) => void
+  onKeep?: (trackId: string) => void
 }
 
-export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
+export function MetadataReviewDialog({ tracks, open, onOpenChange, onKeep }: Props) {
   const [index, setIndex] = useState(0)
   const [candidates, setCandidates] = useState<MetadataCandidate[]>([])
   const [loading, setLoading] = useState(false)
@@ -433,6 +434,20 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange }: Props) {
                 Look up again
               </Button>
             )}
+            {onKeep && track ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs text-zinc-400 hover:text-zinc-100"
+                onClick={() => {
+                  onKeep(track.id)
+                  goNext()
+                }}
+              >
+                <Check className="mr-1 size-3.5" aria-hidden="true" />
+                Looks fine
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="sm"

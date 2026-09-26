@@ -159,6 +159,7 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(r.Context(), importListTime)
 			defer cancel()
 			pl, err := ps.listPlaylist(ctx, listID)
+			noteSource(src.key(), err)
 			if err != nil {
 				logErr("discover playlist", err)
 				writeErr(w, http.StatusBadGateway, friendlyImportError(err, src.name()+" didn't answer; try again in a moment"))
@@ -177,6 +178,7 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	results, more, err := src.search(ctx, q, page)
+	noteSource(src.key(), err)
 	if err != nil {
 		var status *statusError
 		if errors.As(err, &status) {
@@ -278,6 +280,7 @@ func (s *Server) handleDiscoverAdd(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
 	dl, err := src.fetch(ctx, body.ID)
+	noteSource(src.key(), err)
 	var status *statusError
 	if err != nil {
 		logErr("discover fetch", err)
@@ -371,12 +374,14 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 
 	hasCover := false
 	cover := shrinkCover(meta.picture)
+	coverSource := coverFromFile
 	if len(cover) == 0 && dl.CoverURL != "" {
 		if b, err := fetchArtwork(ctx, dl.CoverURL); err == nil {
 			if dl.SquareCover {
 				b = squareCrop(b)
 			}
 			cover = shrinkCover(b)
+			coverSource = coverFromCatalogue
 		} else {
 			logErr("discover cover", err)
 		}
@@ -386,16 +391,22 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 			hasCover = true
 		}
 	}
+	switch {
+	case !hasCover:
+		coverSource = ""
+	case sourceKey == "youtube":
+		coverSource = coverFromThumbnail
+	}
 
 	createdAt := nowRFC3339()
 	_, err = s.db.Exec(`INSERT INTO tracks
 		(id, user_id, title, artist, album, genre, year, track_no, duration,
 		 file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
-		 alt_path, alt_mime, alt_size, updated_at, source, source_id, file_hash)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)`,
+		 alt_path, alt_mime, alt_size, updated_at, source, source_id, file_hash, cover_source)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)`,
 		id, u.ID, title, artist, album, genre, year, meta.trackNo, duration,
 		sanitizeFilename(dl.FileName), rel, mimeType, n, hasCover, createdAt,
-		"", "", 0, createdAt, sourceKey, sourceID, hash)
+		"", "", 0, createdAt, sourceKey, sourceID, hash, coverSource)
 	if err != nil {
 		os.Remove(absPath)
 		os.Remove(filepath.Join(s.covDir, id+".img"))

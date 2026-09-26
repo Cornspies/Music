@@ -22,6 +22,8 @@ internal expect val canPickImageFromDevice: Boolean
 
 internal expect val unplayableMimeTypes: Set<String>
 
+internal expect fun appVersionName(): String?
+
 internal fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? =
     runCatching { bytes.decodeToImageBitmap() }.getOrNull()
 

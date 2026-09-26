@@ -313,6 +313,12 @@ class ApiClient(private val store: TokenStore) {
 
     suspend fun metadataQueue(): MetadataQueueStatus = getJson("/api/metadata/queue")
 
+    suspend fun appUpdate(current: String): AppUpdateCheck =
+        getJson("/api/app/releases/latest?current=" + current.encodeURLParameter())
+
+    fun appDownloadUrl(fileName: String): String =
+        url("/api/app/releases/" + fileName.encodeURLParameter()) + "?token=" + mediaOrSessionToken.encodeURLParameter()
+
     suspend fun applyMetadataCandidate(trackId: String, candidateId: String): Track =
         postJson("/api/tracks/$trackId/metadata/apply", ApplyMetadataRequest(candidateId))
 

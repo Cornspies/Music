@@ -434,11 +434,11 @@ func (s *Server) finalizeUpload(w http.ResponseWriter, r *http.Request, up *pend
 	res, err := s.db.Exec(`INSERT INTO tracks
                 (id, user_id, title, artist, album, genre, year, track_no, duration,
                  file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
-                 alt_path, alt_mime, alt_size, updated_at, file_hash)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)`,
+                 alt_path, alt_mime, alt_size, updated_at, file_hash, cover_source)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?)`,
 		id, u.ID, title, artist, album, meta.genre, meta.year, meta.trackNo, duration,
 		fileName, savedPath, mimeType, size, hasCover, createdAt,
-		"", "", 0, createdAt, up.hash)
+		"", "", 0, createdAt, up.hash, coverOrigin(hasCover, coverFromFile))
 	if err != nil {
 		os.Remove(absPath)
 		os.Remove(filepath.Join(s.covDir, id+".img"))

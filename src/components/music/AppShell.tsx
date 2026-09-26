@@ -22,6 +22,7 @@ import { PasswordDialog } from "@/components/music/PasswordDialog"
 import { UploadDialog } from "@/components/music/UploadDialog"
 import { EditTrackDialog } from "@/components/music/EditTrackDialog"
 import { MetadataReviewDialog } from "@/components/music/MetadataReviewDialog"
+import { RestoreTagsDialog } from "@/components/music/RestoreTagsDialog"
 import { ShareDialog } from "@/components/music/ShareDialog"
 import { TrimDialog } from "@/components/music/TrimDialog"
 import { PlaylistDialog } from "@/components/music/PlaylistDialog"
@@ -39,6 +40,7 @@ import { OfflineView } from "@/components/music/views/OfflineView"
 import { HistoryView } from "@/components/music/views/HistoryView"
 import { DiscoverView } from "@/components/music/views/DiscoverView"
 import { DuplicatesView } from "@/components/music/views/DuplicatesView"
+import { FileTagsView } from "@/components/music/views/FileTagsView"
 import { AdminView } from "@/components/music/views/AdminView"
 import { OfflineBanner } from "@/components/music/OfflineBanner"
 import { PlaybackSettingsDialog } from "@/components/music/PlaybackSettingsDialog"
@@ -149,6 +151,8 @@ function renderView(view: View) {
       return <DiscoverView />
     case "duplicates":
       return <DuplicatesView />
+    case "filetags":
+      return <FileTagsView />
     case "admin":
       return <AdminView />
   }
@@ -256,6 +260,7 @@ export function AppShell() {
       <EditTrackDialog />
       <GlobalMetadataReview />
       <TrimDialog />
+      <RestoreTagsDialog />
       <ShareDialog />
       <PlaylistDialog />
     </div>

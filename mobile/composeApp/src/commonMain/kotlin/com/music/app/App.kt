@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -119,6 +120,22 @@ private fun Root() {
         LoginScreen()
     } else {
         MainScreen()
+    }
+    val update = model.availableUpdate
+    if (update != null && update.version != model.dismissedUpdateVersion && model.user != null) {
+        val uriHandler = LocalUriHandler.current
+        AlertDialog(
+            onDismissRequest = { model.dismissUpdate() },
+            title = { Text("Update available") },
+            text = { Text("Music ${update.version} is on your server.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    model.updateDownloadUrl()?.let { uriHandler.openUri(it) }
+                    model.dismissUpdate()
+                }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { model.dismissUpdate() }) { Text("Later") } },
+        )
     }
     model.shareLinkError?.let { message ->
         AlertDialog(

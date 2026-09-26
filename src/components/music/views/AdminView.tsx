@@ -9,8 +9,6 @@ import {
   Link2,
   Loader2,
   LogOut,
-  Pause,
-  Play,
   Plus,
   Share2,
   Shield,
@@ -28,7 +26,7 @@ import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { EmptyState } from "@/components/music/EmptyState"
-import { MetadataQueueLine, useMetadataQueue } from "@/components/music/MetadataQueueStatus"
+import { ActivityPanel } from "@/components/music/ActivityPanel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -373,49 +371,6 @@ function InvitesSection() {
   )
 }
 
-function MetadataSection() {
-  const { status, refresh } = useMetadataQueue()
-  const [busy, setBusy] = useState(false)
-
-  const setPaused = async (paused: boolean) => {
-    setBusy(true)
-    try {
-      await admin.updateSettings({ metadataLookupPaused: paused })
-      await refresh()
-      toast.success(paused ? "Metadata lookups paused" : "Metadata lookups resumed")
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <section className="mt-6">
-      <h2 className="mb-3 text-sm font-semibold text-zinc-300">Metadata lookups</h2>
-      <div className="flex min-h-14 items-center justify-between gap-4 rounded-xl border border-zinc-800/80 bg-zinc-900/50 px-4 py-3">
-        <MetadataQueueLine status={status} showIdle className="min-w-0" />
-        {status && !status.disabled ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => setPaused(!status.paused)}
-            className="h-8 shrink-0 border-zinc-700 bg-zinc-800/60 px-3 text-xs text-zinc-200 hover:bg-zinc-800"
-          >
-            {status.paused ? (
-              <Play className="mr-1.5 size-3.5" aria-hidden="true" />
-            ) : (
-              <Pause className="mr-1.5 size-3.5" aria-hidden="true" />
-            )}
-            {status.paused ? "Resume" : "Pause"}
-          </Button>
-        ) : null}
-      </div>
-    </section>
-  )
-}
-
 export function AdminView() {
   const me = useAuthStore((s) => s.user)
   const [users, setUsers] = useState<AdminUser[] | null>(null)
@@ -507,7 +462,7 @@ export function AdminView() {
         </div>
       ) : null}
 
-      <MetadataSection />
+      <ActivityPanel />
 
       {settings ? (
         <section className="mt-6">
