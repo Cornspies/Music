@@ -22,6 +22,10 @@ settings:
     # Xcode 15+ sandboxes run-script phases by default, which stops the
     # Gradle step from writing the framework into the build products.
     ENABLE_USER_SCRIPT_SANDBOXING: NO
+    # The Kotlin framework only has arm64 slices (iosArm64/iosSimulatorArm64;
+    # Compose Multiplatform no longer supports x86_64). Without this, a generic
+    # simulator build also asks Gradle for x86_64, which fails the Gradle step.
+    "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
     SWIFT_VERSION: "5.0"
 
 targets:
