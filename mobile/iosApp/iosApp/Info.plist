@@ -41,6 +41,12 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!--
+	  Lets Compose draw at 120 Hz on ProMotion iPhones. Compose Multiplatform
+	  checks for it at launch and stops the app if it is missing.
+	-->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<!--
 	  App Transport Security: plain http is allowed only to local-network
 	  addresses (the self-hosted LAN server case). Anything on the public
 	  internet must be https.
