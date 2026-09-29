@@ -90,11 +90,16 @@ jobs:
           security unlock-keychain -p "$keychain_password" "$keychain"
           if ! security import "$cert" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"; then
             # Say what the secret holds instead, without printing it. A .p12
-            # (PKCS#12) begins with the version number 3; a certificate doesn't.
+            # (PKCS#12) begins with 30 82, its total length in the next two
+            # bytes, and the version number 3; a certificate doesn't.
+            size=$(wc -c < "$cert" | tr -d ' ')
+            declared=$(od -An -tu1 -N4 "$cert" | awk '$1 == 48 && $2 == 130 { print 4 + $3 * 256 + $4 }')
             if openssl x509 -inform DER -in "$cert" -noout 2>/dev/null || openssl x509 -in "$cert" -noout 2>/dev/null; then
               echo "::error::IOS_DISTRIBUTION_CERTIFICATE holds only the certificate (.cer); it must be the .p12 that also contains the private key (README step 2)."
+            elif [ -n "$declared" ] && [ "$size" -lt "$declared" ]; then
+              echo "::error::IOS_DISTRIBUTION_CERTIFICATE is cut short: $size of $declared bytes arrived, so part of the base64 text was lost while copying it. Copy it with a clipboard tool (README step 6)."
             elif ! openssl asn1parse -inform DER -in "$cert" 2>/dev/null | sed -n 2p | grep -q 'INTEGER *:03'; then
-              echo "::error::IOS_DISTRIBUTION_CERTIFICATE does not decode to a .p12 file ($(wc -c < "$cert" | tr -d ' ') bytes); set it to the output of base64 -w0 ios_distribution.p12."
+              echo "::error::IOS_DISTRIBUTION_CERTIFICATE does not decode to a .p12 file ($size bytes); set it to the output of base64 -w0 ios_distribution.p12, copied whole (README step 6)."
             else
               echo "::error::macOS could not import the .p12 (see above). Check IOS_DISTRIBUTION_CERTIFICATE_PASSWORD; if it is right, re-create the .p12 with the options in README step 2."
             fi
@@ -104,7 +109,7 @@ jobs:
           security list-keychain -d user -s "$keychain"
 
           if ! security cms -D -i "$profile" > "$RUNNER_TEMP/profile.plist"; then
-            echo "::error::IOS_PROVISIONING_PROFILE does not decode to a provisioning profile; set it to the output of base64 -w0 <name>.mobileprovision."
+            echo "::error::IOS_PROVISIONING_PROFILE does not decode to a provisioning profile ($(wc -c < "$profile" | tr -d ' ') bytes); set it to the output of base64 -w0 <name>.mobileprovision, copied whole (README step 6)."
             exit 1
           fi
           # The profile names the team and its own UUID; the build signs with both.

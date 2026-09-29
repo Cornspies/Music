@@ -261,11 +261,22 @@ One-time setup — a browser and a few `openssl` commands, no Mac needed:
    | `APP_STORE_CONNECT_KEY_ID` | the Key ID |
    | `APP_STORE_CONNECT_PRIVATE_KEY` | the whole `.p8` file, `BEGIN`/`END` lines included |
 
-   `base64 -w0` prints no final newline, so copying its output from the
-   terminal easily takes part of the next prompt along or misses the end.
-   Pipe it to the clipboard instead (`base64 -w0 ios_distribution.p12 | wl-copy`,
-   or `xclip -selection clipboard` on X11), or skip the clipboard with the
-   GitHub CLI: `base64 -w0 ios_distribution.p12 | gh secret set IOS_DISTRIBUTION_CERTIFICATE`.
+   Don't select these values in the terminal: they are thousands of
+   characters on one line, and part of them easily gets lost on the way.
+   Pipe each one to the clipboard and paste that (`wl-copy` and `wl-paste`
+   come with the `wl-clipboard` package; on X11 use
+   `xclip -selection clipboard`):
+   ```bash
+   base64 -w0 ios_distribution.p12 | wl-copy       # IOS_DISTRIBUTION_CERTIFICATE
+   base64 -w0 <name>.mobileprovision | wl-copy     # IOS_PROVISIONING_PROFILE
+   wl-copy < AuthKey_<Key ID>.p8                   # APP_STORE_CONNECT_PRIVATE_KEY
+   ```
+   Run one line, paste into its secret straight away, then copy the next
+   line — copying a command to run it replaces what's on the clipboard. To
+   copy and check in one go:
+   `base64 -w0 ios_distribution.p12 | wl-copy && wl-paste -n | base64 -d | cmp - ios_distribution.p12 && echo OK`.
+   The GitHub CLI skips the clipboard entirely:
+   `base64 -w0 ios_distribution.p12 | gh secret set IOS_DISTRIBUTION_CERTIFICATE`.
 
 7. **Testers.** Once the first build is processed: the app in App Store
    Connect → TestFlight → Internal Testing → +, create a group with automatic
