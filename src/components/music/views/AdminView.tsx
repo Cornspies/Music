@@ -6,6 +6,7 @@ import {
   Ban,
   Check,
   Copy,
+  FlaskConical,
   Link2,
   Loader2,
   LogOut,
@@ -21,7 +22,7 @@ import {
 import { cn } from "@/lib/utils"
 import { admin, inviteLink } from "@/lib/api"
 import { formatFileSize, formatRelativeDate, formatTimeUntil } from "@/lib/format"
-import type { AdminSettings, AdminShare, AdminUser, Invite } from "@/lib/types"
+import type { AdminSettings, AdminShare, AdminUser, Invite, Role } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
 import { UserAvatar } from "@/components/music/UserAvatar"
@@ -412,11 +413,21 @@ export function AdminView() {
     }
   }
 
-  const setRole = async (u: AdminUser, role: "user" | "admin") => {
+  const setRole = async (u: AdminUser, role: Role) => {
     setBusy(u.id)
     try {
       await admin.updateUser(u.id, { role })
-      toast.success(`${u.username} is now ${role === "admin" ? "an admin" : "a regular user"}`)
+      if (role === "demo") {
+        toast.success(`${u.username} is now a demo account`, {
+          description: "It sees only its own uploads, and apart from admins nobody else sees them.",
+        })
+      } else if (u.role === "demo") {
+        toast.success(`${u.username} is now a regular user`, {
+          description: "Its uploads are now part of everyone's library.",
+        })
+      } else {
+        toast.success(`${u.username} is now ${role === "admin" ? "an admin" : "a regular user"}`)
+      }
       await load()
     } catch (e) {
       toast.error((e as Error).message)
@@ -526,6 +537,11 @@ export function AdminView() {
                       {u.role === "admin" ? (
                         <ShieldCheck className="size-3.5 text-emerald-400" aria-label="Admin" />
                       ) : null}
+                      {u.role === "demo" ? (
+                        <span className="rounded bg-zinc-800 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                          demo
+                        </span>
+                      ) : null}
                       {isMe ? <span className="text-xs text-zinc-500">(you)</span> : null}
                     </p>
                     <p className="truncate text-xs text-zinc-500">
@@ -551,10 +567,19 @@ export function AdminView() {
                         <DropdownMenuItem disabled={isMe} onClick={() => setRole(u, "user")}>
                           <Shield className="size-4" /> Remove admin
                         </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem onClick={() => setRole(u, "admin")}>
-                          <ShieldCheck className="size-4" /> Make admin
+                      ) : u.role === "demo" ? (
+                        <DropdownMenuItem onClick={() => setRole(u, "user")}>
+                          <FlaskConical className="size-4" /> Make regular user
                         </DropdownMenuItem>
+                      ) : (
+                        <>
+                          <DropdownMenuItem onClick={() => setRole(u, "admin")}>
+                            <ShieldCheck className="size-4" /> Make admin
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setRole(u, "demo")}>
+                            <FlaskConical className="size-4" /> Make demo account
+                          </DropdownMenuItem>
+                        </>
                       )}
                       <DropdownMenuItem onClick={() => signOut(u)}>
                         <LogOut className="size-4" /> Sign out everywhere

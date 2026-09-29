@@ -103,7 +103,10 @@ var extMime = map[string]string{
 	".m4b":  "audio/mp4",
 }
 
-const trackSelect = `
+// trackColumns selects tracks with the per-user fields (plays, favorite) filled
+// in for the user that trackColumnsArgs names. It isn't limited to what that
+// user may see, so only server jobs acting for nobody in particular use it.
+const trackColumns = `
 SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration,
        t.mime_type, t.file_size, t.has_cover,
        COALESCE(ps.plays, 0), ps.last_played_at,
@@ -119,7 +122,20 @@ LEFT JOIN users u ON u.id = t.user_id
 LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?
 LEFT JOIN metadata_jobs mj ON mj.track_id = t.id`
 
-func trackSelectArgs(userID string) []any { return []any{userID, userID} }
+func trackColumnsArgs(userID string) []any { return []any{userID, userID} }
+
+// trackSelect is trackColumns limited to the tracks the viewer may see (see
+// demo.go), so every query built on it respects demo accounts. Callers append
+// their own JOIN, WHERE and ORDER BY clauses.
+var trackSelect = trackColumns + `
+JOIN (SELECT 1) scope ON ` + visibleTo("t.user_id")
+
+// libraryTrackSelect is trackSelect limited to the viewer's own library (see
+// sameLibrary), for duplicate checks. It takes trackSelectArgs too.
+var libraryTrackSelect = trackColumns + `
+JOIN (SELECT 1) scope ON ` + sameLibrary("t.user_id")
+
+func trackSelectArgs(userID string) []any { return append(trackColumnsArgs(userID), userID) }
 
 func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
 	var (
@@ -205,8 +221,8 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 
 	if limit, offset, ok := pageParams(r); ok {
 		var total int
-		countQuery := `SELECT COUNT(1) FROM tracks t WHERE 1 = 1`
-		countArgs := []any{}
+		countQuery := `SELECT COUNT(1) FROM tracks t WHERE ` + visibleTo("t.user_id")
+		countArgs := []any{u.ID}
 		if q != "" {
 			like := "%" + likeEscape(q) + "%"
 			countQuery += ` AND (t.title LIKE ? ESCAPE '\' OR t.artist LIKE ? ESCAPE '\' OR t.album LIKE ? ESCAPE '\')`
@@ -600,7 +616,7 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var ownerID string
-	switch err := s.db.QueryRow(`SELECT user_id FROM tracks WHERE id = ?`, id).Scan(&ownerID); {
+	switch err := s.db.QueryRow(`SELECT t.user_id FROM tracks t WHERE t.id = ? AND `+visibleTo("t.user_id"), id, u.ID).Scan(&ownerID); {
 	case errors.Is(err, sql.ErrNoRows):
 		writeErr(w, http.StatusNotFound, "track not found")
 		return
@@ -670,6 +686,28 @@ func (s *Server) removeTrack(id string) error {
 	}
 	if hasCover == 1 {
 		os.Remove(filepath.Join(s.covDir, id+".img"))
+	}
+	return nil
+}
+
+// removeTracksOf deletes every track a user uploaded, files included.
+func (s *Server) removeTracksOf(userID string) error {
+	rows, err := s.db.Query(`SELECT id FROM tracks WHERE user_id = ?`, userID)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	for _, id := range ids {
+		if err := s.removeTrack(id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -870,13 +908,7 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTrackPlay(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
-	var exists int
-	if err := s.db.QueryRow(`SELECT COUNT(1) FROM tracks WHERE id = ?`, id).Scan(&exists); err != nil {
-		s.internalErr(w, "check track", err)
-		return
-	}
-	if exists == 0 {
-		writeErr(w, http.StatusNotFound, "track not found")
+	if !s.canSeeTrack(w, u.ID, id) {
 		return
 	}
 	if _, err := s.db.Exec(`

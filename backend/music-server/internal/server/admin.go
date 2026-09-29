@@ -69,24 +69,9 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.db.Query(`SELECT id FROM tracks WHERE user_id = ?`, id)
-	if err != nil {
-		s.internalErr(w, "list user tracks", err)
+	if err := s.removeTracksOf(id); err != nil {
+		s.internalErr(w, "delete user tracks", err)
 		return
-	}
-	var trackIDs []string
-	for rows.Next() {
-		var tid string
-		if err := rows.Scan(&tid); err == nil {
-			trackIDs = append(trackIDs, tid)
-		}
-	}
-	rows.Close()
-	for _, tid := range trackIDs {
-		if err := s.removeTrack(tid); err != nil {
-			s.internalErr(w, "delete user track", err)
-			return
-		}
 	}
 
 	if _, err := s.db.Exec(`DELETE FROM users WHERE id = ?`, id); err != nil {
@@ -121,8 +106,8 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Role != nil {
 		role := strings.ToLower(strings.TrimSpace(*body.Role))
-		if role != roleUser && role != roleAdmin {
-			writeErr(w, http.StatusBadRequest, "role must be 'user' or 'admin'")
+		if role != roleUser && role != roleAdmin && role != roleDemo {
+			writeErr(w, http.StatusBadRequest, "role must be 'user', 'admin' or 'demo'")
 			return
 		}
 		if id == me.ID && role != roleAdmin {

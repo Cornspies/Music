@@ -6,6 +6,7 @@ import type {
   Invite,
   MetadataCandidatesResponse,
   PlaybackState,
+  Role,
   Track,
   User,
   Waveform,
@@ -467,7 +468,7 @@ export const admin = {
   users: () => api<AdminUser[]>("/api/admin/users"),
   activity: () => api<ActivityStatus>("/api/admin/activity"),
   deleteUser: (id: string) => api<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
-  updateUser: (id: string, patch: { role?: "user" | "admin"; signOut?: boolean }) =>
+  updateUser: (id: string, patch: { role?: Role; signOut?: boolean }) =>
     api<void>(`/api/admin/users/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

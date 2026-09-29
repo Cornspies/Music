@@ -244,7 +244,7 @@ func (s *Server) runMetadataJob(id string) {
 
 	var t Track
 	var filePath, fileName string
-	row := s.db.QueryRow(trackSelect+` WHERE t.id = ?`, append(trackSelectArgs(""), id)...)
+	row := s.db.QueryRow(trackColumns+` WHERE t.id = ?`, append(trackColumnsArgs(""), id)...)
 	tp, fp, fn, err := scanTrack(row.Scan)
 	if err != nil {
 		return
@@ -350,11 +350,12 @@ type MetadataQueueStatus struct {
 	Disabled    bool   `json:"disabled"`
 }
 
-func (s *Server) handleMetadataQueue(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleMetadataQueue(w http.ResponseWriter, r *http.Request) {
 	st := MetadataQueueStatus{Disabled: metadataLookupDisabled(), Paused: s.metadataPaused()}
 	_ = s.db.QueryRow(`SELECT COUNT(1) FROM metadata_jobs WHERE state = ?`, jobQueued).Scan(&st.Queued)
 	var id, title string
-	if err := s.db.QueryRow(`SELECT j.track_id, COALESCE(t.title, '') FROM metadata_jobs j LEFT JOIN tracks t ON t.id = j.track_id WHERE j.state = ? LIMIT 1`, jobRunning).Scan(&id, &title); err == nil {
+	if err := s.db.QueryRow(`SELECT j.track_id, t.title FROM metadata_jobs j JOIN tracks t ON t.id = j.track_id
+		WHERE j.state = ? AND `+visibleTo("t.user_id")+` LIMIT 1`, jobRunning, userFrom(r).ID).Scan(&id, &title); err == nil {
 		st.Running = &struct {
 			TrackID string `json:"trackId"`
 			Title   string `json:"title"`

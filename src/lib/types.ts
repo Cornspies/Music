@@ -40,7 +40,8 @@ export interface Uploader {
   hasAvatar: boolean
 }
 
-export type Role = "user" | "admin"
+// A demo account sees only its own uploads, and apart from admins nobody else sees them.
+export type Role = "user" | "admin" | "demo"
 
 export interface User {
   id: string

@@ -35,6 +35,8 @@ const (
 const (
 	roleUser  = "user"
 	roleAdmin = "admin"
+	// roleDemo is a regular account with a library of its own; see demo.go.
+	roleDemo = "demo"
 )
 
 func sessionTTL() time.Duration {

@@ -69,7 +69,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.QueryRow(`
 		SELECT COUNT(1), COUNT(DISTINCT pe.track_id), COALESCE(SUM(`+listenedExpr+`), 0)
 		FROM play_events pe JOIN tracks t ON t.id = pe.track_id
-		WHERE pe.user_id = ? AND pe.played_at > ?`, u.ID, since).
+		WHERE pe.user_id = ? AND pe.played_at > ? AND `+visibleTo("t.user_id"), u.ID, since, u.ID).
 		Scan(&totals.count, &totals.tracks, &totals.seconds); err != nil {
 		s.internalErr(w, "history totals", err)
 		return

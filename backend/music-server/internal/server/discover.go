@@ -165,7 +165,7 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, http.StatusBadGateway, friendlyImportError(err, src.name()+" didn't answer; try again in a moment"))
 				return
 			}
-			s.markInLibrary(pl.Entries)
+			s.markInLibrary(userFrom(r).ID, pl.Entries)
 			info := &DiscoverPlaylist{ID: listID, Title: trimDefault(pl.Title, src.name()+" playlist"), Count: len(pl.Entries)}
 			if pl.Total > len(pl.Entries) {
 				info.Total = pl.Total
@@ -195,7 +195,7 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 	if results == nil {
 		results = []discoverResult{}
 	}
-	s.markInLibrary(results)
+	s.markInLibrary(userFrom(r).ID, results)
 	writeJSON(w, http.StatusOK, DiscoverSearch{Results: results, Page: page, HasMore: more})
 }
 
@@ -226,15 +226,22 @@ func (s *Server) handleDiscoverArtwork(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
-func (s *Server) markInLibrary(results []discoverResult) {
+func (s *Server) markInLibrary(viewerID string, results []discoverResult) {
 	for i := range results {
-		var id string
-		err := s.db.QueryRow(`SELECT id FROM tracks WHERE source = ? AND source_id = ?`,
-			results[i].Source, results[i].ID).Scan(&id)
-		if err == nil {
+		if id, ok := s.trackFromSource(viewerID, results[i].Source, results[i].ID); ok {
 			results[i].TrackID = id
 		}
 	}
+}
+
+// trackFromSource finds the track a catalogue entry was added as, in the
+// viewer's library. A demo account adding something already in the shared
+// library gets its own copy, and the other way round.
+func (s *Server) trackFromSource(viewerID, source, sourceID string) (string, bool) {
+	var id string
+	err := s.db.QueryRow(`SELECT t.id FROM tracks t WHERE t.source = ? AND t.source_id = ? AND `+sameLibrary("t.user_id"),
+		source, sourceID, viewerID).Scan(&id)
+	return id, err == nil
 }
 
 func (s *Server) handleDiscoverAdd(w http.ResponseWriter, r *http.Request) {
@@ -256,8 +263,7 @@ func (s *Server) handleDiscoverAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var existing string
-	if err := s.db.QueryRow(`SELECT id FROM tracks WHERE source = ? AND source_id = ?`, src.key(), body.ID).Scan(&existing); err == nil {
+	if existing, ok := s.trackFromSource(u.ID, src.key(), body.ID); ok {
 		if t, _, _, ok := s.getTrack(w, r, u.ID, existing); ok {
 			writeJSON(w, http.StatusOK, t)
 		}

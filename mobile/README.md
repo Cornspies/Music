@@ -275,6 +275,39 @@ One-time setup — a browser and a few `openssl` commands, no Mac needed:
 The certificate and the profile are valid for a year. When they expire,
 repeat steps 2 and 3 and replace the three `IOS_*` secrets.
 
+#### Testers outside your team
+
+Internal testers must be users of your App Store Connect team (up to 100).
+Anyone else — up to 10,000 people — can be an **external tester** with just
+an Apple ID and the TestFlight app: App Store Connect → the app → TestFlight
+→ External Testing → +, create a group and add a build, then invite people
+by email or turn on a **public link**. The first build given to external
+testers goes through Apple's beta review (usually about a day; later builds
+normally don't), and it needs the group's **Test Information** filled in: a
+description, a feedback email and, since the app starts at a sign-in screen,
+a demo account for the reviewer (below). Every tester also needs an account
+on your server, so send them an invite link as usual.
+
+#### Demo account for Apple's review
+
+A **demo account** has a library of its own: it starts empty and sees only
+what it uploads itself. Regular accounts never see its uploads or playlists;
+admins do, alongside everything else, so you can follow what the reviewer
+does (and edit or delete it). Everything else works as for any account, and
+a share link it creates still plays for whoever gets the link.
+
+1. Admin → Invite links: create one and register the account with it
+   (e.g. `appreview`, with a long random password).
+2. Admin → Users → the account's menu → **Make demo account**.
+3. Give Apple the username and password: in **Beta App Review Information**
+   of the TestFlight test information, and later in **App Review
+   Information** on the version you submit for the App Store.
+
+Deleting a demo account deletes its uploads with it. Reviewers sometimes
+test account deletion, so if the account is gone, create a new one before
+the next review. **Make regular user** turns it back into a normal account,
+and its uploads then join everyone's library.
+
 ## Project layout
 
 ```

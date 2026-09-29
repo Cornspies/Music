@@ -68,7 +68,7 @@ func (s *Server) findDuplicates(userID string, up *pendingUpload) DuplicateRespo
 	}
 
 	if up.hash != "" {
-		rows, err := s.db.Query(trackSelect+` WHERE t.file_hash = ?`, append(trackSelectArgs(userID), up.hash)...)
+		rows, err := s.db.Query(libraryTrackSelect+` WHERE t.file_hash = ?`, append(trackSelectArgs(userID), up.hash)...)
 		if err == nil {
 			for rows.Next() {
 				if t, _, _, err := scanTrack(rows.Scan); err == nil {
@@ -106,7 +106,7 @@ func (s *Server) findSameSong(userID, title, artist string, duration float64, lo
 	if loose && wantCore != "" {
 		prefilter = wantCore
 	}
-	rows, err := s.db.Query(trackSelect+` WHERE lower(t.title) LIKE ?`, append(trackSelectArgs(userID), "%"+firstWord(prefilter)+"%")...)
+	rows, err := s.db.Query(libraryTrackSelect+` WHERE lower(t.title) LIKE ?`, append(trackSelectArgs(userID), "%"+firstWord(prefilter)+"%")...)
 	if err != nil {
 		return nil
 	}
@@ -171,7 +171,7 @@ type DuplicateGroup struct {
 
 func (s *Server) handleLibraryDuplicates(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
-	rows, err := s.db.Query(trackSelect+` ORDER BY t.created_at ASC`, trackSelectArgs(u.ID)...)
+	rows, err := s.db.Query(libraryTrackSelect+` ORDER BY t.created_at ASC`, trackSelectArgs(u.ID)...)
 	if err != nil {
 		s.internalErr(w, "list tracks", err)
 		return

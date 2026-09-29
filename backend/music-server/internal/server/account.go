@@ -125,6 +125,16 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Other accounts' uploads stay in the library under the deleted-user
+	// placeholder; a demo account's never joined it, and handing them over
+	// would publish them, so they go with the account.
+	if u.Role == roleDemo {
+		if err := s.removeTracksOf(u.ID); err != nil {
+			s.internalErr(w, "delete tracks", err)
+			return
+		}
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		s.internalErr(w, "begin", err)

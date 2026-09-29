@@ -331,8 +331,7 @@ func (s *Server) runImport(job *importJob) {
 }
 
 func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResult) (id string, added bool, why string, lookalike *Track, err error) {
-	var existing string
-	if err := s.db.QueryRow(`SELECT id FROM tracks WHERE source = ? AND source_id = ?`, job.src.key(), e.ID).Scan(&existing); err == nil {
+	if existing, ok := s.trackFromSource(job.user.ID, job.src.key(), e.ID); ok {
 		return existing, false, "the same video was added before", nil, nil
 	}
 	lookalike = s.sameSongInLibrary(job.user.ID, e)

@@ -110,13 +110,7 @@ func (s *Server) handlePutPlayback(w http.ResponseWriter, r *http.Request) {
 		body.Position = 0
 	}
 
-	var exists int
-	if err := s.db.QueryRow(`SELECT COUNT(1) FROM tracks WHERE id = ?`, body.TrackID).Scan(&exists); err != nil {
-		s.internalErr(w, "check track", err)
-		return
-	}
-	if exists == 0 {
-		writeErr(w, http.StatusNotFound, "track not found")
+	if !s.canSeeTrack(w, u.ID, body.TrackID) {
 		return
 	}
 

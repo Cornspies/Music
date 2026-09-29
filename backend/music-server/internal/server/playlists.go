@@ -26,16 +26,20 @@ type playlistDetail struct {
 	Tracks []*Track `json:"tracks"`
 }
 
-const playlistSelect = `
+// playlistSelect counts only the tracks the viewer may see. Which playlists
+// the viewer may see is up to each query: add visibleTo("p.user_id").
+var playlistSelect = `
 SELECT EXISTS(SELECT 1 FROM playlist_pins pp WHERE pp.user_id = ? AND pp.playlist_id = p.id),
        p.id, p.name, p.created_at, p.is_public, p.user_id,
        COALESCE(u.username, ''), COALESCE(u.has_avatar, 0),
-       (SELECT COUNT(1) FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id WHERE pt.playlist_id = p.id),
-       (SELECT COALESCE(SUM(t.duration), 0) FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id WHERE pt.playlist_id = p.id)
+       (SELECT COUNT(1) FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
+        WHERE pt.playlist_id = p.id AND ` + visibleTo("t.user_id") + `),
+       (SELECT COALESCE(SUM(t.duration), 0) FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
+        WHERE pt.playlist_id = p.id AND ` + visibleTo("t.user_id") + `)
 FROM playlists p
 LEFT JOIN users u ON u.id = p.user_id`
 
-func playlistSelectArgs(userID string) []any { return []any{userID} }
+func playlistSelectArgs(userID string) []any { return []any{userID, userID, userID} }
 
 func scanPlaylist(scan func(dest ...any) error, viewerID string) (*Playlist, error) {
 	var (
@@ -58,19 +62,20 @@ func scanPlaylist(scan func(dest ...any) error, viewerID string) (*Playlist, err
 func (s *Server) handleListPlaylists(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	s.writePlaylists(w, u, `
-                WHERE p.user_id = ?
+                WHERE (p.user_id = ?
                    OR (p.is_public = 1 AND EXISTS(
-                           SELECT 1 FROM playlist_pins pp WHERE pp.user_id = ? AND pp.playlist_id = p.id))
+                           SELECT 1 FROM playlist_pins pp WHERE pp.user_id = ? AND pp.playlist_id = p.id)))
+                  AND `+visibleTo("p.user_id")+`
                 ORDER BY (p.user_id <> ?) ASC, p.created_at DESC`,
-		u.ID, u.ID, u.ID)
+		u.ID, u.ID, u.ID, u.ID)
 }
 
 func (s *Server) handleListPublicPlaylists(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	s.writePlaylists(w,
 		u,
-		` WHERE p.is_public = 1 AND p.user_id <> ? ORDER BY p.created_at DESC`,
-		u.ID)
+		` WHERE p.is_public = 1 AND p.user_id <> ? AND `+visibleTo("p.user_id")+` ORDER BY p.created_at DESC`,
+		u.ID, u.ID)
 }
 
 func (s *Server) writePlaylists(w http.ResponseWriter, u *User, where string, args ...any) {
@@ -122,8 +127,8 @@ func (s *Server) handleCreatePlaylist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getPlaylist(w http.ResponseWriter, u *User, id string) (*Playlist, bool) {
-	row := s.db.QueryRow(playlistSelect+` WHERE p.id = ? AND (p.user_id = ? OR p.is_public = 1)`,
-		append(playlistSelectArgs(u.ID), id, u.ID)...)
+	row := s.db.QueryRow(playlistSelect+` WHERE p.id = ? AND (p.user_id = ? OR p.is_public = 1) AND `+visibleTo("p.user_id"),
+		append(playlistSelectArgs(u.ID), id, u.ID, u.ID)...)
 	p, err := scanPlaylist(row.Scan, u.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "playlist not found")
@@ -212,8 +217,8 @@ func (s *Server) handleUnpinPlaylist(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "unpin playlist", err)
 		return
 	}
-	row := s.db.QueryRow(playlistSelect+` WHERE p.id = ? AND (p.user_id = ? OR p.is_public = 1)`,
-		append(playlistSelectArgs(u.ID), id, u.ID)...)
+	row := s.db.QueryRow(playlistSelect+` WHERE p.id = ? AND (p.user_id = ? OR p.is_public = 1) AND `+visibleTo("p.user_id"),
+		append(playlistSelectArgs(u.ID), id, u.ID, u.ID)...)
 	p, err := scanPlaylist(row.Scan, u.ID)
 	if err != nil {
 		writeNoContent(w)
@@ -305,13 +310,7 @@ func (s *Server) handleAddPlaylistTrack(w http.ResponseWriter, r *http.Request) 
 	if _, ok := s.requireOwnPlaylist(w, u, id); !ok {
 		return
 	}
-	var exists int
-	if err := s.db.QueryRow(`SELECT COUNT(1) FROM tracks WHERE id = ?`, body.TrackID).Scan(&exists); err != nil {
-		s.internalErr(w, "check track", err)
-		return
-	}
-	if exists == 0 {
-		writeErr(w, http.StatusNotFound, "track not found")
+	if !s.canSeeTrack(w, u.ID, body.TrackID) {
 		return
 	}
 	var already int

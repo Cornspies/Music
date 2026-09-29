@@ -319,7 +319,8 @@ type Waveform struct {
 func (s *Server) handleTrackWaveform(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var raw, updatedAt string
-	err := s.db.QueryRow(`SELECT COALESCE(waveform_json, ''), COALESCE(updated_at, '') FROM tracks WHERE id = ?`, id).
+	err := s.db.QueryRow(`SELECT COALESCE(t.waveform_json, ''), COALESCE(t.updated_at, '') FROM tracks t
+		WHERE t.id = ? AND `+visibleTo("t.user_id"), id, userFrom(r).ID).
 		Scan(&raw, &updatedAt)
 	if err != nil || raw == "" {
 		writeErr(w, http.StatusNotFound, "no waveform for this track")

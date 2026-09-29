@@ -32,13 +32,7 @@ func (s *Server) handleAddFavorite(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	trackID := r.PathValue("trackId")
 
-	var exists int
-	if err := s.db.QueryRow(`SELECT COUNT(1) FROM tracks WHERE id = ?`, trackID).Scan(&exists); err != nil {
-		s.internalErr(w, "check track", err)
-		return
-	}
-	if exists == 0 {
-		writeErr(w, http.StatusNotFound, "track not found")
+	if !s.canSeeTrack(w, u.ID, trackID) {
 		return
 	}
 	res, err := s.db.Exec(`INSERT OR IGNORE INTO favorites (user_id, track_id, created_at) VALUES (?,?,?)`,
@@ -90,6 +84,7 @@ type Artist struct {
 }
 
 func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r)
 	rows, err := s.db.Query(`
                 SELECT
                         COALESCE(NULLIF(t.album, ''), 'Unknown Album') AS album_name,
@@ -99,10 +94,12 @@ func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
                         MAX(t.has_cover),
                         COALESCE((SELECT t2.id FROM tracks t2
                                   WHERE t2.album = t.album AND t2.artist = t.artist AND t2.has_cover = 1
+                                    AND `+visibleTo("t2.user_id")+`
                                   ORDER BY t2.created_at LIMIT 1), '')
                 FROM tracks t
+                WHERE `+visibleTo("t.user_id")+`
                 GROUP BY album_name, artist_name
-                ORDER BY album_name COLLATE NOCASE ASC`)
+                ORDER BY album_name COLLATE NOCASE ASC`, u.ID, u.ID)
 	if err != nil {
 		s.internalErr(w, "list albums", err)
 		return
@@ -125,9 +122,10 @@ func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListArtists(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(`
-                SELECT COALESCE(NULLIF(artist, ''), 'Unknown Artist'), COUNT(*), COALESCE(SUM(duration), 0)
-                FROM tracks
-                GROUP BY 1 ORDER BY 1 COLLATE NOCASE ASC`)
+                SELECT COALESCE(NULLIF(t.artist, ''), 'Unknown Artist'), COUNT(*), COALESCE(SUM(t.duration), 0)
+                FROM tracks t
+                WHERE `+visibleTo("t.user_id")+`
+                GROUP BY 1 ORDER BY 1 COLLATE NOCASE ASC`, userFrom(r).ID)
 	if err != nil {
 		s.internalErr(w, "list artists", err)
 		return
@@ -183,16 +181,18 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	result["tracks"] = tracks
 	tracksTotal := len(tracks)
 	if limit != "" && len(tracks) == 50 {
-		_ = s.db.QueryRow(`SELECT COUNT(1) FROM tracks t WHERE `+match, like, like, like, like).Scan(&tracksTotal)
+		_ = s.db.QueryRow(`SELECT COUNT(1) FROM tracks t WHERE `+match+` AND `+visibleTo("t.user_id"),
+			like, like, like, like, u.ID).Scan(&tracksTotal)
 	}
 	result["tracksTotal"] = tracksTotal
 
 	rows2, err := s.db.Query(`
                 SELECT COALESCE(NULLIF(t.album,''),'Unknown Album'), COALESCE(NULLIF(t.artist,''),'Unknown Artist'), COUNT(*), COALESCE(SUM(t.duration),0), MAX(t.has_cover),
-                       COALESCE((SELECT t2.id FROM tracks t2 WHERE t2.album = t.album AND t2.artist = t.artist AND t2.has_cover = 1 ORDER BY t2.created_at LIMIT 1), '')
+                       COALESCE((SELECT t2.id FROM tracks t2 WHERE t2.album = t.album AND t2.artist = t.artist AND t2.has_cover = 1
+                                   AND `+visibleTo("t2.user_id")+` ORDER BY t2.created_at LIMIT 1), '')
                 FROM tracks t
-                WHERE (t.album LIKE ? ESCAPE '\' OR t.artist LIKE ? ESCAPE '\')
-                GROUP BY 1, 2 ORDER BY 1 COLLATE NOCASE ASC LIMIT 25`, like, like)
+                WHERE (t.album LIKE ? ESCAPE '\' OR t.artist LIKE ? ESCAPE '\') AND `+visibleTo("t.user_id")+`
+                GROUP BY 1, 2 ORDER BY 1 COLLATE NOCASE ASC LIMIT 25`, u.ID, like, like, u.ID)
 	if err != nil {
 		s.internalErr(w, "search albums", err)
 		return
@@ -212,9 +212,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	result["albums"] = albums
 
 	rows3, err := s.db.Query(`
-                SELECT COALESCE(NULLIF(artist,''),'Unknown Artist'), COUNT(*), COALESCE(SUM(duration),0)
-                FROM tracks WHERE (artist LIKE ? ESCAPE '\' OR album LIKE ? ESCAPE '\')
-                GROUP BY 1 ORDER BY 1 COLLATE NOCASE ASC LIMIT 25`, like, like)
+                SELECT COALESCE(NULLIF(t.artist,''),'Unknown Artist'), COUNT(*), COALESCE(SUM(t.duration),0)
+                FROM tracks t WHERE (t.artist LIKE ? ESCAPE '\' OR t.album LIKE ? ESCAPE '\') AND `+visibleTo("t.user_id")+`
+                GROUP BY 1 ORDER BY 1 COLLATE NOCASE ASC LIMIT 25`, like, like, u.ID)
 	if err != nil {
 		s.internalErr(w, "search artists", err)
 		return
@@ -232,8 +232,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	result["artists"] = artists
 
 	rows4, err := s.db.Query(playlistSelect+`
-                WHERE (p.user_id = ? OR p.is_public = 1) AND p.name LIKE ? ESCAPE '\'
-                ORDER BY p.created_at DESC LIMIT 25`, append(playlistSelectArgs(u.ID), u.ID, like)...)
+                WHERE (p.user_id = ? OR p.is_public = 1) AND `+visibleTo("p.user_id")+` AND p.name LIKE ? ESCAPE '\'
+                ORDER BY p.created_at DESC LIMIT 25`, append(playlistSelectArgs(u.ID), u.ID, u.ID, like)...)
 	if err != nil {
 		s.internalErr(w, "search playlists", err)
 		return
@@ -261,8 +261,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	var totalDuration float64
 
 	if err := s.db.QueryRow(`
-                SELECT COUNT(*), COALESCE(SUM(duration),0), COUNT(DISTINCT COALESCE(NULLIF(artist,''),'Unknown Artist')), COUNT(DISTINCT COALESCE(NULLIF(album,''),'Unknown Album'))
-                FROM tracks`).
+                SELECT COUNT(*), COALESCE(SUM(t.duration),0), COUNT(DISTINCT COALESCE(NULLIF(t.artist,''),'Unknown Artist')), COUNT(DISTINCT COALESCE(NULLIF(t.album,''),'Unknown Album'))
+                FROM tracks t WHERE `+visibleTo("t.user_id"), u.ID).
 		Scan(&trackCount, &totalDuration, &artistCount, &albumCount); err != nil {
 		s.internalErr(w, "stats tracks", err)
 		return
@@ -281,7 +281,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.QueryRow(`
                 SELECT COUNT(1), COALESCE(SUM(`+listenedExpr+`), 0)
                 FROM play_events pe JOIN tracks t ON t.id = pe.track_id
-                WHERE pe.user_id = ?`, u.ID).Scan(&listenCount, &listenedSeconds); err != nil {
+                WHERE pe.user_id = ? AND `+visibleTo("t.user_id"), u.ID, u.ID).Scan(&listenCount, &listenedSeconds); err != nil {
 		s.internalErr(w, "stats listening", err)
 		return
 	}
