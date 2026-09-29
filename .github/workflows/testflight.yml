@@ -76,9 +76,11 @@ jobs:
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
         run: |
+          cert="$RUNNER_TEMP/distribution.p12"
+          profile="$RUNNER_TEMP/profile.mobileprovision"
           # Whitespace is stripped so a line-wrapped base64 paste still decodes.
-          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/distribution.p12"
-          printf '%s' "$IOS_PROVISIONING_PROFILE" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE" | tr -d '[:space:]' | base64 --decode > "$cert"
+          printf '%s' "$IOS_PROVISIONING_PROFILE" | tr -d '[:space:]' | base64 --decode > "$profile"
 
           # A throwaway keychain holding just the distribution certificate.
           keychain="$RUNNER_TEMP/signing.keychain-db"
@@ -86,20 +88,33 @@ jobs:
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$RUNNER_TEMP/distribution.p12" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 -k "$keychain"
+          if ! security import "$cert" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"; then
+            # Say what the secret holds instead, without printing it. A .p12
+            # (PKCS#12) begins with the version number 3; a certificate doesn't.
+            if openssl x509 -inform DER -in "$cert" -noout 2>/dev/null || openssl x509 -in "$cert" -noout 2>/dev/null; then
+              echo "::error::IOS_DISTRIBUTION_CERTIFICATE holds only the certificate (.cer); it must be the .p12 that also contains the private key (README step 2)."
+            elif ! openssl asn1parse -inform DER -in "$cert" 2>/dev/null | sed -n 2p | grep -q 'INTEGER *:03'; then
+              echo "::error::IOS_DISTRIBUTION_CERTIFICATE does not decode to a .p12 file ($(wc -c < "$cert" | tr -d ' ') bytes); set it to the output of base64 -w0 ios_distribution.p12."
+            else
+              echo "::error::macOS could not import the .p12 (see above). Check IOS_DISTRIBUTION_CERTIFICATE_PASSWORD; if it is right, re-create the .p12 with the options in README step 2."
+            fi
+            exit 1
+          fi
           security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
           security list-keychain -d user -s "$keychain"
 
+          if ! security cms -D -i "$profile" > "$RUNNER_TEMP/profile.plist"; then
+            echo "::error::IOS_PROVISIONING_PROFILE does not decode to a provisioning profile; set it to the output of base64 -w0 <name>.mobileprovision."
+            exit 1
+          fi
           # The profile names the team and its own UUID; the build signs with both.
-          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
           uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
           team=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
           # Xcode 16+ reads profiles from UserData; older tools from MobileDevice.
           for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
                      "$HOME/Library/MobileDevice/Provisioning Profiles"; do
             mkdir -p "$dir"
-            cp "$RUNNER_TEMP/profile.mobileprovision" "$dir/$uuid.mobileprovision"
+            cp "$profile" "$dir/$uuid.mobileprovision"
           done
           echo "PROFILE_UUID=$uuid" >> "$GITHUB_ENV"
           echo "TEAM_ID=$team" >> "$GITHUB_ENV"

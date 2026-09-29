@@ -183,10 +183,10 @@ Kotlin Framework" phase runs `./gradlew :composeApp:embedAndSignAppleFrameworkFo
 before the Swift sources build.
 
 **No Mac?** `.github/workflows/ios.yml` does the same on a GitHub-hosted macOS
-runner (on pushes touching `mobile/`, or by hand from the Actions tab) and
-uploads the simulator build as an artifact. macOS minutes are billed at 10x,
-so the path filter matters on a private repo. To get the app onto an iPhone,
-see [TestFlight](#testflight) below.
+runner and uploads the simulator build as an artifact. Like every workflow
+here it runs only when started from the Actions tab (**Run workflow**) —
+macOS minutes are billed at 10x. To get the app onto an iPhone, see
+[TestFlight](#testflight) below.
 
 One-time setup in Xcode (Signing & Capabilities), once you have a Team ID —
 put it in `iosApp/Configuration/*.xcconfig` as `TEAM_ID`:
@@ -230,7 +230,9 @@ One-time setup — a browser and a few `openssl` commands, no Mac needed:
        -out ios_distribution.p12 -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1
    ```
    The last three options select the older encryption that the macOS
-   keychain tools reliably import.
+   keychain tools reliably import. To check the result, run
+   `openssl pkcs12 -in ios_distribution.p12 -info -noout`: after the
+   password it must list `MAC: sha1` and `pbeWithSHA1And3-KeyTripleDES-CBC`.
 3. **Provisioning profile.** Profiles → + → Distribution → **App Store
    Connect**, choose the App ID and the certificate, and download the
    `.mobileprovision`.
@@ -258,6 +260,12 @@ One-time setup — a browser and a few `openssl` commands, no Mac needed:
    | `APP_STORE_CONNECT_ISSUER_ID` | the Issuer ID |
    | `APP_STORE_CONNECT_KEY_ID` | the Key ID |
    | `APP_STORE_CONNECT_PRIVATE_KEY` | the whole `.p8` file, `BEGIN`/`END` lines included |
+
+   `base64 -w0` prints no final newline, so copying its output from the
+   terminal easily takes part of the next prompt along or misses the end.
+   Pipe it to the clipboard instead (`base64 -w0 ios_distribution.p12 | wl-copy`,
+   or `xclip -selection clipboard` on X11), or skip the clipboard with the
+   GitHub CLI: `base64 -w0 ios_distribution.p12 | gh secret set IOS_DISTRIBUTION_CERTIFICATE`.
 
 7. **Testers.** Once the first build is processed: the app in App Store
    Connect → TestFlight → Internal Testing → +, create a group with automatic

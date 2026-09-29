@@ -1,11 +1,10 @@
-# Linux-only checks for everything except iOS: cheap enough to run on every
-# push. The iOS build has its own workflow (macOS runners are billed 10x).
+# Linux-only checks for everything except iOS. Runs only by hand from the
+# Actions tab, so pushes don't use up Actions minutes. The iOS build has its
+# own workflow (macOS runners are billed 10x).
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   backend:

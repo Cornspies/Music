@@ -1,22 +1,13 @@
 # Builds the iOS app on a GitHub-hosted Mac — the one platform that can't be
 # compiled anywhere else. Simulator build, so no Apple signing is needed;
 # what it proves is that the Kotlin/Native framework and the Swift shell
-# compile and link. A device/TestFlight build is a later step that needs an
-# Apple Developer account and signing secrets.
+# compile and link. Signed device builds for TestFlight are in testflight.yml.
 #
-# macOS minutes cost 10x Linux minutes, so this runs only when mobile code
-# changes, or by hand from the Actions tab.
+# macOS minutes cost 10x Linux minutes, so this runs only by hand from the
+# Actions tab.
 name: iOS
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "mobile/**"
-      - ".github/workflows/ios.yml"
-  pull_request:
-    paths:
-      - "mobile/**"
   workflow_dispatch:
 
 concurrency:
