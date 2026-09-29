@@ -1,7 +1,7 @@
 import WidgetKit
 import SwiftUI
 
-private let appGroup = "group.com.music.app"
+private let appGroup = "group.com.cornspies.music"
 
 struct NowPlayingEntry: TimelineEntry {
     let date: Date

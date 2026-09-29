@@ -242,6 +242,6 @@ actual class PlayerController actual constructor() {
     }
 
     private companion object {
-        const val WIDGET_APP_GROUP = "group.com.music.app"
+        const val WIDGET_APP_GROUP = "group.com.cornspies.music"
     }
 }

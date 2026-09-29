@@ -6,7 +6,7 @@
 # calls Gradle before the Swift sources compile.
 name: iosApp
 options:
-  bundleIdPrefix: com.music.app
+  bundleIdPrefix: com.cornspies.music
   deploymentTarget:
     iOS: "15.6"
   xcodeVersion: "16.0"
@@ -40,13 +40,17 @@ targets:
         # scheme); XcodeGen must not generate one over it.
         INFOPLIST_FILE: iosApp/Info.plist
         GENERATE_INFOPLIST_FILE: NO
-        PRODUCT_BUNDLE_IDENTIFIER: com.music.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.cornspies.music
         PRODUCT_NAME: Music
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         DEVELOPMENT_TEAM: $(TEAM_ID)
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
+        # Simulator builds only: skiko's simulator library carries one object
+        # (ICU's data table, no code) stamped for iOS 18.5, and the linker
+        # warns when linking it for anything older. Devices keep 15.6.
+        "IPHONEOS_DEPLOYMENT_TARGET[sdk=iphonesimulator*]": "18.5"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # Where Gradle puts ComposeApp.framework for the current configuration/SDK.

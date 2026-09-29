@@ -77,7 +77,7 @@ Notes:
      "Include Configuration Intent", and replace its generated Swift file with
      `MusicWidget.swift`.
   2. Add the App Groups capability to both the iosApp and MusicWidget targets
-     with the group `group.com.music.app` (it matches `WIDGET_APP_GROUP` in
+     with the group `group.com.cornspies.music` (it matches `WIDGET_APP_GROUP` in
      `PlayerController.ios.kt`).
 
 ## Offline
@@ -185,7 +185,8 @@ before the Swift sources build.
 **No Mac?** `.github/workflows/ios.yml` does the same on a GitHub-hosted macOS
 runner (on pushes touching `mobile/`, or by hand from the Actions tab) and
 uploads the simulator build as an artifact. macOS minutes are billed at 10x,
-so the path filter matters on a private repo.
+so the path filter matters on a private repo. To get the app onto an iPhone,
+see [TestFlight](#testflight) below.
 
 One-time setup in Xcode (Signing & Capabilities), once you have a Team ID —
 put it in `iosApp/Configuration/*.xcconfig` as `TEAM_ID`:
@@ -193,8 +194,78 @@ put it in `iosApp/Configuration/*.xcconfig` as `TEAM_ID`:
 - **Associated Domains** → `applinks:<musicHost>` so `https://<host>/playlists/…`
   and invite links open the app. The `music://playlist/<id>` scheme used by
   the app's own share button needs nothing — it's registered in `Info.plist`.
-- **App Groups** → `group.com.music.app` on both the app and the widget
+- **App Groups** → `group.com.cornspies.music` on both the app and the widget
   target, then add `MusicWidget/` as a Widget Extension target.
+
+#### TestFlight
+
+`.github/workflows/testflight.yml` builds a signed Release build on a
+GitHub-hosted Mac and uploads it to App Store Connect. Start it from the
+Actions tab (**TestFlight → Run workflow**). Apple then processes the build
+for 10–30 minutes, after which it shows up in the TestFlight app on the
+iPhone. The run number is the build number (`1.0 (7)` came from run 7); raise
+`MARKETING_VERSION` in `iosApp/project.yml` to start a new version.
+TestFlight builds expire after 90 days.
+
+One-time setup — a browser and a few `openssl` commands, no Mac needed:
+
+1. **App ID.** In [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list),
+   add an App ID (type *App*) with the explicit bundle ID `com.cornspies.music`
+   — the `PRODUCT_BUNDLE_IDENTIFIER` in `iosApp/project.yml`; it needs no
+   capabilities. (The Android app keeps its own ID, `com.music.app`.)
+2. **Distribution certificate.** Create a private key and a signing request
+   outside the repository — the key is the certificate's secret half, so keep
+   it safe and never commit it:
+   ```bash
+   mkdir -p ~/ios-signing && cd ~/ios-signing
+   openssl req -new -newkey rsa:2048 -nodes -keyout ios_distribution.key \
+       -out ios_distribution.csr -subj "/emailAddress=you@example.com/CN=Your Name"
+   ```
+   Upload `ios_distribution.csr` under Certificates → + → **Apple
+   Distribution**, save the downloaded `distribution.cer` next to it, and
+   combine the two into a `.p12` (it asks for an export password):
+   ```bash
+   openssl x509 -inform DER -in distribution.cer -out distribution.pem
+   openssl pkcs12 -export -inkey ios_distribution.key -in distribution.pem \
+       -out ios_distribution.p12 -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1
+   ```
+   The last three options select the older encryption that the macOS
+   keychain tools reliably import.
+3. **Provisioning profile.** Profiles → + → Distribution → **App Store
+   Connect**, choose the App ID and the certificate, and download the
+   `.mobileprovision`.
+4. **App record.** In [App Store Connect](https://appstoreconnect.apple.com/apps),
+   + → New App: iOS, the bundle ID from step 1, any SKU, and a name that is
+   still free on the App Store (it needn't match the home-screen name "Music").
+5. **API key.** App Store Connect → Users and Access → Integrations → App
+   Store Connect API → Team Keys → +, with any name and the **App Manager**
+   role (the first visit asks you to enable API access). The workflow logs in
+   with three things from that page:
+   - the **Issuer ID**, shown above the list of keys — a UUID such as
+     `57246542-96fe-1a63-e053-0824d011072a`, the same for every key of your
+     team;
+   - the **Key ID**, in the new key's row — ten characters such as
+     `2X9R4HXF34`, also part of the file name `AuthKey_<Key ID>.p8`;
+   - the `.p8` file itself — download it right away, Apple offers it only once.
+6. **Repository secrets.** GitHub → Settings → Secrets and variables →
+   Actions → New repository secret:
+
+   | Secret | Value |
+   |---|---|
+   | `IOS_DISTRIBUTION_CERTIFICATE` | output of `base64 -w0 ios_distribution.p12` |
+   | `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | the `.p12` export password |
+   | `IOS_PROVISIONING_PROFILE` | output of `base64 -w0 <name>.mobileprovision` |
+   | `APP_STORE_CONNECT_ISSUER_ID` | the Issuer ID |
+   | `APP_STORE_CONNECT_KEY_ID` | the Key ID |
+   | `APP_STORE_CONNECT_PRIVATE_KEY` | the whole `.p8` file, `BEGIN`/`END` lines included |
+
+7. **Testers.** Once the first build is processed: the app in App Store
+   Connect → TestFlight → Internal Testing → +, create a group with automatic
+   distribution and add yourself. Install **TestFlight** from the App Store on
+   the iPhone and accept the invitation; later builds arrive by themselves.
+
+The certificate and the profile are valid for a year. When they expire,
+repeat steps 2 and 3 and replace the three `IOS_*` secrets.
 
 ## Project layout
 

@@ -1,0 +1,174 @@
+# Builds a signed Release build of the iOS app and uploads it to App Store
+# Connect, where it shows up in TestFlight once Apple has processed it
+# (usually 10-30 minutes; Apple sends an email). Runs only by hand from the
+# Actions tab: every run is a full release build on a macOS runner (billed
+# 10x) and uses up a build number.
+#
+# The one-time setup (certificate, provisioning profile, API key, repository
+# secrets) is described under "TestFlight" in mobile/README.md.
+name: TestFlight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: mobile/iosApp
+    steps:
+      - uses: actions/checkout@v7
+
+      # Fail in seconds rather than after a long build.
+      - name: Check secrets
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          missing=0
+          for name in IOS_DISTRIBUTION_CERTIFICATE IOS_DISTRIBUTION_CERTIFICATE_PASSWORD \
+                      IOS_PROVISIONING_PROFILE APP_STORE_CONNECT_KEY_ID \
+                      APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::The $name secret is not set; see \"TestFlight\" in mobile/README.md."
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # v5, not v6: v6 moved caching into a proprietary component under Gradle's terms of use.
+      - uses: gradle/actions/setup-gradle@v5
+
+      # Shared with the simulator build in ios.yml.
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('mobile/gradle/libs.versions.toml') }}
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Install signing certificate and profile
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          # Whitespace is stripped so a line-wrapped base64 paste still decodes.
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/distribution.p12"
+          printf '%s' "$IOS_PROVISIONING_PROFILE" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+
+          # A throwaway keychain holding just the distribution certificate.
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(openssl rand -base64 24)
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/distribution.p12" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychain -d user -s "$keychain"
+
+          # The profile names the team and its own UUID; the build signs with both.
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
+          team=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$RUNNER_TEMP/profile.plist")
+          # Xcode 16+ reads profiles from UserData; older tools from MobileDevice.
+          for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
+                     "$HOME/Library/MobileDevice/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            cp "$RUNNER_TEMP/profile.mobileprovision" "$dir/$uuid.mobileprovision"
+          done
+          echo "PROFILE_UUID=$uuid" >> "$GITHUB_ENV"
+          echo "TEAM_ID=$team" >> "$GITHUB_ENV"
+
+      # The run number is the build number, so every upload is higher than the last.
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project iosApp.xcodeproj \
+            -scheme iosApp \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Music.xcarchive" \
+            -derivedDataPath build \
+            TEAM_ID="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            | xcbeautify --renderer github-actions
+
+      - name: Upload to App Store Connect
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8"
+          printf '%s\n' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$key"
+          archive_info="$RUNNER_TEMP/Music.xcarchive/Info.plist"
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleIdentifier' "$archive_info")
+          version=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$archive_info")
+
+          # "destination: upload" makes the export send the build straight to
+          # App Store Connect, authenticated with the API key.
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>teamID</key>
+            <string>$TEAM_ID</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>signingCertificate</key>
+            <string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$bundle_id</key>
+              <string>$PROFILE_UUID</string>
+            </dict>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Music.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$key" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+          echo "Uploaded $bundle_id $version ($GITHUB_RUN_NUMBER). It appears in TestFlight once App Store Connect has processed it." >> "$GITHUB_STEP_SUMMARY"

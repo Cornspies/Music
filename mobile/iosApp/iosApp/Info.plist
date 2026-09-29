@@ -19,17 +19,25 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.music.app</string>
+			<string>com.cornspies.music</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>music</string>
 			</array>
 		</dict>
 	</array>
+	<!-- Both come from project.yml; the TestFlight workflow raises the build number per upload. -->
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!--
+	  The only encryption is the system's own HTTPS, which is exempt from export
+	  rules. Declaring that here spares answering the question in App Store
+	  Connect for every uploaded build.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!--
@@ -42,6 +50,13 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!--
+	  The profile-picture picker (UIImagePickerController) never asks for
+	  permission, but App Store Connect's upload scan can still reject a
+	  build that references it without a purpose string.
+	-->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a photo from your library as your profile picture.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
