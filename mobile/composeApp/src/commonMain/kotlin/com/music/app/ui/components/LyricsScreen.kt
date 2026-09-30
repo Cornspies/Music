@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.app.LocalAppModel
 import com.music.app.api.LyricLine
 import com.music.app.api.Track
@@ -82,7 +83,7 @@ private fun sourceLabel(source: String): String = when (source) {
 fun LyricsScreen(track: Track, onClose: () -> Unit) {
     val model = LocalAppModel.current
     val isPlaying by model.player.isPlaying.collectAsState()
-    val position by model.player.positionSec.collectAsState()
+    val position by model.player.positionSec.collectAsStateWithLifecycle()
 
     BackHandler(enabled = true, onBack = onClose)
     LaunchedEffect(track.id) { model.loadLyrics(track) }
@@ -108,7 +109,7 @@ fun LyricsScreen(track: Track, onClose: () -> Unit) {
             IconButton(onClick = onClose) {
                 Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Close lyrics", tint = Color.White)
             }
-            CoverImage(track, Modifier.size(44.dp), corner = 6.dp)
+            CoverImage(track, 44.dp, corner = 6.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(

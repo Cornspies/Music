@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.app.LocalAppModel
 import com.music.app.Screen
 
@@ -30,7 +31,7 @@ fun NowPlayingBar() {
     val model = LocalAppModel.current
     val track = model.currentTrack ?: return
     val isPlaying by model.player.isPlaying.collectAsState()
-    val position by model.player.positionSec.collectAsState()
+    val position by model.player.positionSec.collectAsStateWithLifecycle()
     val progress = if (track.duration > 0.0) {
         (position / track.duration).toFloat().coerceIn(0f, 1f)
     } else {

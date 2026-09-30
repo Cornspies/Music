@@ -44,7 +44,7 @@ export function AlbumView() {
         tracks={albumTracks}
         cover={
           withCover ? (
-            <CoverArt trackId={withCover.id} title={title} hasCover />
+            <CoverArt trackId={withCover.id} title={title} hasCover size={512} />
           ) : (
             <CoverArt trackId={`${albumKey.name}|${albumKey.artist}`} title={title} hasCover={false} />
           )

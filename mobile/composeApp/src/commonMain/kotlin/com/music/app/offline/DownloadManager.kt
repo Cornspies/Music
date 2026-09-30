@@ -119,16 +119,16 @@ class DownloadManager(
         lastError = null
         try {
             val compatible = useCompatible ?: useCompatibleFor(track)
-            val bytes = api.downloadTrackBytes(track, compatible)
-            if (bytes.isEmpty()) throw IllegalStateException("The server returned an empty file.")
-            store.save(track.id, extensionFor(track, compatible), bytes)
+            store.save(track.id, extensionFor(track, compatible)) { path ->
+                api.downloadTrack(track, compatible, path)
+            }
             index[track.id] = track
             transient.remove(track.id)
             persist()
         } catch (e: Exception) {
+            // The store has dropped the partial file; an earlier copy stays playable.
             transient[track.id] = DownloadState.FAILED
             lastError = friendlyError(e)
-            store.delete(track.id)
         }
     }
 

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { AudioLines, Loader2, LogIn, Ticket, UserPlus } from "lucide-react"
-import { gw } from "@/lib/gateway"
 import type { AuthConfig, InviteCheck } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/stores/auth"
@@ -59,7 +58,7 @@ export function AuthView() {
   useEffect(() => {
     if (!initial.invite) return
     let cancelled = false
-    fetch(gw(`/api/auth/invite/${encodeURIComponent(initial.invite)}`))
+    fetch(`/api/auth/invite/${encodeURIComponent(initial.invite)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((check: InviteCheck | null) => {
         if (!cancelled && check) setInviteCheck(check)
@@ -72,7 +71,7 @@ export function AuthView() {
 
   useEffect(() => {
     let cancelled = false
-    fetch(gw("/api/auth/config"))
+    fetch("/api/auth/config")
       .then((r) => (r.ok ? r.json() : null))
       .then((cfg: AuthConfig | null) => {
         if (!cancelled && cfg) setAuthConfig(cfg)

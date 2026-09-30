@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Music2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { coverUrl } from "@/lib/api"
+import { coverUrl, type CoverSize } from "@/lib/api"
 import { hashGradient, initialsOf } from "@/lib/format"
 
 interface CoverArtProps {
@@ -13,6 +13,8 @@ interface CoverArtProps {
   className?: string
   iconClassName?: string
   initialsClassName?: string
+  /** Thumbnail edge to load: the default suits list rows; "full" is the stored cover. */
+  size?: CoverSize | "full"
 }
 
 export function CoverArt({
@@ -22,6 +24,7 @@ export function CoverArt({
   className,
   iconClassName,
   initialsClassName,
+  size = 128,
 }: CoverArtProps) {
   const [failed, setFailed] = useState(false)
 
@@ -29,7 +32,7 @@ export function CoverArt({
     return (
       <div className={cn("relative aspect-square w-full overflow-hidden rounded-md", className)}>
         <img
-          src={coverUrl({ id: trackId })}
+          src={coverUrl({ id: trackId }, size === "full" ? undefined : size)}
           alt={title ? `Album cover of ${title}` : "Album cover"}
           onError={() => setFailed(true)}
           loading="lazy"

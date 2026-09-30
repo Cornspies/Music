@@ -15,16 +15,27 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.put
+import io.ktor.client.request.forms.ChannelProvider
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Headers
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.cancel
+import io.ktor.utils.io.readAvailable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.io.buffered
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -59,6 +70,9 @@ class ApiClient(private val store: TokenStore) {
             socketTimeoutMillis = 120_000
         }
     }
+
+    /** Shared with the image loader, so covers reuse the API's connections. */
+    val httpClient: HttpClient get() = client
 
     fun noteRefreshedToken(response: HttpResponse) {
         val fresh = response.headers[refreshedTokenHeader]?.trim().orEmpty()
@@ -103,12 +117,16 @@ class ApiClient(private val store: TokenStore) {
         url("/api/tracks/$trackId/stream") + "?token=" + mediaOrSessionToken.encodeURLParameter()
 
     fun trackStreamUrl(track: Track): String {
-        val base = trackStreamUrl(track.id)
+        // The version keeps the Android stream cache from playing audio that
+        // has been edited (trimmed, replaced) since it was cached.
+        val base = trackStreamUrl(track.id) + "&v=" + track.updatedAt.encodeURLParameter()
         return if (prefersCompatible(track)) "$base&version=compatible" else base
     }
 
-    fun coverUrl(trackId: String): String =
-        url("/api/tracks/$trackId/cover") + "?token=" + mediaOrSessionToken.encodeURLParameter()
+    /** [size] asks for a thumbnail (128, 256 or 512 px) instead of the full cover. */
+    fun coverUrl(trackId: String, size: Int? = null): String =
+        url("/api/tracks/$trackId/cover") + "?token=" + mediaOrSessionToken.encodeURLParameter() +
+            (if (size != null) "&size=$size" else "")
 
     fun candidateArtworkUrl(trackId: String, candidateId: String): String =
         url("/api/tracks/$trackId/metadata/candidates/$candidateId/artwork") +
@@ -218,30 +236,39 @@ class ApiClient(private val store: TokenStore) {
         )
     }
 
+    /** Streams the file from [content], so a large one never sits in memory whole. */
     suspend fun uploadTrack(
         fileName: String,
         mimeType: String,
-        bytes: ByteArray,
+        sizeBytes: Long,
+        content: () -> ByteReadChannel,
         durationSec: Double?,
     ): Track {
         val safeName = fileName.replace("\"", "'").replace("\r", " ").replace("\n", " ")
-        val response = client.submitFormWithBinaryData(
-            url = url("/api/tracks"),
-            formData = formData {
-                append(
-                    "file",
-                    bytes,
-                    Headers.build {
-                        append(HttpHeaders.ContentDisposition, "filename=\"$safeName\"")
-                        append(HttpHeaders.ContentType, mimeType)
-                    },
-                )
-                if (durationSec != null && durationSec > 0.0 && durationSec < 100_000.0) {
-                    append("duration", durationSec.toString())
-                }
-            },
-        ) {
-            auth()
+        // A request that fails midway leaves its file channel unread; cancelling
+        // it afterwards closes the file.
+        val opened = mutableListOf<ByteReadChannel>()
+        val response = try {
+            client.submitFormWithBinaryData(
+                url = url("/api/tracks"),
+                formData = formData {
+                    append(
+                        "file",
+                        ChannelProvider(sizeBytes.takeIf { it > 0 }) { content().also { opened += it } },
+                        Headers.build {
+                            append(HttpHeaders.ContentDisposition, "filename=\"$safeName\"")
+                            append(HttpHeaders.ContentType, mimeType)
+                        },
+                    )
+                    if (durationSec != null && durationSec > 0.0 && durationSec < 100_000.0) {
+                        append("duration", durationSec.toString())
+                    }
+                },
+            ) {
+                auth()
+            }
+        } finally {
+            opened.forEach { it.cancel() }
         }
         if (response.status == HttpStatusCode.Conflict) {
             noteRefreshedToken(response)
@@ -290,16 +317,20 @@ class ApiClient(private val store: TokenStore) {
     suspend fun deleteAvatar(): User =
         bodyOrError(client.delete(url("/api/auth/avatar")) { auth() })
 
-    suspend fun downloadTrackBytes(trackId: String): ByteArray =
-        bodyOrError(client.get(url("/api/tracks/$trackId/download")) { auth() })
-
-    suspend fun downloadTrackBytes(track: Track, useCompatible: Boolean = prefersCompatible(track)): ByteArray {
-        val path = if (useCompatible && track.hasCompatible) {
+    /** Streams a track's file to [path], so it never sits in memory whole. */
+    suspend fun downloadTrack(track: Track, useCompatible: Boolean, path: String) {
+        val route = if (useCompatible && track.hasCompatible) {
             "/api/tracks/${track.id}/download?version=compatible"
         } else {
             "/api/tracks/${track.id}/download"
         }
-        return bodyOrError(client.get(url(path)) { auth() })
+        client.prepareGet(url(route)) { auth() }.execute { response ->
+            noteRefreshedToken(response)
+            if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+            if (response.bodyAsChannel().copyToFile(path) == 0L) {
+                throw IllegalStateException("The server returned an empty file.")
+            }
+        }
     }
 
     suspend fun metadataCandidates(trackId: String): MetadataCandidatesResponse =
@@ -498,4 +529,19 @@ class ApiClient(private val store: TokenStore) {
         }
         return if (message.isNullOrEmpty()) "Request failed (HTTP ${response.status.value})" else message
     }
+}
+
+/** Writes the channel to a file in small pieces; returns the number of bytes. */
+private suspend fun ByteReadChannel.copyToFile(path: String): Long = withContext(Dispatchers.Default) {
+    var total = 0L
+    SystemFileSystem.sink(Path(path)).buffered().use { sink ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val n = readAvailable(buffer, 0, buffer.size)
+            if (n == -1) break
+            sink.write(buffer, 0, n)
+            total += n
+        }
+    }
+    total
 }

@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LifecycleStartEffect
 import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.ktor3.KtorNetworkFetcherFactory
@@ -78,7 +79,7 @@ fun App() {
 
     setSingletonImageLoaderFactory { context ->
         ImageLoader.Builder(context)
-            .components { add(KtorNetworkFetcherFactory()) }
+            .components { add(KtorNetworkFetcherFactory(httpClient = { model.api.httpClient })) }
             .build()
     }
 
@@ -98,6 +99,9 @@ fun App() {
     LifecycleResumeEffect(model) {
         model.onForeground()
         onPauseOrDispose {}
+    }
+    LifecycleStartEffect(model) {
+        onStopOrDispose { model.onBackground() }
     }
 
     CompositionLocalProvider(LocalAppModel provides model) {

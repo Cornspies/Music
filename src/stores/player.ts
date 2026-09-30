@@ -139,12 +139,17 @@ function getEngine(): AudioEngine | null {
 }
 
 function reportPlay(track: Track) {
-  flushListening()
+  // The server adds listening time to the latest play of a track, so the
+  // previous play's time has to arrive first (repeat-one plays it again).
+  const flushed = flushListening()
   listening = { trackId: track.id, lastPosition: null, unreported: 0 }
-  api(`/api/tracks/${track.id}/play`, { method: "POST" }).catch(() => {})
+  flushed.then(() => api(`/api/tracks/${track.id}/play`, { method: "POST" })).catch(() => {})
 }
 
-const LISTEN_REPORT_INTERVAL_S = 15
+// Listening time is also reported on pause, track changes and when the page is
+// hidden; this only bounds what an uninterrupted session could lose. Frequent
+// requests keep a phone's radio awake.
+const LISTEN_REPORT_INTERVAL_S = 5 * 60
 
 let listening: { trackId: string; lastPosition: number | null; unreported: number } | null = null
 
@@ -159,12 +164,12 @@ function noteListening(position: number) {
   if (l.unreported >= LISTEN_REPORT_INTERVAL_S) flushListening()
 }
 
-function flushListening(keepalive = false) {
+function flushListening(keepalive = false): Promise<unknown> {
   const l = listening
-  if (!l || l.unreported < 0.5 || !useAuthStore.getState().token) return
+  if (!l || l.unreported < 0.5 || !useAuthStore.getState().token) return Promise.resolve()
   const seconds = Math.round(l.unreported * 10) / 10
   l.unreported = 0
-  api(`/api/tracks/${l.trackId}/listened`, {
+  return api(`/api/tracks/${l.trackId}/listened`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ seconds }),
@@ -179,7 +184,7 @@ function updateMediaSession(track: Track) {
       title: track.title,
       artist: track.artist || "Unknown artist",
       album: track.album || "",
-      artwork: track.hasCover ? [{ src: coverUrl(track), sizes: "512x512" }] : [],
+      artwork: track.hasCover ? [{ src: coverUrl(track, 512), sizes: "512x512" }] : [],
     })
   } catch {}
 }
@@ -264,7 +269,10 @@ function playIndex(index: number) {
   prepareNext()
 }
 
-const SAVE_INTERVAL_MS = 10_000
+// The position is also saved on pause, track changes and when the page is
+// hidden, which is what resuming on another device relies on; this interval
+// is only a fallback for long uninterrupted playback.
+const SAVE_INTERVAL_MS = 5 * 60_000
 const SYNC_INTERVAL_MS = 60_000
 let positionDirty = false
 let lastSaveAt = 0

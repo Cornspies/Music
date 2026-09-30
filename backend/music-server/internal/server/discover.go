@@ -433,12 +433,18 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 
 const maxCoverEdge = 1000
 
-func shrinkCover(raw []byte) []byte {
+// shrinkCover scales cover art down to maxCoverEdge, the most any screen
+// shows it at; smaller art is returned unchanged.
+func shrinkCover(raw []byte) []byte { return resizeCover(raw, maxCoverEdge) }
+
+// resizeCover scales an image down so neither side exceeds edge, returning a
+// JPEG, or raw itself when it is already small enough or can't be decoded.
+func resizeCover(raw []byte, edge int) []byte {
 	if len(raw) == 0 {
 		return raw
 	}
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
-	if err != nil || cfg.Width <= maxCoverEdge && cfg.Height <= maxCoverEdge {
+	if err != nil || cfg.Width <= edge && cfg.Height <= edge {
 		return raw
 	}
 	if int64(cfg.Width)*int64(cfg.Height) > maxAvatarPixels {
@@ -449,7 +455,7 @@ func shrinkCover(raw []byte) []byte {
 		return raw
 	}
 	b := src.Bounds()
-	scale := float64(maxCoverEdge) / float64(max(b.Dx(), b.Dy()))
+	scale := float64(edge) / float64(max(b.Dx(), b.Dy()))
 	w, h := max(1, int(float64(b.Dx())*scale)), max(1, int(float64(b.Dy())*scale))
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {

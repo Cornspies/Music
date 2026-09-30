@@ -2,8 +2,6 @@ package com.music.app.player
 
 import android.content.ComponentName
 import android.net.Uri
-import android.os.Handler
-import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -12,14 +10,16 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.music.app.appContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import androidx.core.net.toUri
 
 actual class PlayerController actual constructor() {
-
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
@@ -44,15 +44,15 @@ actual class PlayerController actual constructor() {
     private val _positionSec = MutableStateFlow(0.0)
     actual val positionSec: StateFlow<Double> = _positionSec
 
-    private val positionPoller = object : Runnable {
-        override fun run() {
-            val c = controller
-            if (c != null && (c.playbackState == Player.STATE_READY || c.playbackState == Player.STATE_BUFFERING)) {
-                _positionSec.value = c.currentPosition / 1000.0
-            }
-            mainHandler.postDelayed(this, 250)
-        }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    // Ended counts too: listening is measured up to where the track stopped.
+    private fun readPosition(): Double? {
+        val c = controller ?: return null
+        return if (c.playbackState != Player.STATE_IDLE) c.currentPosition / 1000.0 else null
     }
+
+    actual fun currentPositionSec(): Double = readPosition() ?: _positionSec.value
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -62,7 +62,6 @@ actual class PlayerController actual constructor() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
                 _isPlaying.value = false
-                _positionSec.value = 0.0
                 onEnded?.invoke()
             }
         }
@@ -83,7 +82,7 @@ actual class PlayerController actual constructor() {
             _isPlaying.value = c.isPlaying
             while (pending.isNotEmpty()) pending.removeFirst()(c)
         }, MoreExecutors.directExecutor())
-        mainHandler.post(positionPoller)
+        scope.tickPosition(_positionSec, _isPlaying, ::readPosition)
     }
 
     private fun withController(block: (MediaController) -> Unit) {
@@ -127,7 +126,7 @@ actual class PlayerController actual constructor() {
 
     actual fun release() {
         released = true
-        mainHandler.removeCallbacks(positionPoller)
+        scope.cancel()
         skipForward = null
         skipBack = null
         controller?.removeListener(listener)

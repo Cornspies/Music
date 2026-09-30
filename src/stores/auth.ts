@@ -2,7 +2,6 @@
 
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import { gw } from "@/lib/gateway"
 import type { User } from "@/lib/types"
 
 interface AuthResponse {
@@ -18,7 +17,7 @@ async function authPost(
 ): Promise<AuthResponse> {
   let res: Response
   try {
-    res = await fetch(gw(path), {
+    res = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password, inviteCode }),

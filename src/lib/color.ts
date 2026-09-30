@@ -13,7 +13,7 @@ function luminance([r, g, b]: [number, number, number]): number {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 }
 
-export function lyricsSurface(coverColor: string | undefined): [number, number, number] {
+function lyricsSurface(coverColor: string | undefined): [number, number, number] {
   const rgb = parseHex(coverColor ?? "") ?? [63, 63, 70] // zinc-700
   const lum = luminance(rgb)
   if (lum > 0.32) {

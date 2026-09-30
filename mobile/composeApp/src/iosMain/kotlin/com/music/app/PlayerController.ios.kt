@@ -2,6 +2,10 @@ package com.music.app.player
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import platform.AVFAudio.AVAudioSession
@@ -16,23 +20,22 @@ import platform.AVFAudio.setActive
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
-import platform.AVFoundation.AVPlayerTimeControlStatusPlaying
+import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
+import platform.AVFoundation.AVPlayerRateDidChangeNotification
+import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
+import platform.AVFoundation.rate
 import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.seekToTime
-import platform.AVFoundation.timeControlStatus
 import platform.CoreGraphics.CGSizeMake
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.Foundation.NSData
-import platform.Foundation.NSDefaultRunLoopMode
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
-import platform.Foundation.NSRunLoop
-import platform.Foundation.NSTimer
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLSession
 import platform.Foundation.NSUserDefaults
@@ -66,15 +69,28 @@ actual class PlayerController actual constructor() {
     private val _positionSec = MutableStateFlow(0.0)
     actual val positionSec: StateFlow<Double> = _positionSec
 
-    private var player: AVPlayer? = null
+    /** One player for the app's lifetime; each track replaces its item. */
+    private val player = AVPlayer()
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var nowPlaying: MutableMap<Any?, Any?> = mutableMapOf()
     private var currentArtworkUrl: String? = null
 
     private val endObserver: NSObjectProtocol = NSNotificationCenter.defaultCenter
-        .addObserverForName(AVPlayerItemDidPlayToEndTimeNotification, `object` = null, queue = null) { _ ->
+        .addObserverForName(AVPlayerItemDidPlayToEndTimeNotification, `object` = null, queue = NSOperationQueue.mainQueue) { _ ->
             _isPlaying.value = false
             onEnded?.invoke()
+        }
+
+    // Play/pause arrives as an event rather than by polling the player.
+    private val rateObserver: NSObjectProtocol = NSNotificationCenter.defaultCenter
+        .addObserverForName(AVPlayerRateDidChangeNotification, `object` = player, queue = NSOperationQueue.mainQueue) { _ ->
+            val playing = player.rate > 0f
+            if (playing != _isPlaying.value) {
+                _isPlaying.value = playing
+                publishNowPlaying(rate = if (playing) 1.0 else 0.0)
+            }
         }
 
     private var wasPlayingBeforeInterruption = false
@@ -99,61 +115,50 @@ actual class PlayerController actual constructor() {
             }
         }
 
-    private val poller: NSTimer = NSTimer.timerWithTimeInterval(0.25, repeats = true) { _ ->
-        val p = player
-        if (p != null) {
-            val playing = p.timeControlStatus == AVPlayerTimeControlStatusPlaying
-            if (playing != _isPlaying.value) {
-                _isPlaying.value = playing
-                publishNowPlaying(rate = if (playing) 1.0 else 0.0)
-            }
-            val seconds = CMTimeGetSeconds(p.currentTime())
-            if (!seconds.isNaN()) _positionSec.value = seconds
-        }
-    }.also { timer ->
-        NSRunLoop.mainRunLoop.addTimer(timer, NSDefaultRunLoopMode)
-    }
-
     init {
         configureAudioSession()
         wireRemoteCommands()
+        scope.tickPosition(_positionSec, _isPlaying, ::readPosition)
     }
+
+    // Until the item is ready its time isn't meaningful, and a seek made before
+    // then (restoring a saved position) is only in _positionSec.
+    private fun readPosition(): Double? =
+        player.currentItem?.takeIf { it.status == AVPlayerItemStatusReadyToPlay }
+            ?.let { CMTimeGetSeconds(player.currentTime()).takeUnless { it.isNaN() } }
+
+    actual fun currentPositionSec(): Double = readPosition() ?: _positionSec.value
 
     actual fun load(url: String, autoplay: Boolean, info: NowPlayingInfo?) {
         _positionSec.value = 0.0
         val nsUrl = if (url.startsWith("/")) NSURL.fileURLWithPath(url) else NSURL.URLWithString(url)
         if (nsUrl == null) return
-        val item = AVPlayerItem(uRL = nsUrl)
-        val existing = player
-        existing?.replaceCurrentItemWithPlayerItem(null)
-        player = AVPlayer(playerItem = item)
+        player.replaceCurrentItemWithPlayerItem(AVPlayerItem(uRL = nsUrl))
         if (info != null) setNowPlaying(info)
-        if (autoplay) player?.play()
+        if (autoplay) player.play()
     }
 
     actual fun play() {
-        player?.play()
+        player.play()
     }
 
     actual fun pause() {
-        player?.pause()
+        player.pause()
     }
 
     actual fun seekTo(sec: Double) {
-        val p = player ?: return
-        val time = CMTimeMakeWithSeconds(sec, 600)
-        p.seekToTime(time)
+        player.seekToTime(CMTimeMakeWithSeconds(sec, 600))
         _positionSec.value = sec
-        publishNowPlaying(rate = if (_isPlaying.value) 1.0 else 0.0)
+        publishNowPlaying(rate = if (_isPlaying.value) 1.0 else 0.0, elapsed = sec)
     }
 
     actual fun release() {
-        poller.invalidate()
+        scope.cancel()
         NSNotificationCenter.defaultCenter.removeObserver(endObserver)
+        NSNotificationCenter.defaultCenter.removeObserver(rateObserver)
         NSNotificationCenter.defaultCenter.removeObserver(interruptionObserver)
-        player?.pause()
-        player?.replaceCurrentItemWithPlayerItem(null)
-        player = null
+        player.pause()
+        player.replaceCurrentItemWithPlayerItem(null)
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = null
         clearWidgetState()
     }
@@ -181,9 +186,9 @@ actual class PlayerController actual constructor() {
         info.artworkUrl?.let { loadArtwork(it) }
     }
 
-    private fun publishNowPlaying(rate: Double) {
+    private fun publishNowPlaying(rate: Double, elapsed: Double = currentPositionSec()) {
         if (nowPlaying.isEmpty()) return
-        nowPlaying[MPNowPlayingInfoPropertyElapsedPlaybackTime] = _positionSec.value
+        nowPlaying[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
         nowPlaying[MPNowPlayingInfoPropertyPlaybackRate] = rate
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = nowPlaying.toMap()
     }

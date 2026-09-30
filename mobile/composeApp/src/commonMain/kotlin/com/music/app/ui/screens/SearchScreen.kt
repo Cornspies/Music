@@ -13,9 +13,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -44,11 +48,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.music.app.LocalAppModel
@@ -75,7 +82,7 @@ fun SearchScreen() {
 
     var query by remember { mutableStateOf("") }
     var source by remember { mutableStateOf<String?>(null) }
-    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
 
     LaunchedEffect(Unit) { model.loadDiscoverSources() }
     val sources = model.discoverSources.orEmpty()
@@ -93,7 +100,6 @@ fun SearchScreen() {
             }
         }
     }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
     Column(
         Modifier
@@ -104,9 +110,7 @@ fun SearchScreen() {
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester),
+            modifier = Modifier.fillMaxWidth(),
             placeholder = {
                 val catalogue = sources.firstOrNull { it.key == source }
                 Text(
@@ -126,22 +130,59 @@ fun SearchScreen() {
                 }
             },
             singleLine = true,
+            // Results follow the typing, so the keyboard's search key only
+            // needs to put the keyboard away.
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
         )
+        SearchResults(
+            query = query,
+            source = source,
+            onSourceChange = { source = it },
+            modifier = Modifier.fillMaxSize().hideKeyboardOnTouch(focusManager),
+        )
+    }
+}
+
+/**
+ * Puts the keyboard away as soon as a touch lands here (on a result, a chip,
+ * empty space, or to scroll), and still lets that touch do what it does.
+ * Some phones offer no other way to close the keyboard.
+ */
+private fun Modifier.hideKeyboardOnTouch(focusManager: FocusManager): Modifier =
+    pointerInput(focusManager) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            focusManager.clearFocus()
+        }
+    }
+
+@Composable
+private fun SearchResults(
+    query: String,
+    source: String?,
+    onSourceChange: (String?) -> Unit,
+    modifier: Modifier,
+) {
+    val model = LocalAppModel.current
+    val sources = model.discoverSources.orEmpty()
+
+    Column(modifier) {
         if (sources.isNotEmpty()) {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilterChip(selected = source == null, onClick = { source = null }, label = { Text("Library", maxLines = 1) })
+                FilterChip(selected = source == null, onClick = { onSourceChange(null) }, label = { Text("Library", maxLines = 1) })
                 sources.forEach { s ->
-                    FilterChip(selected = source == s.key, onClick = { source = s.key }, label = { Text(s.name, maxLines = 1) })
+                    FilterChip(selected = source == s.key, onClick = { onSourceChange(s.key) }, label = { Text(s.name, maxLines = 1) })
                 }
             }
         }
         Spacer(Modifier.height(12.dp))
 
         if (source != null) {
-            DiscoverResults(source!!, query)
+            DiscoverResults(source, query)
             return@Column
         }
 

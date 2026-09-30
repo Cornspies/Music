@@ -43,7 +43,7 @@ import com.music.app.LocalAppModel
 import com.music.app.PickedAudio
 import com.music.app.canUploadFromDevice
 import com.music.app.mimeTypeForFile
-import com.music.app.readBytes
+import com.music.app.openChannel
 import com.music.app.rememberAudioPickerLauncher
 import com.music.app.api.Track
 import com.music.app.ui.components.EmptyState
@@ -51,9 +51,7 @@ import com.music.app.ui.components.MetadataReviewDialog
 import com.music.app.ui.formatBytes
 import com.music.app.ui.formatDuration
 import com.music.app.ui.theme.Emerald
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private enum class UploadStatus { PENDING, UPLOADING, DONE, FAILED, DUPLICATE, SKIPPED }
 
@@ -152,11 +150,11 @@ fun UploadScreen() {
                                     val succeeded = mutableListOf<Track>()
                                     for ((i, entry) in entries.withIndex()) {
                                         try {
-                                            val bytes = withContext(Dispatchers.Default) { entry.file.readBytes() }
                                             val track = model.api.uploadTrack(
                                                 fileName = entry.file.name,
                                                 mimeType = mimeTypeForFile(entry.file.name),
-                                                bytes = bytes,
+                                                sizeBytes = entry.file.sizeBytes,
+                                                content = { entry.file.openChannel() },
                                                 durationSec = entry.file.durationSec,
                                             )
                                             succeeded.add(track)

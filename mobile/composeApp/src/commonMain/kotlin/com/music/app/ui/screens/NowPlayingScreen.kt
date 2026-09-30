@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.app.LocalAppModel
 import com.music.app.api.Track
 import com.music.app.state.RepeatMode
@@ -97,7 +98,7 @@ fun NowPlayingScreen() {
 private fun NowPlayingContent(track: Track) {
     val model = LocalAppModel.current
     val isPlaying by model.player.isPlaying.collectAsState()
-    val position by model.player.positionSec.collectAsState()
+    val position by model.player.positionSec.collectAsStateWithLifecycle()
 
     var dragValue by remember { mutableStateOf<Double?>(null) }
     val duration = track.duration

@@ -105,7 +105,7 @@ export function NowPlayingView() {
   const effectiveDuration = duration > 0 ? duration : (currentTrack?.duration ?? 0)
   const displayPosition = Math.min(seekPreview ?? position, effectiveDuration || Infinity)
   const upNext = queue[queueIndex + 1] ?? null
-  const coverSrc = currentTrack?.hasCover ? coverUrl({ id: currentTrack.id }) : null
+  const coverSrc = currentTrack?.hasCover ? coverUrl({ id: currentTrack.id }, 128) : null
 
   return (
     <AnimatePresence>
@@ -234,6 +234,7 @@ export function NowPlayingView() {
                   trackId={currentTrack.id}
                   title={currentTrack.title}
                   hasCover={currentTrack.hasCover}
+                  size="full"
                   className="rounded-2xl shadow-2xl shadow-black/60"
                 />
               </motion.div>

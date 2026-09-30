@@ -37,23 +37,33 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.min
 import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.DurationUnit
 import kotlin.time.ExperimentalTime
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 enum class RepeatMode { OFF, ALL, ONE }
 
-private const val LISTEN_REPORT_INTERVAL_S = 15.0
 private const val KEY_SWIPE_TO_DELETE = "ui.swipeToDelete"
 private const val KEY_UPDATE_DISMISSED = "update.dismissed"
 private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 private const val CHANGE_CHECK_INTERVAL_MS = 30_000L
-private const val PLAYBACK_SAVE_INTERVAL_MS = 10_000L
+// While playback runs uninterrupted, listening time and the position are
+// still sent this often; everything else is sent when playback changes.
+private const val PLAYBACK_SYNC_INTERVAL_MS = 5L * 60_000L
+// Buffering also reads as "not playing"; a pause is only synced once it lasts.
+private const val PAUSE_SETTLE_MS = 2_000L
 
 private const val MEDIA_TOKEN_CHECK_INTERVAL_MS = 5L * 60_000L
 
@@ -191,6 +201,10 @@ class AppModel(
     var shuffle by mutableStateOf(false)
     var repeatMode by mutableStateOf(RepeatMode.OFF)
 
+    // Stats go out one at a time, in order: listening time for a finished play
+    // must arrive before the next play of the same track is counted.
+    private val statsQueue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
+
     init {
         backStack.add(Screen.Home)
         player.onEnded = { scope.launch { onTrackEnded() } }
@@ -207,33 +221,29 @@ class AppModel(
         }
 
         scope.launch {
-            while (true) {
-                delay(PLAYBACK_SAVE_INTERVAL_MS.milliseconds)
-                if (player.isPlaying.value) savePlayback()
+            for (send in statsQueue) {
+                try {
+                    send()
+                } catch (_: Exception) {}
             }
-        }
-        scope.launch {
-            player.isPlaying.collect { playing -> if (!playing) savePlayback() }
         }
 
+        // Skips the initial "not playing": only a real pause is worth syncing.
         scope.launch {
-            player.positionSec.collect { position ->
-                val track = currentTrack ?: return@collect
-                if (listeningTrackId != track.id) {
+            player.isPlaying.drop(1).collectLatest { playing ->
+                if (playing) {
+                    startListening()
+                    while (true) {
+                        delay(PLAYBACK_SYNC_INTERVAL_MS.milliseconds)
+                        syncProgress()
+                    }
+                } else {
+                    stopListening()
+                    delay(PAUSE_SETTLE_MS.milliseconds)
                     flushListening()
-                    listeningTrackId = track.id
-                    lastListenPosition = null
+                    savePlayback()
                 }
-                lastListenPosition?.let { last ->
-                    val delta = position - last
-                    if (delta > 0 && delta < 2) unreportedListening += delta
-                }
-                lastListenPosition = position
-                if (unreportedListening >= LISTEN_REPORT_INTERVAL_S) flushListening()
             }
-        }
-        scope.launch {
-            player.isPlaying.collect { playing -> if (!playing) flushListening() }
         }
 
         val token = store.loadToken()
@@ -345,10 +355,13 @@ class AppModel(
         offlineMode = false
         user = null
         player.pause()
+        listening = null
+        unreportedListening = 0.0
         currentTrack = null
         queue = emptyList()
         queueIndex = 0
         lastSavedQueueIds = emptyList()
+        lastSavedTrackId = null
         backStack.clear()
         backStack.add(Screen.Home)
         tracks = null
@@ -827,20 +840,20 @@ class AppModel(
     private fun startCurrent() {
         val track = loadCurrent(autoplay = true) ?: return
         countPlay(track)
-        savePlayback()
+        savePlayback(position = 0.0)
     }
 
     private fun countPlay(track: Track) {
-        scope.launch {
-            try {
-                api.reportPlay(track.id)
-                bumpPlays(track.id)
-            } catch (_: Exception) {}
+        statsQueue.trySend {
+            api.reportPlay(track.id)
+            bumpPlays(track.id)
         }
     }
 
     private fun loadCurrent(autoplay: Boolean): Track? {
         val track = queue.getOrNull(queueIndex) ?: return null
+        stopListening()
+        flushListening()
         currentTrack = track
         prefetchNeighbours()
         val source = downloads.localPathFor(track.id) ?: api.trackStreamUrl(track)
@@ -855,6 +868,9 @@ class AppModel(
                 artworkUrl = if (track.hasCover && !offlineMode) api.coverUrl(track.id) else null,
             ),
         )
+        // Playback may carry straight on into the new track without ever
+        // reading as stopped, so its listening can't wait for a start event.
+        if (autoplay) startListening(fromSec = 0.0)
         return track
     }
 
@@ -957,8 +973,8 @@ class AppModel(
 
     fun previous(restartFirst: Boolean = true) {
         if (queue.isEmpty()) return
-        if (restartFirst && player.positionSec.value > 3.0) {
-            player.seekTo(0.0)
+        if (restartFirst && player.currentPositionSec() > 3.0) {
+            seekTo(0.0)
             return
         }
         queueIndex = if (queueIndex > 0) queueIndex - 1 else queue.lastIndex
@@ -966,8 +982,11 @@ class AppModel(
     }
 
     fun seekTo(seconds: Double) {
+        val wasListening = listening != null
+        stopListening()
         player.seekTo(seconds)
-        savePlayback()
+        if (wasListening) startListening(fromSec = seconds)
+        savePlayback(position = seconds)
     }
 
     private var lastSavedQueueIds: List<String> = emptyList()
@@ -979,31 +998,75 @@ class AppModel(
         if (stamp > knownPlaybackUpdatedAt) knownPlaybackUpdatedAt = stamp
     }
 
-    private var listeningTrackId: String? = null
-    private var lastListenPosition: Double? = null
+    // One stretch of listening, from playback starting until it stops. It counts
+    // as far as the position moved, but never more than the time that passed:
+    // a stall or a seek forward adds nothing. After a seek backwards (only the
+    // lock screen can do that unannounced) the time that passed is used.
+    private class Listening(val trackId: String, val fromSec: Double, val since: TimeMark)
+
+    private var listening: Listening? = null
+    private var listenedTrackId: String? = null
     private var unreportedListening = 0.0
 
-    private fun flushListening() {
-        val id = listeningTrackId ?: return
-        if (unreportedListening < 0.5 || user == null) return
-        val seconds = unreportedListening
-        unreportedListening = 0.0
-        scope.launch {
-            runCatching { api.reportListened(id, seconds) }
-        }
+    private fun startListening(fromSec: Double = player.currentPositionSec()) {
+        if (listening != null) return
+        val track = currentTrack ?: return
+        listening = Listening(track.id, fromSec, TimeSource.Monotonic.markNow())
     }
 
-    private fun savePlayback() {
+    private fun stopListening() {
+        val stretch = listening ?: return
+        listening = null
+        val elapsed = stretch.since.elapsedNow().toDouble(DurationUnit.SECONDS)
+        val moved = player.currentPositionSec() - stretch.fromSec
+        if (stretch.trackId != listenedTrackId) {
+            flushListening()
+            listenedTrackId = stretch.trackId
+        }
+        unreportedListening += if (moved < 0) elapsed else min(moved, elapsed)
+    }
+
+    private fun flushListening() {
+        val id = listenedTrackId ?: return
+        val seconds = unreportedListening
+        unreportedListening = 0.0
+        if (seconds < 0.5 || user == null) return
+        statsQueue.trySend { api.reportListened(id, seconds) }
+    }
+
+    /** Sends the listening so far and the position, without interrupting playback. */
+    private fun syncProgress() {
+        if (listening != null) {
+            stopListening()
+            startListening()
+        }
+        flushListening()
+        savePlayback()
+    }
+
+    /** The app may be stopped while in the background, so sync before that. */
+    fun onBackground() = syncProgress()
+
+    private var lastSavedTrackId: String? = null
+    private var lastSavedPosition = 0.0
+
+    private fun savePlayback(position: Double = player.currentPositionSec()) {
         val track = currentTrack ?: return
         if (user == null || offlineMode) return
         val ids = queue.map { it.id }
         val queueChanged = ids != lastSavedQueueIds
-        val position = player.positionSec.value
+        // Saving an unchanged state again would only overwrite whatever another
+        // device saved since.
+        if (!queueChanged && track.id == lastSavedTrackId && abs(position - lastSavedPosition) < 1) return
+        lastSavedTrackId = track.id
+        lastSavedPosition = position
         scope.launch {
             try {
                 notePlaybackStamp(api.savePlayback(track.id, position, if (queueChanged) ids else null))
                 if (queueChanged) lastSavedQueueIds = ids
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                lastSavedTrackId = null
+            }
         }
     }
 
@@ -1052,9 +1115,11 @@ class AppModel(
 
     private fun applyServerPlayback(state: PlaybackState) {
         val same = currentTrack?.id == state.track.id &&
-            abs(player.positionSec.value - state.position) < 1 &&
+            abs(player.currentPositionSec() - state.position) < 1 &&
             queue.map { it.id } == state.queue.map { it.id }
         lastSavedQueueIds = state.queue.map { it.id }
+        lastSavedTrackId = state.track.id
+        lastSavedPosition = state.position
         notePlaybackStamp(state.updatedAt)
         if (same) return
         queue = state.queue
@@ -1064,11 +1129,13 @@ class AppModel(
     }
 
     private fun onTrackEnded() {
+        stopListening()
         when (repeatMode) {
             RepeatMode.ONE -> {
                 flushListening()
                 player.seekTo(0.0)
                 player.play()
+                startListening(fromSec = 0.0)
                 currentTrack?.let(::countPlay)
             }
             RepeatMode.OFF, RepeatMode.ALL -> advance(auto = true)

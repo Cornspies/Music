@@ -69,6 +69,7 @@ export function AlbumsView() {
                       trackId={album.hasCover ? album.coverTrackId : key}
                       title={album.name}
                       hasCover={album.hasCover}
+                      size={512}
                     />
                     <span className="absolute top-2 right-2 rounded-full bg-zinc-950/70 px-2 py-0.5 text-[10px] font-medium text-zinc-300 backdrop-blur">
                       {album.trackCount}

@@ -27,6 +27,10 @@ func (s *Server) recordPlay(userID, trackID string) {
 
 const listenedExpr = `CASE WHEN pe.reported = 1 THEN pe.listened_seconds ELSE t.duration END`
 
+// maxListenReport caps one report of listening time. Clients report when
+// playback pauses or moves on, and every few minutes while it keeps going.
+const maxListenReport = 15 * 60
+
 func (s *Server) handleTrackListened(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
@@ -36,7 +40,7 @@ func (s *Server) handleTrackListened(w http.ResponseWriter, r *http.Request) {
 	if err := jsonDecodeStrict(r, w, &body); err != nil {
 		return
 	}
-	if body.Seconds <= 0 || body.Seconds > 180 {
+	if body.Seconds <= 0 || body.Seconds > maxListenReport {
 		writeNoContent(w)
 		return
 	}

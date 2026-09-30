@@ -1,11 +1,18 @@
 package com.music.app
 
 import androidx.compose.runtime.Composable
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.writeFully
+import io.ktor.utils.io.writer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.io.buffered
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import platform.AVFoundation.AVURLAsset
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.Foundation.NSData
@@ -89,12 +96,20 @@ private fun audioDuration(url: NSURL): Double? =
         if (seconds.isNaN() || seconds <= 0.0) null else seconds
     }.getOrNull()
 
-internal actual suspend fun PickedAudio.readBytes(): ByteArray {
+internal actual fun PickedAudio.openChannel(): ByteReadChannel {
     val url = handle as? NSURL ?: throw IllegalStateException("missing file reference")
-    return withContext(Dispatchers.Default) {
-        val data = NSData.dataWithContentsOfURL(url) ?: throw IllegalStateException("cannot read file")
-        data.toByteArray()
-    }
+    val path = url.path ?: throw IllegalStateException("cannot read file")
+    val source = SystemFileSystem.source(Path(path)).buffered()
+    return CoroutineScope(Dispatchers.Default).writer {
+        source.use { src ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = src.readAtMostTo(buffer, 0, buffer.size)
+                if (n == -1) break
+                channel.writeFully(buffer, 0, n)
+            }
+        }
+    }.channel
 }
 
 @OptIn(ExperimentalForeignApi::class)

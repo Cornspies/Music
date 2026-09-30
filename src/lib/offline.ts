@@ -1,5 +1,4 @@
 import type { Track } from "@/lib/types"
-import { gw } from "@/lib/gateway"
 import { useAuthStore } from "@/stores/auth"
 
 const OFFLINE_CACHE = "music-offline-v1"
@@ -68,7 +67,7 @@ export async function downloadTrackOffline(
   const useCompatible = Boolean(track.hasCompatible && probe && probe.canPlayType(track.mimeType) === "")
   const path = `/api/tracks/${track.id}/stream${useCompatible ? "?version=compatible" : ""}`
 
-  const res = await fetch(gw(path) + "&offline=bypass", { headers, signal })
+  const res = await fetch(`${path}${path.includes("?") ? "&" : "?"}offline=bypass`, { headers, signal })
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status})`)
   const contentType = res.headers.get("Content-Type") ?? (useCompatible ? "audio/mp4" : track.mimeType)
   const total = Number(res.headers.get("Content-Length") ?? 0)
@@ -93,7 +92,7 @@ export async function downloadTrackOffline(
 
   if (track.hasCover) {
     try {
-      const cover = await fetch(gw(`/api/tracks/${track.id}/cover`) + "&offline=bypass", { headers, signal })
+      const cover = await fetch(`/api/tracks/${track.id}/cover?offline=bypass`, { headers, signal })
       if (cover.ok) {
         const b = await cover.blob()
         await cache.put(

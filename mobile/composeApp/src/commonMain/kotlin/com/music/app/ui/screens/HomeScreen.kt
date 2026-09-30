@@ -214,6 +214,7 @@ private fun RecentlyAddedRow(tracks: List<Track>) {
                         .fillMaxWidth()
                         .aspectRatio(1f),
                     corner = 12.dp,
+                    displaySize = 132.dp,
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(

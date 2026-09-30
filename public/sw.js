@@ -132,8 +132,6 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.includes("/_next/")) return
 
-  if (url.search.includes("XTransformPort")) return
-
   if (req.mode === "navigate") {
     event.respondWith(
       fetch(req)

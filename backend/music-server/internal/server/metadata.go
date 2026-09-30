@@ -265,7 +265,7 @@ func (s *Server) applyChosenCandidate(ctx context.Context, track *Track, chosen 
 	if len(meta.picture) > 0 {
 		if !safeCoverBytes(meta.picture) {
 			logErr("cover art", fmt.Errorf("track %s: discarding fetched artwork that is not a raster image", id))
-		} else if err := os.WriteFile(filepath.Join(s.covDir, id+".img"), meta.picture, 0o644); err == nil {
+		} else if err := os.WriteFile(filepath.Join(s.covDir, id+".img"), shrinkCover(meta.picture), 0o644); err == nil {
 			hasCover, wroteCover = true, true
 		} else {
 			logErr("save cover", err)

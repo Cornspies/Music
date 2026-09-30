@@ -2,7 +2,11 @@ package com.music.app.offline
 
 expect class OfflineStore() {
 
-    fun save(trackId: String, extension: String, bytes: ByteArray): String
+    /**
+     * Saves a download: [write] fills a temporary file at the path it's given,
+     * which then replaces any earlier copy of the track. Returns the final path.
+     */
+    suspend fun save(trackId: String, extension: String, write: suspend (path: String) -> Unit): String
 
     fun pathFor(trackId: String): String?
 

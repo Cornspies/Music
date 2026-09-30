@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { KeyRound, Loader2 } from "lucide-react"
-import { currentToken, gw } from "@/lib/api"
+import { currentToken } from "@/lib/api"
 import { useAuthStore } from "@/stores/auth"
 import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
@@ -48,7 +48,7 @@ export function PasswordDialog() {
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(gw("/api/auth/password"), {
+      const res = await fetch("/api/auth/password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

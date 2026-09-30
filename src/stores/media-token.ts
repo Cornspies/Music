@@ -2,7 +2,6 @@
 
 import { create } from "zustand"
 import type { MediaToken } from "@/lib/types"
-import { gw } from "@/lib/gateway"
 import { useAuthStore } from "@/stores/auth"
 
 const REFRESH_MARGIN_MS = 10 * 60_000
@@ -36,7 +35,7 @@ export const useMediaTokenStore = create<MediaTokenState>()((set) => ({
       const session = useAuthStore.getState().token
       if (!session) return
       try {
-        const res = await fetch(gw("/api/auth/media-token"), {
+        const res = await fetch("/api/auth/media-token", {
           headers: { Authorization: `Bearer ${session}` },
         })
         if (!res.ok) return

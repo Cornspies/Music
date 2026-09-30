@@ -10,6 +10,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.jvm.javaio.toByteReadChannel
 
 internal actual val canUploadFromDevice: Boolean = true
 
@@ -62,12 +64,12 @@ private fun queryDuration(context: Context, uri: Uri): Double? {
     }
 }
 
-internal actual suspend fun PickedAudio.readBytes(): ByteArray {
+internal actual fun PickedAudio.openChannel(): ByteReadChannel {
     val uri = handle as? Uri
         ?: throw IllegalStateException("missing file reference")
-    val resolver = appContext.contentResolver
-    return resolver.openInputStream(uri)?.use { it.readBytes() }
+    val input = appContext.contentResolver.openInputStream(uri)
         ?: throw IllegalStateException("cannot read file")
+    return input.toByteReadChannel()
 }
 
 internal actual val canPickImageFromDevice: Boolean = true

@@ -1,4 +1,3 @@
-import { gw } from "@/lib/gateway"
 import type {
   AdminSettings,
   AdminUser,
@@ -33,7 +32,6 @@ import type {
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
 
-export { gw }
 
 const REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
 
@@ -50,7 +48,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) headers.set("Authorization", `Bearer ${token}`)
   let res: Response
   try {
-    res = await fetch(gw(path), { ...init, headers })
+    res = await fetch(path, { ...init, headers })
   } catch (e) {
     const err = e as Error
     if (err?.name === "AbortError") throw err
@@ -80,13 +78,13 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T
 }
 
-function tokenQuery(): string {
-  return `&token=${encodeURIComponent(currentMediaToken())}`
+function withToken(path: string): string {
+  return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(currentMediaToken())}`
 }
 
 export function streamUrl(track: Pick<Track, "id" | "mimeType" | "hasCompatible">): string {
   const version = browserCanPlay(track) ? "" : "&version=compatible"
-  return gw(`/api/tracks/${track.id}/stream`) + tokenQuery() + version
+  return withToken(`/api/tracks/${track.id}/stream`) + version
 }
 
 function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boolean {
@@ -96,12 +94,15 @@ function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boole
   return probe.canPlayType(track.mimeType) !== ""
 }
 
-export function coverUrl(track: { id: string }): string {
-  return gw(`/api/tracks/${track.id}/cover`) + tokenQuery()
+/** Edges the server scales covers down to; lists don't need the full image. */
+export type CoverSize = 128 | 256 | 512
+
+export function coverUrl(track: { id: string }, size?: CoverSize): string {
+  return withToken(`/api/tracks/${track.id}/cover${size ? `?size=${size}` : ""}`)
 }
 
 export function candidateArtworkUrl(trackId: string, candidateId: string): string {
-  return gw(`/api/tracks/${trackId}/metadata/candidates/${candidateId}/artwork`) + tokenQuery()
+  return withToken(`/api/tracks/${trackId}/metadata/candidates/${candidateId}/artwork`)
 }
 
 export function downloadUrl(
@@ -109,11 +110,11 @@ export function downloadUrl(
   version: "original" | "compatible" = "original",
 ): string {
   const suffix = version === "compatible" ? "&version=compatible" : ""
-  return gw(`/api/tracks/${track.id}/download`) + tokenQuery() + suffix
+  return withToken(`/api/tracks/${track.id}/download`) + suffix
 }
 
 export function uploadUrl(): string {
-  return gw("/api/tracks")
+  return "/api/tracks"
 }
 
 export function confirmPendingUpload(pendingId: string): Promise<Track> {
@@ -125,7 +126,7 @@ export function discardPendingUpload(pendingId: string): Promise<void> {
 }
 
 export function avatarUrl(userId: string): string {
-  return gw(`/api/users/${userId}/avatar`) + tokenQuery()
+  return withToken(`/api/users/${userId}/avatar`)
 }
 
 export interface AvatarCrop {
@@ -233,7 +234,7 @@ export function applyMetadataCandidate(trackId: string, candidateId: string): Pr
 async function postConfirmed<T>(path: string, body: unknown): Promise<T | undefined> {
   let res: Response
   try {
-    res = await fetch(gw(path), {
+    res = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentToken() ?? ""}` },
       body: JSON.stringify(body),
@@ -285,7 +286,7 @@ export function fetchAppReleases(): Promise<AppRelease[]> {
 }
 
 export function appReleaseUrl(fileName: string): string {
-  return gw(`/api/app/releases/${encodeURIComponent(fileName)}`) + tokenQuery()
+  return withToken(`/api/app/releases/${encodeURIComponent(fileName)}`)
 }
 
 export async function fetchTrackShare(trackId: string): Promise<TrackShare | null> {
@@ -317,11 +318,11 @@ export function fetchSharedTrackForMember(token: string): Promise<Track> {
 }
 
 export function sharedStreamUrl(token: string): string {
-  return gw(`/api/share/${encodeURIComponent(token)}/stream`)
+  return `/api/share/${encodeURIComponent(token)}/stream`
 }
 
 export function sharedCoverUrl(token: string): string {
-  return gw(`/api/share/${encodeURIComponent(token)}/cover`)
+  return `/api/share/${encodeURIComponent(token)}/cover`
 }
 
 export function fetchDuplicates(): Promise<DuplicateGroup[]> {
@@ -392,7 +393,7 @@ export const discover = {
       { signal }
     ),
   artworkUrl: (source: string, u: string) =>
-    gw(`/api/discover/artwork?source=${encodeURIComponent(source)}&u=${encodeURIComponent(u)}`) + tokenQuery(),
+    withToken(`/api/discover/artwork?source=${encodeURIComponent(source)}&u=${encodeURIComponent(u)}`),
   add: (source: string, id: string) =>
     api<Track>("/api/discover/add", {
       method: "POST",

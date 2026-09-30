@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -25,14 +26,24 @@ import com.music.app.ui.theme.EmeraldDark
 import com.music.app.ui.theme.Zinc500
 import com.music.app.ui.theme.Zinc800
 
+// Thumbnail edges the server keeps, in pixels.
+private val coverThumbSizes = listOf(128, 256, 512)
+
+/**
+ * [displaySize] is how large the cover is drawn; the smallest thumbnail that
+ * still covers it is loaded instead of the full image. Leave it out for
+ * covers drawn larger than a thumbnail.
+ */
 @Composable
 fun CoverImage(
     track: Track,
     modifier: Modifier = Modifier,
     corner: Dp = 8.dp,
     placeholderSize: Dp = 20.dp,
+    displaySize: Dp? = null,
 ) {
     val model = LocalAppModel.current
+    val density = LocalDensity.current
     val gradient = Brush.linearGradient(listOf(Zinc800, EmeraldDark.copy(alpha = 0.35f)))
     Box(
         modifier
@@ -41,10 +52,14 @@ fun CoverImage(
         contentAlignment = Alignment.Center,
     ) {
         if (track.hasCover) {
-            val cacheKey = "cover:${track.id}:${track.updatedAt}"
+            val thumb = displaySize?.let { size ->
+                val px = with(density) { size.toPx() }
+                coverThumbSizes.firstOrNull { it >= px }
+            }
+            val cacheKey = "cover:${track.id}:${track.updatedAt}:${thumb ?: "full"}"
             AsyncImage(
                 model = ImageRequest.Builder(LocalPlatformContext.current)
-                    .data(model.api.coverUrl(track.id))
+                    .data(model.api.coverUrl(track.id, thumb))
                     .memoryCacheKey(cacheKey)
                     .diskCacheKey(cacheKey)
                     .build(),
@@ -65,5 +80,5 @@ fun CoverImage(
 
 @Composable
 fun CoverImage(track: Track, size: Dp, modifier: Modifier = Modifier, corner: Dp = 8.dp) {
-    CoverImage(track, modifier.size(size), corner)
+    CoverImage(track, modifier.size(size), corner, displaySize = size)
 }

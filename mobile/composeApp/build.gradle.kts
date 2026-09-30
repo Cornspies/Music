@@ -54,7 +54,6 @@ kotlin {
             implementation(libs.media3.exoplayer)
             implementation(libs.media3.session)
             implementation(libs.glance.appwidget)
-            implementation(libs.glance.material3)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

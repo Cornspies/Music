@@ -3,6 +3,7 @@ package com.music.app
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.decodeToImageBitmap
+import io.ktor.utils.io.ByteReadChannel
 
 internal expect val canUploadFromDevice: Boolean
 
@@ -16,7 +17,8 @@ class PickedAudio(
 @Composable
 internal expect fun rememberAudioPickerLauncher(onPicked: (List<PickedAudio>) -> Unit): () -> Unit
 
-internal expect suspend fun PickedAudio.readBytes(): ByteArray
+/** Opens the picked file for streaming; each call starts from the beginning. */
+internal expect fun PickedAudio.openChannel(): ByteReadChannel
 
 internal expect val canPickImageFromDevice: Boolean
 

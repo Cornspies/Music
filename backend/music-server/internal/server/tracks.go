@@ -425,7 +425,7 @@ func (s *Server) finalizeUpload(w http.ResponseWriter, r *http.Request, up *pend
 	if len(meta.picture) > 0 {
 		if !safeCoverBytes(meta.picture) {
 			logErr("cover art", fmt.Errorf("track %s: discarding embedded artwork that is not a raster image", id))
-		} else if err := os.WriteFile(filepath.Join(s.covDir, id+".img"), meta.picture, 0o644); err == nil {
+		} else if err := os.WriteFile(filepath.Join(s.covDir, id+".img"), shrinkCover(meta.picture), 0o644); err == nil {
 			hasCover = true
 		} else {
 			logErr("save cover", err)
@@ -685,7 +685,7 @@ func (s *Server) removeTrack(id string) error {
 		os.Remove(filepath.Join(s.dataDir, altPath))
 	}
 	if hasCover == 1 {
-		os.Remove(filepath.Join(s.covDir, id+".img"))
+		s.removeCoverFiles(id)
 	}
 	return nil
 }
@@ -835,6 +835,7 @@ func (s *Server) forgetMissingCover(id string) {
 		return
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
+		s.removeThumbnails(id)
 		log.Printf("cover: track %s has no cover file any more; marked as coverless", id)
 	}
 }
@@ -873,14 +874,26 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no cover art")
 		return
 	}
+	size := 0
+	if raw := r.URL.Query().Get("size"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && coverThumbSizes[n] {
+			size = n
+		} else {
+			writeErr(w, http.StatusBadRequest, "size must be 128, 256 or 512")
+			return
+		}
+	}
 	etag := `"cover-` + id + `-` + t.UpdatedAt + `"`
+	if size > 0 {
+		etag = `"cover-` + id + `-` + t.UpdatedAt + `-` + strconv.Itoa(size) + `"`
+	}
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("ETag", etag)
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	b, err := os.ReadFile(filepath.Join(s.covDir, id+".img"))
+	b, err := s.coverBytes(id, size)
 	if errors.Is(err, fs.ErrNotExist) {
 		s.forgetMissingCover(id)
 		writeErr(w, http.StatusNotFound, "no cover art")

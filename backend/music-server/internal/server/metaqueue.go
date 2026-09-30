@@ -315,7 +315,7 @@ func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMeta
 	hasCover, wroteCover := t.HasCover, false
 	if (!t.HasCover || replaceCover) && len(meta.picture) > 1 {
 		if safeCoverBytes(meta.picture) {
-			if err := os.WriteFile(filepath.Join(s.covDir, t.ID+".img"), meta.picture, 0o644); err == nil {
+			if err := os.WriteFile(filepath.Join(s.covDir, t.ID+".img"), shrinkCover(meta.picture), 0o644); err == nil {
 				hasCover, wroteCover = true, true
 				coverReplaced = replaceCover
 			}

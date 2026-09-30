@@ -1,11 +1,7 @@
 package com.music.app.offline
 
-import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
 import platform.Foundation.NSApplicationSupportDirectory
-import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
 import platform.Foundation.NSNumber
@@ -13,8 +9,6 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSURLIsExcludedFromBackupKey
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.NSUserDomainMask
-import platform.Foundation.create
-import platform.Foundation.writeToFile
 
 @OptIn(ExperimentalForeignApi::class)
 actual class OfflineStore actual constructor() {
@@ -34,18 +28,20 @@ actual class OfflineStore actual constructor() {
         path
     }
 
-    actual fun save(trackId: String, extension: String, bytes: ByteArray): String {
-        delete(trackId)
+    actual suspend fun save(trackId: String, extension: String, write: suspend (path: String) -> Unit): String {
         if (!fileManager.fileExistsAtPath(dir)) {
             fileManager.createDirectoryAtPath(dir, withIntermediateDirectories = true, attributes = null, error = null)
         }
         val target = "$dir/$trackId.$extension"
         val partial = "$target$PART_SUFFIX"
-
-        val ok = bytes.toNSData().writeToFile(partial, atomically = true)
-        if (!ok) throw IllegalStateException("Could not save the download to device storage.")
-
-        if (fileManager.fileExistsAtPath(target)) fileManager.removeItemAtPath(target, null)
+        try {
+            write(partial)
+        } catch (e: Throwable) {
+            fileManager.removeItemAtPath(partial, null)
+            throw e
+        }
+        // Only now does the earlier copy go, so a failed download doesn't lose it.
+        namesFor(trackId).map { "$dir/$it" }.filter { it != partial }.forEach { fileManager.removeItemAtPath(it, null) }
         val moved = fileManager.moveItemAtPath(partial, target, null)
         if (!moved) {
             fileManager.removeItemAtPath(partial, null)
@@ -89,13 +85,5 @@ actual class OfflineStore actual constructor() {
 
     private companion object {
         const val PART_SUFFIX = ".part"
-    }
-}
-
-@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-private fun ByteArray.toNSData(): NSData {
-    if (isEmpty()) return NSData()
-    return usePinned { pinned ->
-        NSData.create(bytes = pinned.addressOf(0), length = size.toULong())
     }
 }

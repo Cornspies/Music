@@ -11,12 +11,18 @@ actual class OfflineStore actual constructor() {
 
     private val prefs = appContext.getSharedPreferences("music-offline", Context.MODE_PRIVATE)
 
-    actual fun save(trackId: String, extension: String, bytes: ByteArray): String {
-        delete(trackId)
+    actual suspend fun save(trackId: String, extension: String, write: suspend (path: String) -> Unit): String {
         if (!dir.exists()) dir.mkdirs()
         val target = File(dir, "$trackId.$extension")
         val partial = File(dir, "$trackId.$extension$PART_SUFFIX")
-        partial.writeBytes(bytes)
+        try {
+            write(partial.absolutePath)
+        } catch (e: Throwable) {
+            partial.delete()
+            throw e
+        }
+        // Only now does the earlier copy go, so a failed download doesn't lose it.
+        filesFor(trackId).filter { it != partial }.forEach { it.delete() }
         if (!partial.renameTo(target)) {
             partial.delete()
             throw IllegalStateException("Could not save the download to device storage.")

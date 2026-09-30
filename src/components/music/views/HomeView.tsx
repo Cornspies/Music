@@ -64,7 +64,7 @@ function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
       <div className="relative">
         <div className="overflow-hidden rounded-lg">
           <div className="transition-transform duration-300 group-hover:scale-[1.03]">
-            <CoverArt trackId={track.id} title={track.title} hasCover={track.hasCover} />
+            <CoverArt trackId={track.id} title={track.title} hasCover={track.hasCover} size={512} />
           </div>
         </div>
         <button
