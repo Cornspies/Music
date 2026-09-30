@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       # v5, not v6: v6 moved caching into a proprietary component under Gradle's terms of use.
       - uses: gradle/actions/setup-gradle@v5

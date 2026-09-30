@@ -21,7 +21,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.music.app"
+        applicationId = "com.cornspies.music"
         minSdk = 27
         targetSdk = 37
         versionCode = 1

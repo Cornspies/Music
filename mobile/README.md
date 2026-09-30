@@ -105,8 +105,8 @@ $ANDROID_HOME/build-tools/<version>/apksigner verify --print-certs Music-<versio
 
 Android checks the file when the app is installed or updated. After changing
 it, redeploy the web app, then reinstall the app or run
-`adb shell pm verify-app-links --re-verify com.music.app`;
-`adb shell pm get-app-links com.music.app` shows the result. iOS needs your
+`adb shell pm verify-app-links --re-verify com.cornspies.music`;
+`adb shell pm get-app-links com.cornspies.music` shows the result. iOS needs your
 Team ID in place of `REPLACE_WITH_TEAMID` in `apple-app-site-association`.
 
 ## Build & run
@@ -212,7 +212,7 @@ One-time setup — a browser and a few `openssl` commands, no Mac needed:
 1. **App ID.** In [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list),
    add an App ID (type *App*) with the explicit bundle ID `com.cornspies.music`
    — the `PRODUCT_BUNDLE_IDENTIFIER` in `iosApp/project.yml`; it needs no
-   capabilities. (The Android app keeps its own ID, `com.music.app`.)
+   capabilities. (The Android app uses the same ID.)
 2. **Distribution certificate.** Create a private key and a signing request
    outside the repository — the key is the certificate's secret half, so keep
    it safe and never commit it:
