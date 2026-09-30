@@ -59,10 +59,19 @@ export const useMediaTokenStore = create<MediaTokenState>()((set) => ({
   },
 }))
 
+/**
+ * The token for media URLs. Never the session token: a URL ends up in logs,
+ * and the server refuses session tokens in one. Empty until the first media
+ * token arrives; components that show media re-render then (useMediaToken).
+ */
 export function currentMediaToken(): string {
   const { token, expiresAt } = useMediaTokenStore.getState()
-  if (token && expiresAt > Date.now()) return token
-  return useAuthStore.getState().token ?? ""
+  return token && expiresAt > Date.now() ? token : ""
+}
+
+/** Re-renders with each new media token, so image URLs pick it up. */
+export function useMediaToken(): string | null {
+  return useMediaTokenStore((s) => s.token)
 }
 
 if (typeof window !== "undefined") {

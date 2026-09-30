@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { avatarUrl } from "@/lib/api"
+import { useMediaToken } from "@/stores/media-token"
 import { hashGradient, initialsOf } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -15,13 +16,12 @@ interface Props {
 }
 
 export function UserAvatar({ userId, username, hasAvatar, size = 20, className, label }: Props) {
-  const [failed, setFailed] = useState(false)
+  const mediaToken = useMediaToken()
+  // What failed to load; another user, or a new media token, gets a new try.
+  const attempt = `${userId}:${mediaToken}`
+  const [failedAttempt, setFailedAttempt] = useState<string | null>(null)
 
-  useEffect(() => {
-    setFailed(false)
-  }, [userId, hasAvatar])
-
-  const showImage = hasAvatar && !failed
+  const showImage = hasAvatar && Boolean(mediaToken) && failedAttempt !== attempt
   const dimension = { width: size, height: size }
 
   return (
@@ -40,7 +40,7 @@ export function UserAvatar({ userId, username, hasAvatar, size = 20, className, 
           width={size}
           height={size}
           className="size-full object-cover"
-          onError={() => setFailed(true)}
+          onError={() => setFailedAttempt(attempt)}
           draggable={false}
         />
       ) : (

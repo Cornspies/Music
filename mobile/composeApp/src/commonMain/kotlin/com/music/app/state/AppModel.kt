@@ -484,7 +484,16 @@ class AppModel(
     }
 
     private fun noteOnline() {
-        if (offlineMode) offlineMode = false
+        if (!offlineMode) return
+        offlineMode = false
+        refreshMediaTokenIfDue()
+    }
+
+    // Media URLs carry a media token, never the session token, so there has
+    // to be a current one before they're made.
+    private fun refreshMediaTokenIfDue() {
+        if (user == null || offlineMode || !api.mediaTokenNeedsRefresh) return
+        scope.launch { runCatching { api.refreshMediaToken() } }
     }
 
     private fun noteFailure(e: Exception): Boolean {
@@ -500,6 +509,7 @@ class AppModel(
                 user = api.me()
                 downloads.cacheUser(user!!)
                 offlineMode = false
+                runCatching { api.refreshMediaToken() }
                 refreshAll()
             } catch (e: Exception) {
                 if (e is ApiException) {
@@ -1282,6 +1292,7 @@ class AppModel(
     }
 
     fun onForeground() {
+        refreshMediaTokenIfDue()
         if (nowMs() - lastUpdateCheckMs > UPDATE_CHECK_INTERVAL_MS) checkForUpdate()
         if (user != null && !offlineMode && nowMs() - lastChangeCheckMs > CHANGE_CHECK_INTERVAL_MS) {
             lastChangeCheckMs = nowMs()

@@ -5,6 +5,7 @@ import { Music2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { coverUrl, type CoverSize } from "@/lib/api"
 import { hashGradient, initialsOf } from "@/lib/format"
+import { useMediaToken } from "@/stores/media-token"
 
 interface CoverArtProps {
   trackId: string
@@ -26,15 +27,17 @@ export function CoverArt({
   initialsClassName,
   size = 128,
 }: CoverArtProps) {
-  const [failed, setFailed] = useState(false)
+  const mediaToken = useMediaToken()
+  // A cover that failed gets another try with the next media token.
+  const [failedWith, setFailedWith] = useState<string | null>(null)
 
-  if (hasCover && !failed) {
+  if (hasCover && mediaToken && failedWith !== mediaToken) {
     return (
       <div className={cn("relative aspect-square w-full overflow-hidden rounded-md", className)}>
         <img
           src={coverUrl({ id: trackId }, size === "full" ? undefined : size)}
           alt={title ? `Album cover of ${title}` : "Album cover"}
-          onError={() => setFailed(true)}
+          onError={() => setFailedWith(mediaToken)}
           loading="lazy"
           className="aspect-square w-full rounded-md bg-zinc-800/80 object-cover shadow-md"
         />

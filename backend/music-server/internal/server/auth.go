@@ -213,8 +213,10 @@ func (s *Server) authUser(r *http.Request, mediaRoute bool) (*User, error) {
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		raw = strings.TrimSpace(h[7:])
 	}
+	inURL := false
 	if raw == "" && mediaRoute {
 		raw = r.URL.Query().Get("token")
+		inURL = true
 	}
 	if raw == "" {
 		return nil, errors.New("missing token")
@@ -243,6 +245,11 @@ func (s *Server) authUser(r *http.Request, mediaRoute bool) (*User, error) {
 	}
 	if aud == audienceMedia && !mediaRoute {
 		return nil, errors.New("media token not accepted here")
+	}
+	// URLs end up in proxy logs, histories and share sheets, so the token in
+	// one has to be a media token: it only plays media, and only for hours.
+	if inURL && aud != audienceMedia {
+		return nil, errors.New("session tokens aren't accepted in URLs")
 	}
 	if aud != audienceMedia && aud != audienceSession {
 		return nil, errors.New("unknown audience")
@@ -453,6 +460,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := strings.ToLower(strings.TrimSpace(req.Username))
+	if locked, retry := accountLocked(loginKey(username)); locked {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
+		writeErr(w, http.StatusTooManyRequests, "too many sign-in attempts for this account, try again later")
+		return
+	}
 
 	var (
 		id        string
@@ -467,6 +479,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, sql.ErrNoRows) {
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(req.Password))
 		noteAuthFailure(r)
+		noteAccountFailure(loginKey(username))
 		writeErr(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	} else if err != nil {
@@ -475,10 +488,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) != nil {
 		noteAuthFailure(r)
+		noteAccountFailure(loginKey(username))
 		writeErr(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 	clearAuthFailures(r)
+	clearAccountFailures(loginKey(username))
 
 	token, err := s.issueToken(&User{ID: id, Username: username, Role: role}, time.Time{})
 	if err != nil {
@@ -531,6 +546,10 @@ type changePasswordRequest struct {
 }
 
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	if blocked, _ := rateLimitAuth(r); blocked {
+		writeErr(w, http.StatusTooManyRequests, "too many attempts, try again later")
+		return
+	}
 	u := userFrom(r)
 	var req changePasswordRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
@@ -541,18 +560,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "currentPassword and newPassword are required")
 		return
 	}
-
-	var hash string
-	err := s.db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, u.ID).Scan(&hash)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusUnauthorized, "user no longer exists")
-		return
-	} else if err != nil {
-		s.internalErr(w, "lookup password", err)
-		return
-	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.CurrentPassword)) != nil {
-		writeErr(w, http.StatusUnauthorized, "current password is incorrect")
+	if !s.checkPassword(w, r, u.ID, req.CurrentPassword) {
 		return
 	}
 

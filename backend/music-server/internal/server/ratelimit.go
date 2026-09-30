@@ -15,6 +15,9 @@ const (
 	authMaxAttempts          = 10
 	registrationMaxPerWindow = 3
 	authLimiterMaxKeys       = 10000
+	// Wrong passwords for one account within authAttemptWindow, from
+	// anywhere: someone with many addresses gets past the per-client limit.
+	accountMaxFailures = 10
 )
 
 type attemptRecord struct {
@@ -23,64 +26,61 @@ type attemptRecord struct {
 	first         time.Time
 }
 
-var authLimiter = struct {
+// limiter counts attempts per key over authAttemptWindow.
+type limiter struct {
 	mu      sync.Mutex
 	entries map[string]*attemptRecord
-}{entries: map[string]*attemptRecord{}}
+}
 
-func rateLimitAuth(r *http.Request) (blocked bool, retryAfter time.Duration) {
-	key := clientIP(r)
+var (
+	// Per client; see limiterKey.
+	authLimiter = &limiter{entries: map[string]*attemptRecord{}}
+	// Per account; see loginKey and accountKey.
+	accountLimiter = &limiter{entries: map[string]*attemptRecord{}}
+)
+
+func (l *limiter) blocked(key string, over func(*attemptRecord) bool) (bool, time.Duration) {
 	now := time.Now()
-
-	authLimiter.mu.Lock()
-	defer authLimiter.mu.Unlock()
-
-	rec, ok := authLimiter.entries[key]
-	if !ok || now.Sub(rec.first) > authAttemptWindow {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	rec, ok := l.entries[key]
+	if !ok || now.Sub(rec.first) > authAttemptWindow || !over(rec) {
 		return false, 0
 	}
-	if rec.count >= authMaxAttempts || rec.registrations >= registrationMaxPerWindow {
-		return true, authAttemptWindow - now.Sub(rec.first)
-	}
-	return false, 0
+	return true, authAttemptWindow - now.Sub(rec.first)
 }
 
-func noteAuthFailure(r *http.Request) {
-	touch(r, func(rec *attemptRecord) { rec.count++ })
-}
-
-func noteRegistration(r *http.Request) {
-	touch(r, func(rec *attemptRecord) { rec.registrations++ })
-}
-
-func touch(r *http.Request, fn func(*attemptRecord)) {
-	key := clientIP(r)
+func (l *limiter) touch(key string, fn func(*attemptRecord)) {
 	now := time.Now()
-
-	authLimiter.mu.Lock()
-	defer authLimiter.mu.Unlock()
-
-	rec, ok := authLimiter.entries[key]
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	rec, ok := l.entries[key]
 	if !ok || now.Sub(rec.first) > authAttemptWindow {
-		if len(authLimiter.entries) >= authLimiterMaxKeys {
-			evictLocked(now)
+		if len(l.entries) >= authLimiterMaxKeys {
+			l.evictLocked(now)
 		}
 		rec = &attemptRecord{first: now}
-		authLimiter.entries[key] = rec
+		l.entries[key] = rec
 	}
 	fn(rec)
 }
 
-func evictLocked(now time.Time) {
-	for k, v := range authLimiter.entries {
+func (l *limiter) clear(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.entries, key)
+}
+
+func (l *limiter) evictLocked(now time.Time) {
+	for k, v := range l.entries {
 		if now.Sub(v.first) > authAttemptWindow {
-			delete(authLimiter.entries, k)
+			delete(l.entries, k)
 		}
 	}
-	for len(authLimiter.entries) >= authLimiterMaxKeys*9/10 {
+	for len(l.entries) >= authLimiterMaxKeys*9/10 {
 		var oldestKey string
 		var oldest time.Time
-		for k, v := range authLimiter.entries {
+		for k, v := range l.entries {
 			if oldestKey == "" || v.first.Before(oldest) {
 				oldestKey, oldest = k, v.first
 			}
@@ -88,14 +88,64 @@ func evictLocked(now time.Time) {
 		if oldestKey == "" {
 			return
 		}
-		delete(authLimiter.entries, oldestKey)
+		delete(l.entries, oldestKey)
 	}
 }
 
+func rateLimitAuth(r *http.Request) (blocked bool, retryAfter time.Duration) {
+	return authLimiter.blocked(limiterKey(r), func(rec *attemptRecord) bool {
+		return rec.count >= authMaxAttempts || rec.registrations >= registrationMaxPerWindow
+	})
+}
+
+func noteAuthFailure(r *http.Request) {
+	authLimiter.touch(limiterKey(r), func(rec *attemptRecord) { rec.count++ })
+}
+
+func noteRegistration(r *http.Request) {
+	authLimiter.touch(limiterKey(r), func(rec *attemptRecord) { rec.registrations++ })
+}
+
 func clearAuthFailures(r *http.Request) {
-	authLimiter.mu.Lock()
-	defer authLimiter.mu.Unlock()
-	delete(authLimiter.entries, clientIP(r))
+	authLimiter.clear(limiterKey(r))
+}
+
+// accountLocked: the account has had accountMaxFailures wrong passwords
+// lately. It's checked before the password, so from then on guesses aren't
+// even tried; devices already signed in carry on.
+func accountLocked(key string) (bool, time.Duration) {
+	return accountLimiter.blocked(key, func(rec *attemptRecord) bool { return rec.count >= accountMaxFailures })
+}
+
+func noteAccountFailure(key string) {
+	accountLimiter.touch(key, func(rec *attemptRecord) { rec.count++ })
+}
+
+func clearAccountFailures(key string) {
+	accountLimiter.clear(key)
+}
+
+// loginKey counts sign-ins by the name tried, whether or not such an account
+// exists, so the limit doesn't give away which names do.
+func loginKey(username string) string {
+	if len(username) > 64 {
+		username = username[:64]
+	}
+	return "name:" + username
+}
+
+// accountKey counts password confirmations by a signed-in account.
+func accountKey(userID string) string { return "id:" + userID }
+
+// limiterKey is the client attempts count against: its address, or for IPv6
+// its /64, since one connection usually has a whole /64 to hop around in.
+func limiterKey(r *http.Request) string {
+	host := clientIP(r)
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil || ip.To4() != nil {
+		return host
+	}
+	return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
 }
 
 func clientIP(r *http.Request) string {

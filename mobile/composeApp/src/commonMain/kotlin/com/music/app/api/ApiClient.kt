@@ -98,10 +98,13 @@ class ApiClient(private val store: TokenStore) {
     private var mediaToken: String? = null
     private var mediaTokenExpiresAtMs: Long = 0L
 
-    private val mediaOrSessionToken: String
+    // The token for media URLs. Never the session token: URLs end up in logs,
+    // and the server refuses session tokens in them. Empty until a media
+    // token arrives, which AppModel fetches before it shows anything.
+    private val urlToken: String
         get() {
             val m = mediaToken
-            return if (m != null && nowMs() < mediaTokenExpiresAtMs) m else (token ?: "")
+            return if (m != null && nowMs() < mediaTokenExpiresAtMs) m else ""
         }
 
     val mediaTokenNeedsRefresh: Boolean
@@ -119,7 +122,7 @@ class ApiClient(private val store: TokenStore) {
     }
 
     fun trackStreamUrl(trackId: String): String =
-        url("/api/tracks/$trackId/stream") + "?token=" + mediaOrSessionToken.encodeURLParameter()
+        url("/api/tracks/$trackId/stream") + "?token=" + urlToken.encodeURLParameter()
 
     fun trackStreamUrl(track: Track): String {
         // The version keeps the Android stream cache from playing audio that
@@ -130,15 +133,15 @@ class ApiClient(private val store: TokenStore) {
 
     /** [size] asks for a thumbnail (128, 256 or 512 px) instead of the full cover. */
     fun coverUrl(trackId: String, size: Int? = null): String =
-        url("/api/tracks/$trackId/cover") + "?token=" + mediaOrSessionToken.encodeURLParameter() +
+        url("/api/tracks/$trackId/cover") + "?token=" + urlToken.encodeURLParameter() +
             (if (size != null) "&size=$size" else "")
 
     fun candidateArtworkUrl(trackId: String, candidateId: String): String =
         url("/api/tracks/$trackId/metadata/candidates/$candidateId/artwork") +
-            "?token=" + mediaOrSessionToken.encodeURLParameter()
+            "?token=" + urlToken.encodeURLParameter()
 
     fun avatarUrl(userId: String): String =
-        url("/api/users/$userId/avatar") + "?token=" + mediaOrSessionToken.encodeURLParameter()
+        url("/api/users/$userId/avatar") + "?token=" + urlToken.encodeURLParameter()
 
     suspend fun login(username: String, password: String): AuthResponse =
         postJson("/api/auth/login", AuthRequest(username, password))
@@ -353,7 +356,7 @@ class ApiClient(private val store: TokenStore) {
         getJson("/api/app/releases/latest?current=" + current.encodeURLParameter())
 
     fun appDownloadUrl(fileName: String): String =
-        url("/api/app/releases/" + fileName.encodeURLParameter()) + "?token=" + mediaOrSessionToken.encodeURLParameter()
+        url("/api/app/releases/" + fileName.encodeURLParameter()) + "?token=" + urlToken.encodeURLParameter()
 
     suspend fun applyMetadataCandidate(trackId: String, candidateId: String): Track =
         postJson("/api/tracks/$trackId/metadata/apply", ApplyMetadataRequest(candidateId))
@@ -546,7 +549,7 @@ class ApiClient(private val store: TokenStore) {
     fun discoverArtworkUrl(source: String, coverUrl: String): String =
         url("/api/discover/artwork") + "?source=" + source.encodeURLParameter() +
             "&u=" + coverUrl.encodeURLParameter() +
-            "&token=" + mediaOrSessionToken.encodeURLParameter()
+            "&token=" + urlToken.encodeURLParameter()
 
     private fun url(path: String): String = baseUrl + path
 

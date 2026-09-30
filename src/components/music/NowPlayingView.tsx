@@ -23,6 +23,7 @@ import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { useListenStore } from "@/stores/listen"
+import { useMediaToken } from "@/stores/media-token"
 import { CoverArt } from "@/components/music/CoverArt"
 import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
 import { Button } from "@/components/ui/button"
@@ -109,7 +110,8 @@ export function NowPlayingView() {
   const effectiveDuration = duration > 0 ? duration : (currentTrack?.duration ?? 0)
   const displayPosition = Math.min(seekPreview ?? position, effectiveDuration || Infinity)
   const upNext = queue[queueIndex + 1] ?? null
-  const coverSrc = currentTrack?.hasCover ? coverUrl({ id: currentTrack.id }, 128) : null
+  const mediaToken = useMediaToken()
+  const coverSrc = currentTrack?.hasCover && mediaToken ? coverUrl({ id: currentTrack.id }, 128) : null
 
   return (
     <AnimatePresence>

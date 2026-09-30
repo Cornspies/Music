@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -22,7 +23,14 @@ func (s *Server) ensureDeletedUser(tx *sql.Tx) error {
 	return err
 }
 
+// checkPassword confirms a signed-in account's password before a change that
+// needs it, so a stolen session alone can't take the account over.
 func (s *Server) checkPassword(w http.ResponseWriter, r *http.Request, userID, password string) bool {
+	if locked, retry := accountLocked(accountKey(userID)); locked {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
+		writeErr(w, http.StatusTooManyRequests, "too many wrong passwords, try again later")
+		return false
+	}
 	var hash string
 	err := s.db.QueryRow(`SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -34,9 +42,11 @@ func (s *Server) checkPassword(w http.ResponseWriter, r *http.Request, userID, p
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
 		noteAuthFailure(r)
+		noteAccountFailure(accountKey(userID))
 		writeErr(w, http.StatusUnauthorized, "current password is incorrect")
 		return false
 	}
+	clearAccountFailures(accountKey(userID))
 	return true
 }
 
