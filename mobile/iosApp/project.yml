@@ -40,6 +40,9 @@ targets:
         # scheme); XcodeGen must not generate one over it.
         INFOPLIST_FILE: iosApp/Info.plist
         GENERATE_INFOPLIST_FILE: NO
+        # Hand-maintained too; the App ID and the provisioning profile must
+        # have every capability it lists.
+        CODE_SIGN_ENTITLEMENTS: iosApp/iosApp.entitlements
         PRODUCT_BUNDLE_IDENTIFIER: com.cornspies.music
         PRODUCT_NAME: Music Player
         MARKETING_VERSION: "0.3.1"

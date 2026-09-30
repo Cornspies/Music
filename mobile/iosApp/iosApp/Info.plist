@@ -94,5 +94,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!--
+	  The app is always dark, and it draws under the status bar. In light mode
+	  the status bar would be dark text on it; this keeps the status bar, the
+	  keyboard and system sheets dark to match.
+	-->
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
 </dict>
 </plist>

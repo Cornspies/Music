@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hand-maintained, like Info.plist. Every entitlement here has to be enabled
+  on the App ID (developer.apple.com → Identifiers → com.cornspies.music) and
+  be in the provisioning profile, or the signed build fails.
+-->
+<plist version="1.0">
+<dict>
+	<!--
+	  Shared playlist, track and listening-session links open in the app. The
+	  server's /.well-known/apple-app-site-association lists which paths.
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:music.cornspies.com</string>
+	</array>
+</dict>
+</plist>

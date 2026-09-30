@@ -111,8 +111,14 @@ $ANDROID_HOME/build-tools/<version>/apksigner verify --print-certs Music-<versio
 Android checks the file when the app is installed or updated. After changing
 it, redeploy the web app, then reinstall the app or run
 `adb shell pm verify-app-links --re-verify com.cornspies.music`;
-`adb shell pm get-app-links com.cornspies.music` shows the result. iOS needs your
-Team ID in place of `REPLACE_WITH_TEAMID` in `apple-app-site-association`.
+`adb shell pm get-app-links com.cornspies.music` shows the result.
+
+On iOS, `public/.well-known/apple-app-site-association` names the app by Team ID
+and bundle ID and lists the paths it opens (`/playlists/`, `/s/`, `/listen/`),
+and the app claims the domain in `iosApp/iosApp/iosApp.entitlements`. iOS reads
+the file through Apple's CDN when the app is installed or updated, so redeploy
+the web app first; `https://app-site-association.cdn-apple.com/a/v1/<musicHost>`
+shows the copy Apple has, which can lag a day behind.
 
 ## Build & run
 
@@ -193,14 +199,20 @@ here it runs only when started from the Actions tab (**Run workflow**) —
 macOS minutes are billed at 10x. To get the app onto an iPhone, see
 [TestFlight](#testflight) below.
 
-One-time setup in Xcode (Signing & Capabilities), once you have a Team ID —
-put it in `iosApp/Configuration/*.xcconfig` as `TEAM_ID`:
+To sign builds from Xcode, put your Team ID in `iosApp/Configuration/*.xcconfig`
+as `TEAM_ID` (the TestFlight workflow takes it from the provisioning profile).
 
-- **Associated Domains** → `applinks:<musicHost>` so `https://<host>/playlists/…`
-  and invite links open the app. The `music://playlist/<id>` scheme used by
-  the app's own share button needs nothing — it's registered in `Info.plist`.
-- **App Groups** → `group.com.cornspies.music` on both the app and the widget
-  target, then add `MusicWidget/` as a Widget Extension target.
+The app's capabilities are in `iosApp/iosApp/iosApp.entitlements`, and the App
+ID must have each of them (see [TestFlight](#testflight) step 1):
+
+- **Associated Domains** → `applinks:music.cornspies.com`, so shared links
+  (see [Shared links](#shared-links)) open the app. The `music://playlist/<id>`
+  scheme used by the app's own share button needs nothing — it's registered
+  in `Info.plist`.
+
+The widget isn't part of the project yet: it needs **App Groups** →
+`group.com.cornspies.music` on both the app and a widget target, then
+`MusicWidget/` added as a Widget Extension target.
 
 #### TestFlight
 
@@ -216,8 +228,11 @@ One-time setup — a browser and a few `openssl` commands, no Mac needed:
 
 1. **App ID.** In [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list),
    add an App ID (type *App*) with the explicit bundle ID `com.cornspies.music`
-   — the `PRODUCT_BUNDLE_IDENTIFIER` in `iosApp/project.yml`; it needs no
-   capabilities. (The Android app uses the same ID.)
+   — the `PRODUCT_BUNDLE_IDENTIFIER` in `iosApp/project.yml` — and turn on
+   **Associated Domains**, which `iosApp/iosApp/iosApp.entitlements` asks for.
+   (The Android app uses the same ID.) Changing an App ID's capabilities
+   invalidates its profiles: then redo step 3 and update
+   `IOS_PROVISIONING_PROFILE` (step 6).
 2. **Distribution certificate.** Create a private key and a signing request
    outside the repository — the key is the certificate's secret half, so keep
    it safe and never commit it:

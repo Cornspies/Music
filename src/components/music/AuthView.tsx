@@ -296,6 +296,12 @@ export function AuthView() {
               </>
             )}
           </p>
+
+          <p className="mt-6 text-center text-xs">
+            <a href="/privacy" className="text-zinc-500 hover:text-zinc-300 hover:underline">
+              Privacy policy
+            </a>
+          </p>
         </CardContent>
       </Card>
     </div>

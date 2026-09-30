@@ -11,3 +11,9 @@ expect class TokenStore() {
 }
 
 internal expect val defaultBaseUrl: String
+
+/**
+ * The privacy policy, always the default server's: it covers the apps wherever
+ * they connect, and another server's operator answers for their own server.
+ */
+internal val privacyPolicyUrl: String get() = "$defaultBaseUrl/privacy"

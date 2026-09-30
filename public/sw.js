@@ -1,6 +1,10 @@
-const VERSION = "music-v2"
+const VERSION = "music-v3"
 const CACHE = VERSION
 const OFFLINE_CACHE = "music-offline-v1"
+
+// Pages that aren't the app. Every other page load is the app itself and is
+// kept as its offline copy; these must never take its place.
+const STANDALONE_PAGES = ["/privacy"]
 
 const PRECACHE = [
   "/",
@@ -136,7 +140,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(req)
         .then((response) => {
-          if (response && response.ok) {
+          if (response && response.ok && !STANDALONE_PAGES.includes(url.pathname)) {
             const copy = response.clone()
             event.waitUntil(
               caches.open(CACHE).then((cache) => cache.put("/", copy))

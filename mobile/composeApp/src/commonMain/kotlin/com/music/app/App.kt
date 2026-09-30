@@ -21,9 +21,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -242,7 +242,7 @@ private fun MainScreen() {
                 Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = if (model.currentTrack != null) 136.dp else 80.dp)
+                    .padding(bottom = if (model.currentTrack != null) 120.dp else 64.dp)
             },
         )
     }
@@ -252,32 +252,34 @@ private fun MainScreen() {
 private fun BottomTabs(selected: Screen) {
     val model = LocalAppModel.current
     val current = selected
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        NavigationBarItem(
+    // The 64dp bar rather than the 80dp one: it also pads for the gesture area
+    // below it (34pt on iPhones), and the tall one left a lot of empty space.
+    ShortNavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+        ShortNavigationBarItem(
             selected = current == Screen.Home,
             onClick = { model.selectTab(Screen.Home) },
             icon = { Icon(Icons.Filled.Home, contentDescription = null) },
             label = { Text("Home") },
         )
-        NavigationBarItem(
+        ShortNavigationBarItem(
             selected = current == Screen.Library,
             onClick = { model.selectTab(Screen.Library) },
             icon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
             label = { Text("Library") },
         )
-        NavigationBarItem(
+        ShortNavigationBarItem(
             selected = current == Screen.Search,
             onClick = { model.selectTab(Screen.Search) },
             icon = { Icon(Icons.Filled.Search, contentDescription = null) },
             label = { Text("Search") },
         )
-        NavigationBarItem(
+        ShortNavigationBarItem(
             selected = current == Screen.Playlists,
             onClick = { model.selectTab(Screen.Playlists) },
             icon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null) },
             label = { Text("Playlists") },
         )
-        NavigationBarItem(
+        ShortNavigationBarItem(
             selected = current == Screen.Favorites,
             onClick = { model.selectTab(Screen.Favorites) },
             icon = {

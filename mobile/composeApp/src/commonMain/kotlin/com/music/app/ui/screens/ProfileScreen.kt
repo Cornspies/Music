@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Storage
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
 import com.music.app.Screen
 import com.music.app.api.friendlyError
+import com.music.app.api.privacyPolicyUrl
 import com.music.app.ui.components.AvatarEditor
 import androidx.compose.ui.platform.LocalUriHandler
 import com.music.app.appVersionName
@@ -195,16 +197,22 @@ fun ProfileScreen() {
             SyncSettings()
         }
 
-        appVersionName()?.let { version ->
-            SectionCard("App", icon = Icons.Filled.SystemUpdate) {
-                model.availableUpdate?.let { update ->
-                    SettingRow(
-                        icon = Icons.Filled.SystemUpdate,
-                        title = "Download version ${update.version}",
-                        onClick = { model.updateDownloadUrl()?.let { uriHandler.openUri(it) } },
-                    )
-                    HorizontalDivider()
-                }
+        SectionCard("App", icon = Icons.Filled.SystemUpdate) {
+            model.availableUpdate?.let { update ->
+                SettingRow(
+                    icon = Icons.Filled.SystemUpdate,
+                    title = "Download version ${update.version}",
+                    onClick = { model.updateDownloadUrl()?.let { uriHandler.openUri(it) } },
+                )
+                HorizontalDivider()
+            }
+            SettingRow(
+                icon = Icons.Filled.PrivacyTip,
+                title = "Privacy policy",
+                onClick = { uriHandler.openUri(privacyPolicyUrl) },
+            )
+            appVersionName()?.let { version ->
+                HorizontalDivider()
                 Text(
                     "Version $version",
                     style = MaterialTheme.typography.bodyMedium,
