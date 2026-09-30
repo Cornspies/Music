@@ -12,6 +12,7 @@ import com.music.app.api.User
 import com.music.app.api.friendlyError
 import com.music.app.api.prefersCompatible
 import com.music.app.api.toPlaylist
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -125,6 +126,10 @@ class DownloadManager(
             index[track.id] = track
             transient.remove(track.id)
             persist()
+        } catch (e: CancellationException) {
+            // Stopped rather than failed: the track is simply not downloaded.
+            transient.remove(track.id)
+            throw e
         } catch (e: Exception) {
             // The store has dropped the partial file; an earlier copy stays playable.
             transient[track.id] = DownloadState.FAILED
@@ -143,6 +148,18 @@ class DownloadManager(
         store.deleteAll()
         index.clear()
         transient.clear()
+        persist()
+    }
+
+    /** Removes these downloads, except tracks a downloaded playlist still needs. */
+    fun removeTracks(trackIds: Collection<String>) {
+        val stillNeeded = playlistTracks.values.flatten().toSet()
+        for (id in trackIds) {
+            if (id in stillNeeded || !index.containsKey(id)) continue
+            store.delete(id)
+            index.remove(id)
+            transient.remove(id)
+        }
         persist()
     }
 
@@ -259,6 +276,24 @@ class DownloadManager(
     }
 
 
+    /**
+     * Downloads the tracks that aren't on the device yet, one at a time. Stops
+     * when downloads have to wait for Wi-Fi, instead of failing every track.
+     */
+    suspend fun downloadTracks(
+        tracks: List<Track>,
+        progress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ) {
+        val missing = tracks.filterNot { index.containsKey(it.id) }
+        lastError = null
+        progress(0, missing.size)
+        for ((i, track) in missing.withIndex()) {
+            if (waitingForWifi) return
+            download(track)
+            progress(i + 1, missing.size)
+        }
+    }
+
     suspend fun downloadPlaylist(
         playlist: Playlist,
         tracks: List<Track>,
@@ -266,14 +301,7 @@ class DownloadManager(
     ) {
         if (tracks.isEmpty()) return
 
-        lastError = null
-        var done = 0
-        progress(0, tracks.size)
-        for (track in tracks) {
-            download(track)
-            done++
-            progress(done, tracks.size)
-        }
+        downloadTracks(tracks, progress)
         playlistIndex[playlist.id] = playlist
         playlistTracks = playlistTracks + (playlist.id to tracks.map { it.id })
         persistPlaylists()

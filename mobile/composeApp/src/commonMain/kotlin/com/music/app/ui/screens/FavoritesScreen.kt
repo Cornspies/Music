@@ -8,23 +8,36 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
+import com.music.app.api.Track
+import com.music.app.offline.DownloadState
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.ErrorState
 import com.music.app.ui.components.RefreshableContent
@@ -87,12 +100,25 @@ fun FavoritesScreen() {
         val favorites = model.favorites
         val total = favorites?.sumOf { it.duration } ?: 0.0
         if (!favorites.isNullOrEmpty()) {
-            Text(
-                "${favorites.size} tracks • ${formatTotalDuration(total)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "${favorites.size} tracks • ${formatTotalDuration(total)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                FavoritesDownloadButton(favorites)
+            }
+            model.favoritesDownloadError?.let { message ->
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
         Spacer(Modifier.height(12.dp))
 
@@ -119,5 +145,68 @@ fun FavoritesScreen() {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FavoritesDownloadButton(favorites: List<Track>) {
+    val model = LocalAppModel.current
+    val progress = model.favoritesDownload
+    val allDownloaded = favorites.all { model.downloads.stateOf(it.id) == DownloadState.DONE }
+    var confirmRemove by remember { mutableStateOf(false) }
+
+    TextButton(
+        // Offline, only removing makes sense.
+        enabled = progress != null || allDownloaded || !model.offlineMode,
+        onClick = {
+            when {
+                progress != null -> model.stopFavoritesDownload()
+                allDownloaded -> confirmRemove = true
+                else -> model.downloadAllFavorites()
+            }
+        },
+    ) {
+        when {
+            progress != null -> {
+                val (done, total) = progress
+                CircularProgressIndicator(
+                    progress = { if (total > 0) done.toFloat() / total else 0f },
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = Emerald,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("$done/$total")
+                Spacer(Modifier.width(4.dp))
+                Icon(Icons.Filled.Close, contentDescription = "Stop downloading", modifier = Modifier.size(18.dp))
+            }
+            allDownloaded -> {
+                Icon(Icons.Filled.DownloadDone, contentDescription = null, tint = Emerald, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Downloaded")
+            }
+            else -> {
+                Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Download all")
+            }
+        }
+    }
+
+    if (confirmRemove) {
+        AlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            title = { Text("Downloaded favorites") },
+            text = { Text("Tracks that are also in a downloaded playlist stay on this device.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    model.removeFavoriteDownloads()
+                    confirmRemove = false
+                }) { Text("Remove downloads", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemove = false }) { Text("Cancel") }
+            },
+        )
     }
 }

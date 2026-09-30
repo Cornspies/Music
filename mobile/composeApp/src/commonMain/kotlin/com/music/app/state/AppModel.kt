@@ -30,11 +30,13 @@ import com.music.app.api.Track
 import com.music.app.api.User
 import com.music.app.api.friendlyError
 import com.music.app.offline.DownloadManager
+import com.music.app.offline.DownloadState
 import com.music.app.offline.OfflineStore
 import com.music.app.player.NowPlayingInfo
 import com.music.app.player.PlayerController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -168,6 +170,13 @@ class AppModel(
         private set
     var favoritesError by mutableStateOf<String?>(null)
         private set
+
+    /** Done and total while "download all favorites" runs, which goes on when the screen is left. */
+    var favoritesDownload by mutableStateOf<Pair<Int, Int>?>(null)
+        private set
+    var favoritesDownloadError by mutableStateOf<String?>(null)
+        private set
+    private var favoritesDownloadJob: Job? = null
 
     var playlists by mutableStateOf<List<Playlist>?>(null)
         private set
@@ -349,6 +358,8 @@ class AppModel(
     }
 
     fun logout() {
+        favoritesDownloadJob?.cancel()
+        favoritesDownloadError = null
         store.saveToken(null)
         api.clearMediaToken()
         downloads.clearForLogout()
@@ -514,6 +525,36 @@ class AppModel(
         } finally {
             favoritesLoading = false
         }
+    }
+
+    fun downloadAllFavorites() {
+        val tracks = favorites ?: return
+        if (favoritesDownloadJob?.isActive == true) return
+        favoritesDownloadError = null
+        favoritesDownloadJob = scope.launch {
+            try {
+                downloads.downloadTracks(tracks) { done, total -> favoritesDownload = done to total }
+            } finally {
+                favoritesDownload = null
+            }
+            val failed = tracks.count { downloads.stateOf(it.id) == DownloadState.FAILED }
+            favoritesDownloadError = when {
+                downloads.waitingForWifi -> "Waiting for Wi-Fi."
+                failed == 1 -> "1 track couldn't be downloaded."
+                failed > 1 -> "$failed tracks couldn't be downloaded."
+                else -> null
+            }
+        }
+    }
+
+    fun stopFavoritesDownload() {
+        favoritesDownloadJob?.cancel()
+    }
+
+    fun removeFavoriteDownloads() {
+        val tracks = favorites ?: return
+        downloads.removeTracks(tracks.map { it.id })
+        favoritesDownloadError = null
     }
 
     fun loadPlaylists() {
