@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -64,6 +65,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.app.LocalAppModel
+import com.music.app.Screen
 import com.music.app.api.Track
 import com.music.app.state.RepeatMode
 import com.music.app.ui.components.CoverImage
@@ -115,6 +117,10 @@ private fun NowPlayingContent(track: Track) {
     val skipThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
     var skipping by remember { mutableStateOf(false) }
     var lyricsOpen by remember { mutableStateOf(false) }
+    // In a listening session the session's queue plays in order, and only
+    // some people may skip.
+    val session = model.listen.session
+    val canSkip = session?.canControl ?: true
     LaunchedEffect(track.id) { model.loadLyrics(track) }
     val lyrics = model.lyricsFor(track)?.takeIf { it.found && !(it.instrumental && it.plain.isBlank()) }
 
@@ -156,11 +162,23 @@ private fun NowPlayingContent(track: Track) {
                 Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Back")
             }
             Text(
-                "Now playing",
+                if (session != null) {
+                    val people = session.members.size
+                    "Listening together · $people ${if (people == 1) "person" else "people"}"
+                } else {
+                    "Now playing"
+                },
                 style = MaterialTheme.typography.labelLarge,
-                color = Zinc400,
+                color = if (session != null) Emerald else Zinc400,
                 modifier = Modifier.weight(1f),
             )
+            IconButton(onClick = { model.push(Screen.Listen) }) {
+                Icon(
+                    Icons.Filled.Groups,
+                    contentDescription = "Listen together",
+                    tint = if (session != null) Emerald else Zinc400,
+                )
+            }
         }
 
         BoxWithConstraints(
@@ -281,14 +299,14 @@ private fun NowPlayingContent(track: Track) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            IconButton(onClick = { model.shuffle = !model.shuffle }) {
+            IconButton(onClick = { model.shuffle = !model.shuffle }, enabled = session == null) {
                 Icon(
                     Icons.Filled.Shuffle,
                     contentDescription = "Shuffle",
-                    tint = if (model.shuffle) Emerald else Zinc500,
+                    tint = if (model.shuffle && session == null) Emerald else Zinc500,
                 )
             }
-            IconButton(onClick = { model.previous() }) {
+            IconButton(onClick = { model.previous() }, enabled = canSkip) {
                 Icon(
                     Icons.Filled.SkipPrevious,
                     contentDescription = "Previous track",
@@ -310,14 +328,14 @@ private fun NowPlayingContent(track: Track) {
                     modifier = Modifier.size(32.dp),
                 )
             }
-            IconButton(onClick = { model.next() }) {
+            IconButton(onClick = { model.next() }, enabled = canSkip) {
                 Icon(
                     Icons.Filled.SkipNext,
                     contentDescription = "Next track",
                     modifier = Modifier.size(34.dp),
                 )
             }
-            IconButton(onClick = {
+            IconButton(enabled = session == null, onClick = {
                 model.repeatMode = when (model.repeatMode) {
                     RepeatMode.OFF -> RepeatMode.ALL
                     RepeatMode.ALL -> RepeatMode.ONE
@@ -331,7 +349,7 @@ private fun NowPlayingContent(track: Track) {
                         RepeatMode.ALL -> "Repeat queue"
                         RepeatMode.ONE -> "Repeat track"
                     },
-                    tint = if (model.repeatMode != RepeatMode.OFF) Emerald else Zinc500,
+                    tint = if (model.repeatMode != RepeatMode.OFF && session == null) Emerald else Zinc500,
                 )
             }
         }

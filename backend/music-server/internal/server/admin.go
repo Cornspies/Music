@@ -79,6 +79,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	forgetAuthInfo(id)
+	s.forgetListener(id)
 	os.Remove(s.avatarPath(id))
 	writeNoContent(w)
 }

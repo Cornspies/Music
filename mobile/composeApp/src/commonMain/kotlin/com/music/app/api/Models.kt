@@ -417,6 +417,86 @@ data class ApplyMetadataRequest(
 @Serializable
 data class ApiError(
     val error: String = "",
+    /** Why a listening session no longer answers: ended, left or removed. */
+    val reason: String? = null,
+)
+
+@Serializable
+data class ListenMember(
+    val id: String,
+    val username: String = "",
+    val hasAvatar: Boolean = false,
+    val isHost: Boolean = false,
+    val online: Boolean = false,
+)
+
+@Serializable
+data class ListenEntry(
+    val id: String,
+    val track: Track,
+    val addedBy: Uploader = Uploader(),
+)
+
+/** A listening session as this account sees it; see state/ListenTogether.kt. */
+@Serializable
+data class ListenState(
+    val id: String,
+    /** The invite code; only the host gets it. */
+    val code: String? = null,
+    val host: Uploader = Uploader(),
+    val isHost: Boolean = false,
+    val canControl: Boolean = false,
+    val everyoneCanControl: Boolean = false,
+    val capacity: Int = 0,
+    val members: List<ListenMember> = emptyList(),
+    val version: Long = 0,
+    val queueVersion: Long = 0,
+    /** Left out when this device already has queueVersion. */
+    val entries: List<ListenEntry>? = null,
+    val current: String = "",
+    /** False only while there's nothing to play: nobody pauses for everyone. */
+    val playing: Boolean = false,
+    /** Where the current entry was when the server answered. */
+    val position: Double = 0.0,
+)
+
+@Serializable
+data class ListenInviteTrack(val title: String = "", val artist: String = "")
+
+@Serializable
+data class ListenInvite(
+    val id: String,
+    val host: Uploader = Uploader(),
+    val guests: Int = 0,
+    val capacity: Int = 0,
+    val full: Boolean = false,
+    val joined: Boolean = false,
+    val nowPlaying: ListenInviteTrack? = null,
+)
+
+@Serializable
+data class ListenCreateRequest(
+    val capacity: Int,
+    val everyoneCanControl: Boolean,
+    val trackId: String? = null,
+    val position: Double = 0.0,
+    val upcoming: List<String> = emptyList(),
+)
+
+@Serializable
+data class ListenControlRequest(
+    val action: String,
+    val position: Double? = null,
+    val entryId: String? = null,
+)
+
+@Serializable
+data class ListenAddRequest(val trackIds: List<String>, val mode: String)
+
+@Serializable
+data class ListenSettingsRequest(
+    val capacity: Int? = null,
+    val everyoneCanControl: Boolean? = null,
 )
 
 

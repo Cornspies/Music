@@ -10,6 +10,8 @@ import { useUIStore, type View } from "@/stores/ui"
 import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
 import { restorePlayback, usePlayerStore } from "@/stores/player"
+import { forgetListenInvite, pendingListenInvite, restoreListening, useListenStore } from "@/stores/listen"
+import { ListenInviteDialog, ListenTogetherDialog } from "@/components/music/ListenTogetherDialog"
 import { SidebarContent } from "@/components/music/Sidebar"
 import { PlayerBar } from "@/components/music/PlayerBar"
 import { QueuePanel } from "@/components/music/QueuePanel"
@@ -124,6 +126,7 @@ function renderView(view: View) {
   switch (view) {
     case "home":
     case "share": // a share link: home, while the track starts in the player
+    case "listen": // an invite: home, under the join prompt
       return <HomeView />
     case "search":
       return <SearchView />
@@ -188,13 +191,14 @@ export function AppShell() {
 
   useKeyboardShortcuts()
   useSharedTrackLink(view, viewArg, initialized)
+  useListenInviteLink(view, viewArg)
 
   useEffect(() => {
     if (initialized) return
     fetchAll()
       .catch(() => {})
-      .finally(() => {
-        restorePlayback()
+      .finally(async () => {
+        if (!(await restoreListening())) restorePlayback()
       })
   }, [initialized, fetchAll])
 
@@ -263,6 +267,8 @@ export function AppShell() {
       <RestoreTagsDialog />
       <ShareDialog />
       <PlaylistDialog />
+      <ListenTogetherDialog />
+      <ListenInviteDialog />
     </div>
   )
 }
@@ -278,6 +284,20 @@ function GlobalMetadataReview() {
       }}
     />
   )
+}
+
+/** An invite link (or one opened before signing in) brings up the join prompt. */
+function useListenInviteLink(view: View, code: string | null) {
+  useEffect(() => {
+    const invite = view === "listen" && code ? code : pendingListenInvite()
+    if (!invite) return
+    forgetListenInvite()
+    if (view === "listen") {
+      window.history.replaceState({ view: "home", viewArg: null }, "", "/")
+      useUIStore.getState().applyRoute("home", null)
+    }
+    useListenStore.getState().setInvite(invite)
+  }, [view, code])
 }
 
 function useSharedTrackLink(view: View, token: string | null, ready: boolean) {

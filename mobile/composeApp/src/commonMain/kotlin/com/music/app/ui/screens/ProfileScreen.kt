@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Shield
@@ -139,6 +140,12 @@ fun ProfileScreen() {
                 icon = Icons.Filled.History,
                 title = "History",
                 onClick = { model.push(Screen.History) },
+            )
+            HorizontalDivider()
+            SettingRow(
+                icon = Icons.Filled.Groups,
+                title = if (model.listen.active) "Listen together · in a session" else "Listen together",
+                onClick = { model.push(Screen.Listen) },
             )
         }
 

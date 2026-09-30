@@ -29,6 +29,7 @@ import { useLibraryStore } from "@/stores/library"
 import { useOfflineStore } from "@/stores/offline"
 import { useAuthStore } from "@/stores/auth"
 import { useUIStore } from "@/stores/ui"
+import { inListenSession } from "@/stores/listen"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -189,7 +190,8 @@ function TrackMenuContent({
       <DropdownMenuItem
         onClick={() => {
           usePlayerStore.getState().playNext(track)
-          toast.success(`Playing “${track.title}” next`)
+          // A listening session says itself whether that worked.
+          if (!inListenSession()) toast.success(`Playing “${track.title}” next`)
         }}
       >
         <ListStart className="size-4" /> Play next
@@ -197,7 +199,7 @@ function TrackMenuContent({
       <DropdownMenuItem
         onClick={() => {
           usePlayerStore.getState().addToQueue(track)
-          toast.success(`Added “${track.title}” to queue`)
+          if (!inListenSession()) toast.success(`Added “${track.title}” to queue`)
         }}
       >
         <ListEnd className="size-4" /> Add to queue

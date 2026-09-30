@@ -53,6 +53,8 @@ export function routeToPath(view: View, arg: string | null): string {
       return "/file-tags"
     case "share":
       return arg ? `/s/${encodeURIComponent(arg)}` : "/"
+    case "listen":
+      return arg ? `/listen/${encodeURIComponent(arg)}` : "/"
     case "admin":
       return "/admin"
     default:
@@ -93,6 +95,8 @@ export function pathToRoute(pathname: string): Route {
       return { view: "filetags", arg: null }
     case "s":
       return parts[1] ? { view: "share", arg: parts[1] } : { view: "home", arg: null }
+    case "listen":
+      return parts[1] ? { view: "listen", arg: parts[1] } : { view: "home", arg: null }
     case "admin":
       return { view: "admin", arg: null }
     case "login":

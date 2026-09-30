@@ -33,8 +33,9 @@
             android:name="com.music.app.MainActivity"
             android:exported="true">
             <!--
-              Shared playlist and track links. The host is a build setting because the
-              server is self-hosted: set musicHost in gradle.properties (or
+              Shared playlist and track links, and listening-session
+              invites. The host is a build setting because the server is
+              self-hosted: set musicHost in gradle.properties (or
               -PmusicHost=...) to your domain, e.g. music.example.com.
 
               Android only opens these links in the app once the server's
@@ -49,11 +50,13 @@
                 <data android:host="${musicHost}" />
                 <data android:pathPrefix="/playlists/" />
                 <data android:pathPrefix="/s/" />
+                <data android:pathPrefix="/listen/" />
                 <data android:path="/register" />
                 <data android:scheme="http" />
                 <data android:host="${musicHost}" />
                 <data android:pathPrefix="/playlists/" />
                 <data android:pathPrefix="/s/" />
+                <data android:pathPrefix="/listen/" />
                 <data android:path="/register" />
             </intent-filter>
         </activity>

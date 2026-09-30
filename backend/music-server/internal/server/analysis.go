@@ -44,6 +44,7 @@ func (s *Server) StartBackgroundWork() {
 	s.initDiscoverSources()
 	s.startImportWorker()
 	s.startShareCleanup()
+	s.startListenSweeper()
 	s.purgeStaleLyricsMisses()
 	go s.backfillCoverColors()
 	s.startMetadataWorker()

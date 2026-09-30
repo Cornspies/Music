@@ -1,12 +1,16 @@
 "use client"
 
+import { useState } from "react"
 import { ListMusic, Play, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatDuration } from "@/lib/format"
 import { usePlayerStore } from "@/stores/player"
 import { useUIStore } from "@/stores/ui"
+import { canRemoveEntry, useListenStore } from "@/stores/listen"
 import { CoverArt } from "@/components/music/CoverArt"
 import { EqualizerIcon } from "@/components/music/EqualizerIcon"
+import { UserAvatar } from "@/components/music/UserAvatar"
+import { ClearQueueConfirm } from "@/components/music/ListenTogetherDialog"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -24,6 +28,13 @@ export function QueuePanel() {
   const queue = usePlayerStore((s) => s.queue)
   const queueIndex = usePlayerStore((s) => s.queueIndex)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
+  // In a listening session this is the session's queue, which the player mirrors.
+  const session = useListenStore((s) => s.session)
+  const entries = useListenStore((s) => s.entries)
+  const canJump = session?.canControl ?? true
+  // Clearing a session's queue is the host's alone, and asks first.
+  const canClear = !session || session.isHost
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const upcoming = queue.slice(queueIndex + 1)
 
@@ -36,12 +47,17 @@ export function QueuePanel() {
       >
         <SheetHeader className="border-b border-zinc-800/70 px-4 py-4">
           <SheetTitle className="flex items-center gap-2 text-base">
-            <ListMusic className="size-4 text-emerald-400" aria-hidden="true" /> Queue
+            <ListMusic className="size-4 text-emerald-400" aria-hidden="true" />
+            {session ? "Session queue" : "Queue"}
           </SheetTitle>
           <SheetDescription className="text-xs text-zinc-500">
-            {queue.length > 0
-              ? `${queue.length} track${queue.length === 1 ? "" : "s"} in the queue`
-              : "Nothing queued yet"}
+            {session
+              ? session.canControl
+                ? "Everyone in the session hears this queue"
+                : `${session.host.username} chooses what plays`
+              : queue.length > 0
+                ? `${queue.length} track${queue.length === 1 ? "" : "s"} in the queue`
+                : "Nothing queued yet"}
           </SheetDescription>
         </SheetHeader>
 
@@ -82,30 +98,44 @@ export function QueuePanel() {
                 <h3 className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
                   Next up
                 </h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => usePlayerStore.getState().clearQueue()}
-                  className="h-7 px-2 text-xs text-zinc-500 hover:text-zinc-200"
-                >
-                  Clear
-                </Button>
+                {canClear ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => (session ? setConfirmClear(true) : usePlayerStore.getState().clearQueue())}
+                    className="h-7 px-2 text-xs text-zinc-500 hover:text-zinc-200"
+                  >
+                    Clear
+                  </Button>
+                ) : null}
               </div>
               {upcoming.map((track, i) => {
                 const realIndex = queueIndex + 1 + i
+                const entry = session ? entries[realIndex] : undefined
+                const removable = !session || (entry !== undefined && canRemoveEntry(session, entry))
                 return (
                   <div
-                    key={`${track.id}-${realIndex}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => usePlayerStore.getState().jumpTo(realIndex)}
+                    key={entry?.id ?? `${track.id}-${realIndex}`}
+                    role={canJump ? "button" : undefined}
+                    tabIndex={canJump ? 0 : undefined}
+                    onClick={canJump ? () => usePlayerStore.getState().jumpTo(realIndex) : undefined}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") usePlayerStore.getState().jumpTo(realIndex)
+                      if (canJump && e.key === "Enter") usePlayerStore.getState().jumpTo(realIndex)
                     }}
-                    className="group flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-zinc-800/60"
+                    className={cn(
+                      "group flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-zinc-800/60",
+                      canJump && "cursor-pointer"
+                    )}
                   >
-                    <span className="w-4 shrink-0 text-center text-[11px] tabular-nums text-zinc-600 group-hover:hidden" />
-                    <Play className="hidden size-3 shrink-0 fill-current text-zinc-300 group-hover:block" />
+                    <span
+                      className={cn(
+                        "w-4 shrink-0 text-center text-[11px] tabular-nums text-zinc-600",
+                        canJump && "group-hover:hidden"
+                      )}
+                    />
+                    {canJump ? (
+                      <Play className="hidden size-3 shrink-0 fill-current text-zinc-300 group-hover:block" />
+                    ) : null}
                     <div className="w-9 shrink-0">
                       <CoverArt trackId={track.id} title={track.title} hasCover={track.hasCover} />
                     </div>
@@ -115,29 +145,44 @@ export function QueuePanel() {
                         {track.artist || "Unknown artist"}
                       </div>
                     </div>
+                    {entry ? (
+                      <UserAvatar
+                        userId={entry.addedBy.id}
+                        username={entry.addedBy.username}
+                        hasAvatar={entry.addedBy.hasAvatar}
+                        size={16}
+                        label={`Added by ${entry.addedBy.username}`}
+                        className="opacity-80"
+                      />
+                    ) : null}
                     <span className="shrink-0 text-[11px] tabular-nums text-zinc-600">
                       {formatDuration(track.duration)}
                     </span>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${track.title} from queue`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        usePlayerStore.getState().removeFromQueue(realIndex)
-                      }}
-                      className={cn(
-                        "flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500",
-                        "opacity-0 group-hover:opacity-100 hover:text-red-400"
-                      )}
-                    >
-                      <X className="size-4" />
-                    </button>
+                    {removable ? (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${track.title} from queue`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          usePlayerStore.getState().removeFromQueue(realIndex)
+                        }}
+                        className={cn(
+                          "flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-500",
+                          "opacity-0 group-hover:opacity-100 hover:text-red-400"
+                        )}
+                      >
+                        <X className="size-4" />
+                      </button>
+                    ) : (
+                      <span className="size-7 shrink-0" aria-hidden="true" />
+                    )}
                   </div>
                 )
               })}
             </section>
           )}
         </div>
+        <ClearQueueConfirm open={confirmClear} onOpenChange={setConfirmClear} count={upcoming.length} />
       </SheetContent>
     </Sheet>
   )

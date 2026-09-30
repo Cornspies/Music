@@ -14,6 +14,7 @@ import {
   SkipBack,
   SkipForward,
   SlidersHorizontal,
+  Users,
   Volume1,
   Volume2,
   VolumeX,
@@ -23,6 +24,7 @@ import { formatDuration } from "@/lib/format"
 import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
+import { useListenStore } from "@/stores/listen"
 import { CoverArt } from "@/components/music/CoverArt"
 import { AddToPlaylistButton } from "@/components/music/AddToPlaylistButton"
 import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
@@ -47,6 +49,28 @@ function LyricsToggle() {
       onClick={() => useUIStore.getState().setLyricsPanelOpen(!open)}
     >
       <MicVocal className="size-4" />
+    </ControlButton>
+  )
+}
+
+function ListenToggle() {
+  const people = useListenStore((s) => s.session?.members.length ?? 0)
+  return (
+    <ControlButton
+      label={people ? `Listening together · ${people} ${people === 1 ? "person" : "people"}` : "Listen together"}
+      active={people > 0}
+      onClick={() => useListenStore.getState().setDialogOpen(true)}
+      className="relative"
+    >
+      <Users className="size-4" />
+      {people ? (
+        <span
+          aria-hidden="true"
+          className="absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full bg-emerald-500 px-1 text-[9px] leading-3.5 font-bold text-zinc-950"
+        >
+          {people}
+        </span>
+      ) : null}
     </ControlButton>
   )
 }
@@ -88,6 +112,10 @@ export function PlayerBar() {
   const queueLength = usePlayerStore((s) => s.queue.length)
   const crossfade = usePlayerStore((s) => s.crossfadeSeconds)
   const normalize = usePlayerStore((s) => s.normalizeVolume)
+  // In a listening session the session's queue plays in order, and only some
+  // people may skip.
+  const inSession = useListenStore((s) => s.session !== null)
+  const canSkip = useListenStore((s) => s.session?.canControl ?? true)
 
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
 
@@ -190,14 +218,15 @@ export function PlayerBar() {
           <div className="flex items-center gap-1">
             <ControlButton
               label="Shuffle"
-              active={shuffle}
+              active={shuffle && !inSession}
+              disabled={inSession}
               onClick={() => usePlayerStore.getState().toggleShuffle()}
             >
               <Shuffle className="size-4" />
             </ControlButton>
             <ControlButton
               label="Previous track"
-              disabled={!hasTrack}
+              disabled={!hasTrack || !canSkip}
               onClick={() => usePlayerStore.getState().prev()}
             >
               <SkipBack className="size-5 fill-current" />
@@ -218,7 +247,7 @@ export function PlayerBar() {
             </Button>
             <ControlButton
               label="Next track"
-              disabled={queueLength === 0}
+              disabled={queueLength === 0 || !canSkip}
               onClick={() => usePlayerStore.getState().next()}
             >
               <SkipForward className="size-5 fill-current" />
@@ -227,7 +256,8 @@ export function PlayerBar() {
               label={
                 repeat === "one" ? "Repeat one track" : repeat === "all" ? "Repeat all" : "Repeat off"
               }
-              active={repeat !== "off"}
+              active={repeat !== "off" && !inSession}
+              disabled={inSession}
               onClick={() => usePlayerStore.getState().cycleRepeat()}
             >
               {repeat === "one" ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
@@ -305,7 +335,7 @@ export function PlayerBar() {
             variant="ghost"
             size="icon"
             aria-label="Next track"
-            disabled={queueLength === 0}
+            disabled={queueLength === 0 || !canSkip}
             onClick={() => usePlayerStore.getState().next()}
             className="size-9 rounded-full text-zinc-400 hover:text-zinc-100"
           >
@@ -334,6 +364,7 @@ export function PlayerBar() {
           </ControlButton>
           <SleepTimerMenu />
           <LyricsToggle />
+          <ListenToggle />
           <ControlButton
             label="Open queue"
             onClick={() => useUIStore.getState().setQueueOpen(true)}

@@ -287,6 +287,52 @@ export interface PlaybackState {
   updatedAt: string
 }
 
+export interface ListenMember {
+  id: string
+  username: string
+  hasAvatar: boolean
+  isHost: boolean
+  online: boolean
+}
+
+export interface ListenEntry {
+  id: string
+  track: Track
+  addedBy: Uploader
+}
+
+/** A listening session as one member sees it; see stores/listen.ts. */
+export interface ListenState {
+  id: string
+  /** The invite code; only the host gets it. */
+  code?: string
+  host: Uploader
+  isHost: boolean
+  canControl: boolean
+  everyoneCanControl: boolean
+  capacity: number
+  members: ListenMember[]
+  version: number
+  queueVersion: number
+  /** Left out when this device already has queueVersion. */
+  entries?: ListenEntry[]
+  current: string
+  /** False only while there's nothing to play: nobody pauses for everyone. */
+  playing: boolean
+  /** Where the current entry was when the server answered. */
+  position: number
+}
+
+export interface ListenInvite {
+  id: string
+  host: Uploader
+  guests: number
+  capacity: number
+  full: boolean
+  joined: boolean
+  nowPlaying?: { title: string; artist: string }
+}
+
 export interface MetadataCandidatesResponse {
   autoApplied: boolean
   candidates: MetadataCandidate[]

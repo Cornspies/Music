@@ -1,10 +1,12 @@
 "use client"
 
-import { Play, Shuffle, MoreHorizontal } from "lucide-react"
+import { ListEnd, Play, Shuffle, MoreHorizontal } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { Track } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
+import { inListenSession } from "@/stores/listen"
 import { Button } from "@/components/ui/button"
 
 interface CollectionHeaderProps {
@@ -28,16 +30,16 @@ export function CollectionHeader({
   tracks,
   actions,
 }: CollectionHeaderProps) {
-  const playAll = () => {
-    if (tracks.length === 0) return
-    usePlayerStore.getState().playNow(tracks[0], tracks)
-  }
+  const playAll = () => usePlayerStore.getState().playAll(tracks)
 
-  const playShuffled = () => {
-    if (tracks.length === 0) return
-    const player = usePlayerStore.getState()
-    if (!player.shuffle) player.toggleShuffle()
-    player.playNow(tracks[Math.floor(Math.random() * tracks.length)], tracks)
+  const playShuffled = () => usePlayerStore.getState().playAll(tracks, { shuffle: true })
+
+  const addAll = () => {
+    usePlayerStore.getState().addAllToQueue(tracks)
+    // A listening session says itself how that went.
+    if (!inListenSession()) {
+      toast.success(`Added ${tracks.length} ${tracks.length === 1 ? "song" : "songs"} to the queue`)
+    }
   }
 
   return (
@@ -93,6 +95,14 @@ export function CollectionHeader({
               className="h-10 rounded-full border-zinc-600/80 bg-zinc-900/60 px-5 text-zinc-200 hover:bg-zinc-800 hover:text-emerald-300"
             >
               <Shuffle className="size-4" /> Shuffle
+            </Button>
+            <Button
+              variant="outline"
+              onClick={addAll}
+              disabled={tracks.length === 0}
+              className="h-10 rounded-full border-zinc-600/80 bg-zinc-900/60 px-5 text-zinc-200 hover:bg-zinc-800 hover:text-emerald-300"
+            >
+              <ListEnd className="size-4" /> Add to queue
             </Button>
             {actions}
           </div>

@@ -54,6 +54,11 @@ actual class PlayerController actual constructor() {
 
     actual fun currentPositionSec(): Double = readPosition() ?: _positionSec.value
 
+    // What the app last asked for, until the controller is connected to say.
+    private var playRequested = false
+
+    actual fun wantsToPlay(): Boolean = controller?.playWhenReady ?: playRequested
+
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _isPlaying.value = isPlaying
@@ -103,6 +108,7 @@ actual class PlayerController actual constructor() {
             }
         }.build()
         val item = MediaItem.Builder().setUri(uri).setMediaId(url).setMediaMetadata(metadata).build()
+        playRequested = autoplay
         withController { c ->
             c.setMediaItem(item)
             c.prepare()
@@ -112,10 +118,12 @@ actual class PlayerController actual constructor() {
     }
 
     actual fun play() {
+        playRequested = true
         withController { it.play() }
     }
 
     actual fun pause() {
+        playRequested = false
         withController { it.pause() }
     }
 

@@ -39,7 +39,7 @@ internal actual val canUploadFromDevice: Boolean = true
 private var activeDocumentDelegate: NSObject? = null
 private var activeImageDelegate: NSObject? = null
 
-private fun topViewController(): UIViewController? {
+internal fun topViewController(): UIViewController? {
     val window = UIApplication.sharedApplication.keyWindow
         ?: UIApplication.sharedApplication.windows.firstOrNull { (it as? UIWindow)?.isKeyWindow() == true } as? UIWindow
     var top = window?.rootViewController ?: return null

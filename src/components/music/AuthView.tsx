@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
-import { AudioLines, Loader2, LogIn, Ticket, UserPlus } from "lucide-react"
+import { AudioLines, Loader2, LogIn, Ticket, UserPlus, Users } from "lucide-react"
 import type { AuthConfig, InviteCheck } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/stores/auth"
+import { pendingListenInvite } from "@/stores/listen"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -49,6 +50,9 @@ export function AuthView() {
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
   const [inviteCheck, setInviteCheck] = useState<InviteCheck | null>(null)
   const viaLink = Boolean(initial.invite)
+  const [listenInvite] = useState(
+    () => typeof window !== "undefined" && (/^\/listen\/[^/]+/.test(window.location.pathname) || pendingListenInvite() !== null)
+  )
 
   const setMode = (next: Mode) => {
     setModeState(next)
@@ -185,6 +189,14 @@ export function AuthView() {
                   </>
                 )}
               </div>
+            </div>
+          ) : listenInvite ? (
+            <div
+              role="status"
+              className="mb-4 flex items-start gap-2.5 rounded-lg border border-emerald-900/60 bg-emerald-950/40 px-3 py-2.5 text-xs text-emerald-100"
+            >
+              <Users className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <p>Sign in to join the listening session you were invited to.</p>
             </div>
           ) : null}
           <form className="flex flex-col gap-4" onSubmit={submit}>

@@ -24,6 +24,7 @@ type Server struct {
 	upDir   string
 	covDir  string
 	avaDir  string
+	listen  *listenHub
 }
 
 type Options struct {
@@ -61,7 +62,10 @@ func New(dataDir string, opts Options) (*Server, error) {
 		}
 	}
 
-	return &Server{db: db, secret: secret, dataDir: dataDir, upDir: upDir, covDir: covDir, avaDir: avaDir}, nil
+	return &Server{
+		db: db, secret: secret, dataDir: dataDir, upDir: upDir, covDir: covDir, avaDir: avaDir,
+		listen: newListenHub(),
+	}, nil
 }
 
 func (s *Server) Routes() http.Handler {
@@ -175,6 +179,20 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/playback", s.requireAuth(s.handleGetPlayback))
 	mux.HandleFunc("PUT /api/playback", s.requireAuth(s.handlePutPlayback))
 
+	mux.HandleFunc("GET /api/listen", s.requireAuth(s.handleListenCurrent))
+	mux.HandleFunc("POST /api/listen", s.requireAuth(s.handleListenCreate))
+	mux.HandleFunc("GET /api/listen/invite/{code}", s.requireAuth(s.handleListenInvite))
+	mux.HandleFunc("POST /api/listen/invite/{code}/join", s.requireAuth(s.handleListenJoin))
+	mux.HandleFunc("GET /api/listen/{id}", s.requireAuth(s.handleListenPoll))
+	mux.HandleFunc("PATCH /api/listen/{id}", s.requireAuth(s.handleListenSettings))
+	mux.HandleFunc("DELETE /api/listen/{id}", s.requireAuth(s.handleListenEnd))
+	mux.HandleFunc("POST /api/listen/{id}/leave", s.requireAuth(s.handleListenLeave))
+	mux.HandleFunc("POST /api/listen/{id}/control", s.requireAuth(s.handleListenControl))
+	mux.HandleFunc("POST /api/listen/{id}/queue", s.requireAuth(s.handleListenAdd))
+	mux.HandleFunc("DELETE /api/listen/{id}/queue", s.requireAuth(s.handleListenClear))
+	mux.HandleFunc("DELETE /api/listen/{id}/queue/{entryId}", s.requireAuth(s.handleListenRemove))
+	mux.HandleFunc("DELETE /api/listen/{id}/members/{userId}", s.requireAuth(s.handleListenKick))
+
 	mux.HandleFunc("GET /api/favorites", s.requireAuth(s.handleListFavorites))
 	mux.HandleFunc("POST /api/favorites/{trackId}", s.requireAuth(s.handleAddFavorite))
 	mux.HandleFunc("DELETE /api/favorites/{trackId}", s.requireAuth(s.handleRemoveFavorite))
@@ -191,7 +209,10 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
 		next.ServeHTTP(sw, r)
 		positionSave := r.Method == http.MethodPut && r.URL.Path == "/api/playback" && sw.code < 400
-		if r.URL.Path != "/healthz" && !positionSave {
+		// Every device in a listening session keeps one of these open.
+		listenPoll := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/listen/") &&
+			strings.Count(r.URL.Path, "/") == 3 && sw.code < 400
+		if r.URL.Path != "/healthz" && !positionSave && !listenPoll {
 			log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, time.Since(start).Round(time.Millisecond))
 		}
 	})

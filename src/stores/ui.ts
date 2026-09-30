@@ -22,6 +22,7 @@ export type View =
   | "duplicates"
   | "filetags"
   | "share"
+  | "listen"
   | "admin"
 
 export type PlaylistDialogState =

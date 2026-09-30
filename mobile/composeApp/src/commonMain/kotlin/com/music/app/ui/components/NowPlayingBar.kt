@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.app.LocalAppModel
 import com.music.app.Screen
+import com.music.app.ui.theme.Emerald
 
 @Composable
 fun NowPlayingBar() {
@@ -68,13 +71,23 @@ fun NowPlayingBar() {
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        track.artist.ifBlank { "Unknown artist" },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (model.listen.active) {
+                            Icon(
+                                Icons.Filled.Groups,
+                                contentDescription = "Listening together",
+                                tint = Emerald,
+                                modifier = Modifier.padding(end = 4.dp).size(14.dp),
+                            )
+                        }
+                        Text(
+                            track.artist.ifBlank { "Unknown artist" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 AddToPlaylistButton(track)
                 IconButton(onClick = { model.togglePlayPause() }) {

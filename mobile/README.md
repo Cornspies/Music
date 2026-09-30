@@ -18,6 +18,10 @@ running natively on both platforms:
 - Home: stats, recently added, most played
 - Full player screen (seek, shuffle, repeat off/all/one, queue auto-advance) + mini now-playing bar
 - Favorites (optimistic heart toggles), playlists (create / detail / add & remove tracks)
+- Listen together: host a session, share its invite link, and everyone who
+  joins (with an account on the server) hears the same queue in sync. The
+  host decides whether everyone may add songs (a whole playlist at once, up
+  to 1000 in the queue) and skip; pausing only ever pauses your own device
 - Debounced search across tracks, albums, artists, playlists
 - Cover art with gradient fallbacks, MediaSession-style dark theme (emerald on zinc)
 
@@ -92,10 +96,11 @@ Notes:
 
 ## Shared links
 
-`https://<musicHost>/playlists/<id>`, shared tracks (`/s/<token>`) and invite
-links (`/register`) open straight in the app once Android has verified that
-the app belongs to the domain. For that, `public/.well-known/assetlinks.json`
-in the repository root must list the SHA-256 fingerprint of the certificate
+`https://<musicHost>/playlists/<id>`, shared tracks (`/s/<token>`), invite
+links (`/register`) and listening-session invites (`/listen/<code>`) open
+straight in the app once Android has verified that the app belongs to the
+domain. For that, `public/.well-known/assetlinks.json` in the repository root
+must list the SHA-256 fingerprint of the certificate
 the installed APK was signed with. It lists the release key and the debug key
 of the machine the app was developed on; to read another APK's fingerprint:
 
@@ -329,6 +334,7 @@ composeApp/src/                   # everything else, as a Kotlin Multiplatform l
 │   ├── Platform.kt               # expect: file picker / canUpload / readBytes
 │   ├── api/                      # Ktor ApiClient, @Serializable models, TokenStore expect
 │   ├── state/AppModel.kt         # single observable state holder (auth, data, player queue)
+│   ├── state/ListenTogether.kt   # listening sessions: follows the server's timeline, sends controls
 │   ├── player/PlayerController.kt# expect: load/play/pause/seek + isPlaying/position flows
 │   └── ui/                       # theme, components (TrackRow, CoverImage, NowPlayingBar…), screens
 ├── androidMain/                  # MainActivity, PlaybackService (Media3 session), Keystore token store, SAF picker, Glance widget

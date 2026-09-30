@@ -3,7 +3,11 @@ package com.music.app
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Favorite
@@ -20,6 +24,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,6 +50,8 @@ import com.music.app.ui.screens.FavoritesScreen
 import com.music.app.ui.screens.HistoryScreen
 import com.music.app.ui.screens.HomeScreen
 import com.music.app.ui.screens.LibraryScreen
+import com.music.app.ui.screens.ListenInviteDialog
+import com.music.app.ui.screens.ListenScreen
 import com.music.app.ui.screens.LoginScreen
 import com.music.app.ui.screens.NowPlayingScreen
 import com.music.app.ui.screens.PlaylistDetailScreen
@@ -65,6 +73,7 @@ sealed interface Screen {
     data object History : Screen
     data object Duplicates : Screen
     data object NowPlaying : Screen
+    data object Listen : Screen
     data class PlaylistDetail(val id: String) : Screen
 }
 
@@ -93,6 +102,13 @@ fun App() {
     LaunchedEffect(pendingShare, model.user) {
         if (pendingShare != null && model.user != null) {
             DeepLinks.consumeShareToken()?.let { model.openSharedTrack(it) }
+        }
+    }
+    // Joining takes an account, so an invite waits until someone is signed in.
+    val pendingListen = DeepLinks.pendingListenCode
+    LaunchedEffect(pendingListen, model.user) {
+        if (pendingListen != null && model.user != null) {
+            DeepLinks.consumeListenCode()?.let { model.listenInvite = it }
         }
     }
 
@@ -141,6 +157,10 @@ private fun Root() {
             dismissButton = { TextButton(onClick = { model.dismissUpdate() }) { Text("Later") } },
         )
     }
+    val invite = model.listenInvite
+    if (invite != null && model.user != null) {
+        ListenInviteDialog(invite, onDismiss = { model.listenInvite = null })
+    }
     model.shareLinkError?.let { message ->
         AlertDialog(
             onDismissRequest = { model.shareLinkError = null },
@@ -159,6 +179,10 @@ private fun MainScreen() {
     BackHandler(enabled = model.backStack.size > 1) { model.pop() }
 
     val playerOpen = current == Screen.NowPlaying
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(model) {
+        model.notices.collect { snackbar.showSnackbar(it) }
+    }
     val shown = if (playerOpen) {
         model.backStack.getOrNull(model.backStack.size - 2) ?: Screen.Home
     } else {
@@ -196,6 +220,7 @@ private fun MainScreen() {
                         Screen.History -> HistoryScreen()
                         Screen.Duplicates -> DuplicatesScreen()
                         Screen.NowPlaying -> HomeScreen()
+                        Screen.Listen -> ListenScreen()
                         is Screen.PlaylistDetail -> PlaylistDetailScreen(shown)
                     }
                 }
@@ -207,6 +232,19 @@ private fun MainScreen() {
                 NowPlayingScreen()
             }
         }
+
+        // Above the player too; there it goes at the top, clear of the controls.
+        SnackbarHost(
+            snackbar,
+            if (playerOpen) {
+                Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 48.dp)
+            } else {
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = if (model.currentTrack != null) 136.dp else 80.dp)
+            },
+        )
     }
 }
 

@@ -34,6 +34,10 @@ interface PlayerState {
   toggleShuffle: () => void
   playNext: (track: Track) => void
   addToQueue: (track: Track) => void
+  /** Plays these songs from the first, or shuffled; in a listening session they're queued to play now. */
+  playAll: (tracks: Track[], opts?: { shuffle?: boolean }) => void
+  /** Queues these songs after everything else. */
+  addAllToQueue: (tracks: Track[]) => void
   removeFromQueue: (index: number) => void
   jumpTo: (index: number) => void
   clearQueue: () => void
@@ -47,6 +51,179 @@ interface PlayerState {
   setCrossfade: (seconds: number) => void
   normalizeVolume: boolean
   setNormalizeVolume: (on: boolean) => void
+}
+
+/**
+ * While this device is in a listening session, the session decides what plays
+ * (see stores/listen.ts): the player's controls go to it, and it drives the
+ * player through followSession.
+ */
+export interface SessionHandler {
+  togglePlay: () => void
+  next: () => void
+  prev: () => void
+  seek: (sec: number) => void
+  jumpTo: (index: number) => void
+  playNow: (track: Track) => void
+  playNext: (track: Track) => void
+  addToQueue: (track: Track) => void
+  addAll: (tracks: Track[], mode: "now" | "end") => void
+  removeFromQueue: (index: number) => void
+  clearQueue: () => void
+  /** The entry played to its end here. */
+  trackEnded: (entryId: string) => void
+  /** Playback stopped here without anyone asking (autoplay refused, an error, the sleep timer). */
+  stoppedHere: () => void
+  /** The media keys or lock screen asked to play or pause this device. */
+  playHere: (play: boolean) => void
+  /** Signed out: forget the session without telling the server. */
+  signedOut: () => void
+}
+
+let session: SessionHandler | null = null
+
+export function setSessionHandler(handler: SessionHandler | null) {
+  session = handler
+  sessionEntry = ""
+  sessionNextEntry = ""
+  sessionCounted = ""
+  const e = getEngine()
+  if (!e) return
+  // A crossfade would start the next song early and put this device ahead.
+  e.crossfadeSeconds = handler ? 0 : usePlayerStore.getState().crossfadeSeconds
+  if (!handler) prepareNext()
+}
+
+export interface SessionSync {
+  queue: Track[]
+  /** Into queue; -1 when there's nothing to play. */
+  index: number
+  entryId: string
+  nextEntryId: string
+  sessionPlaying: boolean
+  /** False while paused on this device only. */
+  follow: boolean
+  /** Where the session is now. */
+  position: number
+  /** Take over the song already playing here instead of loading it again. */
+  adopt?: boolean
+  /** Catch up now, even right after the last correction. */
+  jump?: boolean
+  /** The regular check while playing: only correct drift. */
+  tick?: boolean
+}
+
+// Further apart than this, the player jumps to where the session is. Closer
+// than that isn't worth the skip in the audio.
+const SESSION_DRIFT_S = 1.5
+const SESSION_DRIFT_COOLDOWN_MS = 5000
+
+let sessionEntry = ""
+let sessionNextEntry = ""
+let sessionCounted = ""
+let lastDriftSeekAt = 0
+
+/** Makes the player match the session; called on every change and every few seconds. */
+export function followSession(sync: SessionSync): void {
+  const e = getEngine()
+  if (!e) return
+  const track = sync.queue[sync.index] ?? null
+  if (!track) {
+    if (usePlayerStore.getState().currentTrack) {
+      e.stop()
+      flushListening()
+      listening = null
+    }
+    sessionEntry = ""
+    sessionNextEntry = ""
+    usePlayerStore.setState({ queue: sync.queue, queueIndex: -1, currentTrack: null, isPlaying: false, position: 0, duration: 0 })
+    return
+  }
+  const playing = sync.sessionPlaying && sync.follow
+  if (sync.jump) lastDriftSeekAt = 0
+  if (sync.adopt && sync.entryId !== sessionEntry && e.current?.id === track.id) {
+    // Starting a session from what plays here: carry on without a reload.
+    sessionEntry = sync.entryId
+    sessionCounted = sync.entryId
+  }
+  if (sync.entryId !== sessionEntry) {
+    sessionEntry = sync.entryId
+    usePlayerStore.setState({
+      queue: sync.queue,
+      queueIndex: sync.index,
+      currentTrack: track,
+      position: sync.position,
+      duration: track.duration || 0,
+      isPlaying: playing,
+    })
+    // Joining halfway starts halfway; a song that just began starts at 0,
+    // which is closer than any seek would land.
+    e.load(track, { autoplay: playing, startAt: sync.position > SESSION_DRIFT_S ? sync.position : 0 })
+    // Loading may have dropped the song that was ready to follow.
+    sessionNextEntry = ""
+    if (playing) countSessionPlay(track, sync.entryId)
+    updateMediaSession(track)
+  } else {
+    usePlayerStore.setState({ queue: sync.queue, queueIndex: sync.index, currentTrack: track })
+    if (playing) {
+      const now = Date.now()
+      if (Math.abs(e.currentTime - sync.position) > SESSION_DRIFT_S && now - lastDriftSeekAt > SESSION_DRIFT_COOLDOWN_MS) {
+        lastDriftSeekAt = now
+        e.seek(sync.position)
+      }
+      // Not on a tick: a pause the page hasn't heard about yet would be undone.
+      if (e.paused && !e.ended && !sync.tick) {
+        e.play().catch((err: unknown) => {
+          if ((err as Error)?.name !== "AbortError") session?.stoppedHere()
+        })
+      }
+      countSessionPlay(track, sync.entryId)
+    } else if (!sync.sessionPlaying) {
+      if (!e.paused) e.pause()
+      if (Math.abs(e.currentTime - sync.position) > SESSION_DRIFT_S) {
+        e.seek(sync.position)
+        usePlayerStore.setState({ position: sync.position })
+      }
+    } else if (!e.paused) {
+      e.pause()
+    }
+  }
+  if (sync.nextEntryId !== sessionNextEntry) {
+    sessionNextEntry = sync.nextEntryId
+    const s = usePlayerStore.getState()
+    e.prepareNext(sync.nextEntryId && !s.sleepAfterTrack ? (sync.queue[sync.index + 1] ?? null) : null)
+  }
+}
+
+function shuffled<T>(items: T[]): T[] {
+  const out = [...items]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
+function countSessionPlay(track: Track, entryId: string) {
+  if (sessionCounted === entryId) return
+  sessionCounted = entryId
+  reportPlay(track)
+}
+
+/** Seeks this device only, for a seek the session is about to confirm. */
+export function seekHere(sec: number) {
+  const e = getEngine()
+  if (!e) return
+  lastDriftSeekAt = Date.now()
+  e.seek(sec)
+  usePlayerStore.setState({ position: sec })
+}
+
+/** Stops following a session; what played stays loaded, paused. */
+export function leaveSessionPlayback() {
+  setSessionHandler(null)
+  const e = getEngine()
+  if (e && !e.paused) e.pause()
 }
 
 let sleepTimeout: ReturnType<typeof setTimeout> | null = null
@@ -88,9 +265,20 @@ function getEngine(): AudioEngine | null {
         usePlayerStore.setState({ isPlaying: false })
         flushListening()
         persistPlayback({ force: true })
+        // A song reaching its end pauses too, just before moving on.
+        if (session && !engine?.ended) session.stoppedHere()
       },
       onEnded: () => {
         const s = usePlayerStore.getState()
+        if (session) {
+          if (s.sleepAfterTrack) {
+            usePlayerStore.setState({ sleepAfterTrack: false })
+            toast("Sleep timer")
+            session.stoppedHere()
+          }
+          session.trackEnded(sessionEntry)
+          return
+        }
         if (s.sleepAfterTrack) {
           usePlayerStore.setState({ sleepAfterTrack: false, isPlaying: false })
           toast("Sleep timer")
@@ -106,6 +294,23 @@ function getEngine(): AudioEngine | null {
       },
       onAdvanced: (track) => {
         const s = usePlayerStore.getState()
+        if (session) {
+          // The next entry was ready and the audio carried straight on.
+          const ended = sessionEntry
+          sessionEntry = sessionNextEntry
+          sessionNextEntry = ""
+          usePlayerStore.setState({
+            currentTrack: track,
+            queueIndex: s.queueIndex + 1,
+            position: 0,
+            duration: track.duration || 0,
+            isPlaying: true,
+          })
+          countSessionPlay(track, sessionEntry)
+          updateMediaSession(track)
+          session.trackEnded(ended)
+          return
+        }
         const index = pendingNextIndex >= 0 && s.queue[pendingNextIndex]?.id === track.id
           ? pendingNextIndex
           : s.queue.findIndex((t) => t.id === track.id)
@@ -126,6 +331,7 @@ function getEngine(): AudioEngine | null {
       onError: () => {
         if (usePlayerStore.getState().currentTrack) {
           usePlayerStore.setState({ isPlaying: false })
+          session?.stoppedHere()
         }
       },
     })
@@ -213,9 +419,13 @@ function wireMediaSession(e: AudioEngine) {
     } catch {}
   }
   trySet("play", () => {
+    if (session) return session.playHere(true)
     e.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
   })
-  trySet("pause", () => e.pause())
+  trySet("pause", () => {
+    if (session) return session.playHere(false)
+    e.pause()
+  })
   trySet("previoustrack", () => usePlayerStore.getState().prev())
   trySet("nexttrack", () => usePlayerStore.getState().next())
   trySet("seekto", (details) => {
@@ -291,7 +501,8 @@ function noteUpdatedAt(stamp: string | undefined) {
 }
 
 function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
-  if (restoring) return
+  // A session's queue isn't this account's own playback to resume elsewhere.
+  if (restoring || session) return
   const s = usePlayerStore.getState()
   if (!s.currentTrack || !useAuthStore.getState().token) return
   const key = queueKey(s.queue)
@@ -356,7 +567,7 @@ function applyServerState(state: PlaybackState) {
 }
 
 export async function restorePlayback(): Promise<void> {
-  if (usePlayerStore.getState().currentTrack) return
+  if (usePlayerStore.getState().currentTrack || session) return
   let state: PlaybackState | null
   try {
     state = await fetchPlayback()
@@ -368,7 +579,7 @@ export async function restorePlayback(): Promise<void> {
 }
 
 async function syncPlayback(): Promise<void> {
-  if (syncing || restoring) return
+  if (syncing || restoring || session) return
   const s = usePlayerStore.getState()
   if (s.isPlaying || !useAuthStore.getState().token || !nothingUnsaved()) return
   syncing = true
@@ -411,7 +622,7 @@ export const usePlayerStore = create<PlayerState>()(
       setCrossfade: (seconds) => {
         const crossfadeSeconds = Math.max(0, Math.min(12, seconds))
         const e = getEngine()
-        if (e) e.crossfadeSeconds = crossfadeSeconds
+        if (e && !session) e.crossfadeSeconds = crossfadeSeconds
         set({ crossfadeSeconds })
       },
 
@@ -425,6 +636,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playNow: (track, contextQueue) => {
+        if (session) return session.playNow(track)
         const s = get()
         let queue: Track[]
         if (contextQueue && contextQueue.length > 0) {
@@ -441,6 +653,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       togglePlay: () => {
+        if (session) return session.togglePlay()
         const s = get()
         if (!s.currentTrack) return
         const e = getEngine()
@@ -453,6 +666,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       next: () => {
+        if (session) return session.next()
         const { queue, queueIndex, shuffle, repeat } = get()
         if (queue.length === 0) return
         if (queue.length === 1) {
@@ -487,6 +701,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       prev: () => {
+        if (session) return session.prev()
         const s = get()
         if (!s.currentTrack) return
         const e = getEngine()
@@ -508,6 +723,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       seek: (sec) => {
+        if (session) return session.seek(sec)
         const s = get()
         if (!s.currentTrack) return
         const e = getEngine()
@@ -534,15 +750,16 @@ export const usePlayerStore = create<PlayerState>()(
         const order: RepeatMode[] = ["off", "all", "one"]
         const current = get().repeat
         set({ repeat: order[(order.indexOf(current) + 1) % order.length] })
-        prepareNext()
+        if (!session) prepareNext()
       },
 
       toggleShuffle: () => {
         set({ shuffle: !get().shuffle })
-        prepareNext()
+        if (!session) prepareNext()
       },
 
       playNext: (track) => {
+        if (session) return session.playNext(track)
         const s = get()
         if (!s.currentTrack) {
           s.playNow(track)
@@ -555,6 +772,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       addToQueue: (track) => {
+        if (session) return session.addToQueue(track)
         const s = get()
         if (!s.currentTrack) {
           s.playNow(track)
@@ -564,7 +782,30 @@ export const usePlayerStore = create<PlayerState>()(
         prepareNext()
       },
 
+      playAll: (tracks, opts = {}) => {
+        if (tracks.length === 0) return
+        // A session has no shuffle mode; the songs go in shuffled instead.
+        if (session) return session.addAll(opts.shuffle ? shuffled(tracks) : tracks, "now")
+        const s = get()
+        if (!opts.shuffle) return s.playNow(tracks[0], tracks)
+        if (!s.shuffle) s.toggleShuffle()
+        s.playNow(tracks[Math.floor(Math.random() * tracks.length)], tracks)
+      },
+
+      addAllToQueue: (tracks) => {
+        if (tracks.length === 0) return
+        if (session) return session.addAll(tracks, "end")
+        const s = get()
+        if (!s.currentTrack) {
+          s.playNow(tracks[0], tracks)
+          return
+        }
+        set({ queue: [...s.queue, ...tracks] })
+        prepareNext()
+      },
+
       removeFromQueue: (index) => {
+        if (session) return session.removeFromQueue(index)
         const { queue, queueIndex } = get()
         if (index < 0 || index >= queue.length || index === queueIndex) return
         const newQueue = queue.filter((_, i) => i !== index)
@@ -576,12 +817,14 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       jumpTo: (index) => {
+        if (session) return session.jumpTo(index)
         const { queue } = get()
         if (index < 0 || index >= queue.length) return
         playIndex(index)
       },
 
       clearQueue: () => {
+        if (session) return session.clearQueue()
         const { currentTrack } = get()
         set({
           queue: currentTrack ? [currentTrack] : [],
@@ -591,6 +834,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       stop: () => {
+        session?.signedOut()
         getEngine()?.stop()
         pendingNextIndex = -1
         set({
@@ -642,6 +886,8 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       handleTrackDeleted: (id) => {
+        // The session drops deleted songs itself.
+        if (session) return
         const { queue, queueIndex, currentTrack } = get()
         const idx = queue.findIndex((t) => t.id === id)
         const inCurrent = currentTrack?.id === id

@@ -60,6 +60,11 @@ export class AudioEngine {
     return this.slots[this.active].el.paused
   }
 
+  /** Played to the end; play() would start it over. */
+  get ended(): boolean {
+    return this.slots[this.active].el.ended
+  }
+
   load(track: Track, opts: { autoplay: boolean; startAt?: number } = { autoplay: true }): void {
     this.deferredNext = undefined
     this.cancelFade()
@@ -214,7 +219,10 @@ export class AudioEngine {
     }
     if (opts.autoplay) {
       this.resumeContext()
-      slot.el.play().catch(() => this.events.onError())
+      slot.el.play().catch((e: unknown) => {
+        // Another load interrupting this one isn't a failure to play.
+        if ((e as Error)?.name !== "AbortError") this.events.onError()
+      })
     }
   }
 

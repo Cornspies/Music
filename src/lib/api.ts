@@ -1,5 +1,7 @@
 import type {
   AdminSettings,
+  ListenInvite,
+  ListenState,
   AdminUser,
   HistoryResponse,
   Invite,
@@ -35,6 +37,17 @@ import { currentMediaToken } from "@/stores/media-token"
 
 const REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
 
+/** A failed request, with the status and whatever JSON the server sent. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly data: unknown,
+  ) {
+    super(message)
+  }
+}
+
 function noteRefreshedToken(res: Response): void {
   const fresh = res.headers.get(REFRESHED_TOKEN_HEADER)
   if (fresh && fresh !== useAuthStore.getState().token) {
@@ -62,8 +75,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let message = `Request failed (${res.status})`
+    let data: unknown = null
     try {
-      const data: unknown = await res.json()
+      data = await res.json()
       if (res.status === 404 && (data as { source?: unknown })?.source === "none") {
         throw new LyricsMissing(data as Lyrics)
       }
@@ -72,7 +86,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     } catch (e) {
       if (e instanceof LyricsMissing) throw e
     }
-    throw new Error(message)
+    throw new ApiError(message, res.status, data)
   }
   if (res.status === 204 || res.status === 304) return undefined as T
   return (await res.json()) as T
@@ -496,6 +510,46 @@ export const admin = {
     api<Invite>(`/api/admin/invites/${encodeURIComponent(code)}/revoke`, { method: "POST" }),
   deleteInvite: (code: string) =>
     api<void>(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" }),
+}
+
+function jsonBody(body: unknown): RequestInit {
+  return { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+}
+
+/** Listening sessions; stores/listen.ts drives them. */
+export const listen = {
+  current: () => api<ListenState | undefined>("/api/listen"),
+  create: (body: {
+    capacity: number
+    everyoneCanControl: boolean
+    trackId?: string
+    position?: number
+    upcoming?: string[]
+  }) => api<ListenState>("/api/listen", { method: "POST", ...jsonBody(body) }),
+  invite: (code: string) => api<ListenInvite>(`/api/listen/invite/${encodeURIComponent(code)}`),
+  join: (code: string) =>
+    api<ListenState>(`/api/listen/invite/${encodeURIComponent(code)}/join`, { method: "POST" }),
+  /** Answers once the session is newer than `since`, or after about 25 seconds. */
+  poll: (id: string, since: number, queue: number, signal?: AbortSignal) =>
+    api<ListenState>(`/api/listen/${id}?since=${since}&queue=${queue}`, { signal }),
+  control: (id: string, queue: number, body: { action: string; position?: number; entryId?: string }) =>
+    api<ListenState>(`/api/listen/${id}/control?queue=${queue}`, { method: "POST", ...jsonBody(body) }),
+  add: (id: string, queue: number, trackIds: string[], mode: "end" | "next" | "now") =>
+    api<ListenState>(`/api/listen/${id}/queue?queue=${queue}`, { method: "POST", ...jsonBody({ trackIds, mode }) }),
+  remove: (id: string, queue: number, entryId: string) =>
+    api<ListenState>(`/api/listen/${id}/queue/${encodeURIComponent(entryId)}?queue=${queue}`, { method: "DELETE" }),
+  clear: (id: string, queue: number) => api<ListenState>(`/api/listen/${id}/queue?queue=${queue}`, { method: "DELETE" }),
+  settings: (id: string, queue: number, body: { capacity?: number; everyoneCanControl?: boolean }) =>
+    api<ListenState>(`/api/listen/${id}?queue=${queue}`, { method: "PATCH", ...jsonBody(body) }),
+  removeMember: (id: string, queue: number, userId: string) =>
+    api<ListenState>(`/api/listen/${id}/members/${encodeURIComponent(userId)}?queue=${queue}`, { method: "DELETE" }),
+  leave: (id: string) => api<void>(`/api/listen/${id}/leave`, { method: "POST" }),
+  end: (id: string) => api<void>(`/api/listen/${id}`, { method: "DELETE" }),
+}
+
+export function listenLink(code: string): string {
+  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  return `${origin}/listen/${encodeURIComponent(code)}`
 }
 
 export function inviteLink(code: string): string {

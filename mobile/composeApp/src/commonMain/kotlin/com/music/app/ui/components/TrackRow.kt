@@ -131,6 +131,22 @@ fun TrackRow(
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            if (model.listen.session?.canControl == true) {
+                DropdownMenuItem(
+                    text = { Text("Play next") },
+                    onClick = {
+                        menuOpen = false
+                        model.listen.add(listOf(track), "next")
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Add to queue") },
+                    onClick = {
+                        menuOpen = false
+                        model.listen.add(listOf(track), "end")
+                    },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(if (sharing) "Copying link…" else "Copy share link") },
                 enabled = !sharing,

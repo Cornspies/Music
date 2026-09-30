@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Smartphone,
   SquareLibrary,
+  Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { logoutEverywhere } from "@/lib/api"
@@ -29,6 +30,7 @@ import { useUIStore } from "@/stores/ui"
 import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
 import { useOfflineStore } from "@/stores/offline"
+import { useListenStore } from "@/stores/listen"
 import { AvatarPicker } from "@/components/music/AvatarPicker"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { Button } from "@/components/ui/button"
@@ -68,6 +70,7 @@ export function SidebarContent() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const downloadCount = useOfflineStore((s) => s.tracks.length)
+  const listeners = useListenStore((s) => s.session?.members.length ?? 0)
 
   const signOutEverywhere = async () => {
     try {
@@ -117,6 +120,25 @@ export function SidebarContent() {
             </button>
           )
         })}
+        <button
+          type="button"
+          onClick={() => {
+            useUIStore.getState().setSidebarOpen(false)
+            useListenStore.getState().setDialogOpen(true)
+          }}
+          className={cn(
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            listeners ? "text-emerald-400 hover:bg-zinc-800/50" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
+          )}
+        >
+          <Users className="size-4.5 shrink-0" aria-hidden="true" />
+          Listen together
+          {listeners ? (
+            <span className="ml-auto rounded-full bg-emerald-500/15 px-1.5 text-[10px] tabular-nums text-emerald-300">
+              {listeners} live
+            </span>
+          ) : null}
+        </button>
         {user?.role === "admin" ? (
           <button
             type="button"

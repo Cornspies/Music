@@ -14,6 +14,10 @@
           {
             "/": "/s/*",
             "comment": "Shared track links start playing in the app"
+          },
+          {
+            "/": "/listen/*",
+            "comment": "Listening-session invites open the join prompt in the app"
           }
         ]
       }

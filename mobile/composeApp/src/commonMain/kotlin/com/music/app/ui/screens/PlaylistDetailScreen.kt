@@ -1,5 +1,6 @@
 package com.music.app.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.PushPin
@@ -31,6 +33,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -193,15 +196,31 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
                 "Empty playlist",
             )
             else -> {
-                Button(
-                    onClick = { model.playAll(detail.tracks) },
-                    modifier = Modifier
+                Row(
+                    Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.size(4.dp))
-                    Text("Play all")
+                    Button(
+                        onClick = { model.playAll(detail.tracks) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.size(4.dp))
+                        Text("Play all")
+                    }
+                    // A listening session's queue is the one there is to add to.
+                    if (model.listen.session?.canControl == true) {
+                        OutlinedButton(
+                            onClick = { model.listen.add(detail.tracks, "end") },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
+                            Spacer(Modifier.size(4.dp))
+                            Text("Add to queue")
+                        }
+                    }
                 }
                 RefreshableContent(
                     isRefreshing = model.playlistDetailLoading,

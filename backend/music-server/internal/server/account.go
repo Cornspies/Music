@@ -159,6 +159,7 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	forgetAuthInfo(u.ID)
+	s.forgetListener(u.ID)
 	os.Remove(s.avatarPath(u.ID))
 	clearAuthFailures(r)
 	writeNoContent(w)

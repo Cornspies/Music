@@ -12,6 +12,7 @@ import { AuthView } from "@/components/music/AuthView"
 import { AppShell } from "@/components/music/AppShell"
 import { SharePage } from "@/components/music/SharePage"
 import { useRouteSync } from "@/hooks/use-route-sync"
+import { rememberListenInvite } from "@/stores/listen"
 
 const emptySubscribe = () => () => {}
 
@@ -38,6 +39,11 @@ export default function Home() {
     () => true,
     () => false
   )
+
+  useEffect(() => {
+    // Joining takes an account; the invite waits until someone signs in.
+    if (view === "listen" && viewArg && !token) rememberListenInvite(viewArg)
+  }, [view, viewArg, token])
 
   useEffect(() => {
     if (!mounted) return

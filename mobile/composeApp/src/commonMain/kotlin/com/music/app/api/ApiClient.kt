@@ -41,7 +41,12 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-class ApiException(message: String) : Exception(message)
+class ApiException(
+    message: String,
+    val status: Int = 0,
+    /** What the server gave as the reason, where it gives one (listening sessions do). */
+    val reason: String? = null,
+) : Exception(message)
 
 class DuplicateException(val response: DuplicateResponse) : Exception(response.error)
 
@@ -468,6 +473,74 @@ class ApiClient(private val store: TokenStore) {
 
     suspend fun cancelImport(id: String) {
         expectNoContent(client.delete(url("/api/discover/imports/$id")) { auth() })
+    }
+
+    suspend fun listenCurrent(): ListenState? {
+        val response = client.get(url("/api/listen")) { auth() }
+        if (response.status == HttpStatusCode.NoContent) {
+            noteRefreshedToken(response)
+            return null
+        }
+        return listenBody(response)
+    }
+
+    suspend fun listenCreate(request: ListenCreateRequest): ListenState =
+        listenBody(client.post(url("/api/listen")) { auth(); jsonBody(request) })
+
+    suspend fun listenInvite(code: String): ListenInvite =
+        listenBody(client.get(url("/api/listen/invite/" + code.encodeURLParameter())) { auth() })
+
+    suspend fun listenJoin(code: String): ListenState =
+        listenBody(client.post(url("/api/listen/invite/" + code.encodeURLParameter() + "/join")) { auth() })
+
+    /** Answers once the session is newer than [since], or after about 25 seconds. */
+    suspend fun listenPoll(id: String, since: Long, queue: Long): ListenState =
+        listenBody(client.get(url("/api/listen/$id?since=$since&queue=$queue")) { auth() })
+
+    suspend fun listenControl(id: String, queue: Long, request: ListenControlRequest): ListenState =
+        listenBody(client.post(url("/api/listen/$id/control?queue=$queue")) { auth(); jsonBody(request) })
+
+    suspend fun listenAdd(id: String, queue: Long, request: ListenAddRequest): ListenState =
+        listenBody(client.post(url("/api/listen/$id/queue?queue=$queue")) { auth(); jsonBody(request) })
+
+    suspend fun listenRemove(id: String, queue: Long, entryId: String): ListenState =
+        listenBody(client.delete(url("/api/listen/$id/queue/" + entryId.encodeURLParameter() + "?queue=$queue")) { auth() })
+
+    suspend fun listenClear(id: String, queue: Long): ListenState =
+        listenBody(client.delete(url("/api/listen/$id/queue?queue=$queue")) { auth() })
+
+    suspend fun listenSettings(id: String, queue: Long, request: ListenSettingsRequest): ListenState =
+        listenBody(client.patch(url("/api/listen/$id?queue=$queue")) { auth(); jsonBody(request) })
+
+    suspend fun listenRemoveMember(id: String, queue: Long, userId: String): ListenState =
+        listenBody(client.delete(url("/api/listen/$id/members/" + userId.encodeURLParameter() + "?queue=$queue")) { auth() })
+
+    suspend fun listenLeave(id: String) {
+        listenBody<Unit>(client.post(url("/api/listen/$id/leave")) { auth() }, empty = true)
+    }
+
+    suspend fun listenEnd(id: String) {
+        listenBody<Unit>(client.delete(url("/api/listen/$id")) { auth() }, empty = true)
+    }
+
+    private inline fun <reified B : Any> HttpRequestBuilder.jsonBody(body: B) {
+        headers.append(HttpHeaders.ContentType, "application/json")
+        setBody(body)
+    }
+
+    /** Like bodyOrError, keeping the status and reason a listening session answers with. */
+    private suspend inline fun <reified T> listenBody(response: HttpResponse, empty: Boolean = false): T {
+        noteRefreshedToken(response)
+        if (!response.status.isSuccess()) {
+            val error = runCatching { response.body<ApiError>() }.getOrNull()
+            throw ApiException(
+                error?.error?.takeIf { it.isNotEmpty() } ?: "Request failed (HTTP ${response.status.value})",
+                status = response.status.value,
+                reason = error?.reason,
+            )
+        }
+        @Suppress("UNCHECKED_CAST")
+        return if (empty) Unit as T else response.body()
     }
 
     fun discoverArtworkUrl(source: String, coverUrl: String): String =

@@ -37,5 +37,13 @@ expect class PlayerController() {
     /** Asks the player for its position right now; use this outside the UI. */
     fun currentPositionSec(): Double
 
+    /**
+     * Whether playback is wanted, as opposed to [isPlaying]: still true while
+     * buffering and just after a track played to its end, false once anyone
+     * paused it (the app, the lock screen, or the system for a call or
+     * unplugged headphones).
+     */
+    fun wantsToPlay(): Boolean
+
     fun release()
 }

@@ -77,8 +77,12 @@ actual class PlayerController actual constructor() {
     private var nowPlaying: MutableMap<Any?, Any?> = mutableMapOf()
     private var currentArtworkUrl: String? = null
 
+    // The player stops at the end of an item as if paused; wantsToPlay tells them apart.
+    private var reachedEnd = false
+
     private val endObserver: NSObjectProtocol = NSNotificationCenter.defaultCenter
         .addObserverForName(AVPlayerItemDidPlayToEndTimeNotification, `object` = null, queue = NSOperationQueue.mainQueue) { _ ->
+            reachedEnd = true
             _isPlaying.value = false
             onEnded?.invoke()
         }
@@ -129,16 +133,21 @@ actual class PlayerController actual constructor() {
 
     actual fun currentPositionSec(): Double = readPosition() ?: _positionSec.value
 
+    // The rate stays up while buffering and drops to 0 when anything pauses.
+    actual fun wantsToPlay(): Boolean = player.rate > 0f || reachedEnd
+
     actual fun load(url: String, autoplay: Boolean, info: NowPlayingInfo?) {
         _positionSec.value = 0.0
         val nsUrl = if (url.startsWith("/")) NSURL.fileURLWithPath(url) else NSURL.URLWithString(url)
         if (nsUrl == null) return
+        reachedEnd = false
         player.replaceCurrentItemWithPlayerItem(AVPlayerItem(uRL = nsUrl))
         if (info != null) setNowPlaying(info)
         if (autoplay) player.play()
     }
 
     actual fun play() {
+        reachedEnd = false
         player.play()
     }
 
@@ -147,6 +156,7 @@ actual class PlayerController actual constructor() {
     }
 
     actual fun seekTo(sec: Double) {
+        reachedEnd = false
         player.seekToTime(CMTimeMakeWithSeconds(sec, 600))
         _positionSec.value = sec
         publishNowPlaying(rate = if (_isPlaying.value) 1.0 else 0.0, elapsed = sec)

@@ -25,6 +25,16 @@ object DeepLinks {
     var pendingShareToken by mutableStateOf<String?>(null)
         private set
 
+    /** The code from a listening-session invite link. */
+    var pendingListenCode by mutableStateOf<String?>(null)
+        private set
+
+    fun consumeListenCode(): String? {
+        val code = pendingListenCode
+        pendingListenCode = null
+        return code
+    }
+
     fun consumeShareToken(): String? {
         val token = pendingShareToken
         pendingShareToken = null
@@ -35,6 +45,21 @@ object DeepLinks {
         inviteCodeFrom(url)?.let { pendingInviteCode = it }
         playlistIdFrom(url)?.let { pendingPlaylistId = it }
         shareTokenFrom(url)?.let { pendingShareToken = it }
+        listenCodeFrom(url)?.let { pendingListenCode = it }
+    }
+
+    fun listenCodeFrom(url: String?): String? {
+        val raw = url?.trim().orEmpty()
+        val path = raw.substringAfter("://", raw).substringBefore('?').substringBefore('#')
+        val segments = path.split('/').filter { it.isNotBlank() }
+        val marker = segments.indexOf("listen")
+        if (marker < 1 || marker != segments.lastIndex - 1) return null
+        return segments[marker + 1].takeIf { code -> code.all { it.isLetterOrDigit() || it == '-' || it == '_' } }
+    }
+
+    fun listenUrl(baseUrl: String, code: String): String {
+        val root = baseUrl.trim().trimEnd('/')
+        return "$root/listen/$code"
     }
 
     fun shareTokenFrom(url: String?): String? {

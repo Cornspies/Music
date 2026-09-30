@@ -14,6 +14,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatDuration, hashGradient } from "@/lib/format"
@@ -21,6 +22,7 @@ import { coverUrl } from "@/lib/api"
 import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
+import { useListenStore } from "@/stores/listen"
 import { CoverArt } from "@/components/music/CoverArt"
 import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
 import { Button } from "@/components/ui/button"
@@ -79,6 +81,8 @@ export function NowPlayingView() {
   const repeat = usePlayerStore((s) => s.repeat)
   const queue = usePlayerStore((s) => s.queue)
   const queueIndex = usePlayerStore((s) => s.queueIndex)
+  const listeners = useListenStore((s) => s.session?.members.length ?? 0)
+  const canSkip = useListenStore((s) => s.session?.canControl ?? true)
 
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
   const [lyricsOpen, setLyricsOpen] = useState(readLyricsPref)
@@ -169,8 +173,12 @@ export function NowPlayingView() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400">
                 Now playing
               </p>
-              <p className="text-[11px] text-zinc-500">
-                {queue.length > 1 ? `From queue · ${queueIndex + 1} of ${queue.length}` : "Single track"}
+              <p className={cn("text-[11px]", listeners ? "text-emerald-400" : "text-zinc-500")}>
+                {listeners
+                  ? `Listening together · ${listeners} ${listeners === 1 ? "person" : "people"}`
+                  : queue.length > 1
+                    ? `From queue · ${queueIndex + 1} of ${queue.length}`
+                    : "Single track"}
               </p>
             </div>
             <div className="flex items-center gap-1">
@@ -186,6 +194,18 @@ export function NowPlayingView() {
                 )}
               >
                 <MicVocal className="size-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Listen together"
+                onClick={() => useListenStore.getState().setDialogOpen(true)}
+                className={cn(
+                  "size-10 rounded-full hover:bg-white/10 hover:text-white",
+                  listeners ? "text-emerald-400" : "text-zinc-300"
+                )}
+              >
+                <Users className="size-5" />
               </Button>
               <SleepTimerMenu />
             </div>
@@ -291,13 +311,14 @@ export function NowPlayingView() {
             <div className="flex items-center gap-2 md:gap-4">
               <GhostControl
                 label="Shuffle"
-                active={shuffle}
+                active={shuffle && !listeners}
+                disabled={listeners > 0}
                 onClick={() => usePlayerStore.getState().toggleShuffle()}
                 className="hidden sm:flex"
               >
                 <Shuffle className="size-4.5" />
               </GhostControl>
-              <GhostControl label="Previous track" onClick={() => usePlayerStore.getState().prev()}>
+              <GhostControl label="Previous track" disabled={!canSkip} onClick={() => usePlayerStore.getState().prev()}>
                 <SkipBack className="size-6 fill-current" />
               </GhostControl>
               <Button
@@ -313,12 +334,13 @@ export function NowPlayingView() {
                   <Play className="size-6 translate-x-0.5 fill-current" />
                 )}
               </Button>
-              <GhostControl label="Next track" onClick={() => usePlayerStore.getState().next()}>
+              <GhostControl label="Next track" disabled={!canSkip} onClick={() => usePlayerStore.getState().next()}>
                 <SkipForward className="size-6 fill-current" />
               </GhostControl>
               <GhostControl
                 label={repeat === "one" ? "Repeat one track" : repeat === "all" ? "Repeat all" : "Repeat off"}
-                active={repeat !== "off"}
+                active={repeat !== "off" && !listeners}
+                disabled={listeners > 0}
                 onClick={() => usePlayerStore.getState().cycleRepeat()}
                 className="hidden sm:flex"
               >
