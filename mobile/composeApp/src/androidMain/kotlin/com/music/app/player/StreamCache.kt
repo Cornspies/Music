@@ -13,13 +13,6 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import java.io.File
 
-/**
- * Recently streamed songs, kept on disk so playing one again costs no data or
- * radio time. Entries are keyed by the stream URL without its access token,
- * which changes every few hours; the URL carries the track's version, so audio
- * that was edited is fetched afresh. Offline downloads are local files and are
- * read directly. There is one instance per process: SimpleCache locks its folder.
- */
 @OptIn(UnstableApi::class)
 internal object StreamCache {
 

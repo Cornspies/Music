@@ -286,7 +286,6 @@ function GlobalMetadataReview() {
   )
 }
 
-/** An invite link (or one opened before signing in) brings up the join prompt. */
 function useListenInviteLink(view: View, code: string | null) {
   useEffect(() => {
     const invite = view === "listen" && code ? code : pendingListenInvite()

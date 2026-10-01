@@ -14,20 +14,12 @@ import {
   type SessionHandler,
 } from "@/stores/player"
 
-// Listen together. The server keeps the session's timeline; this device
-// follows it through a long poll and plays the audio itself. Whoever may
-// control the session (the host, or everyone if the host allows it) changes
-// what plays with commands. Nobody pauses for everyone: pausing stops this
-// device only, and playing again jumps to where everyone else is.
-
 interface ListenStore {
   session: ListenState | null
   entries: ListenEntry[]
-  /** Paused on this device while the session plays on. */
   localPaused: boolean
   dialogOpen: boolean
   setDialogOpen: (open: boolean) => void
-  /** An invite link waiting for its join prompt. */
   invite: string | null
   setInvite: (code: string | null) => void
 }
@@ -43,7 +35,6 @@ export const useListenStore = create<ListenStore>()((set) => ({
 }))
 
 export const MAX_LISTEN_GUESTS = 20
-/** Songs queued after the current one, at most. */
 export const MAX_LISTEN_QUEUE = 1000
 
 const SYNC_INTERVAL_MS = 3000
@@ -53,10 +44,7 @@ let queueTracks: Track[] = []
 let pollAbort: AbortController | null = null
 let syncTimer: ReturnType<typeof setInterval> | null = null
 let knownMembers: Set<string> | null = null
-// States at or below this version predate a change made on this device and
-// would undo it for a moment.
 let optimisticVersion = -1
-// Set while this device leaves, so the poll noticing doesn't announce it too.
 let leaving = false
 
 export function inListenSession(): boolean {
@@ -147,7 +135,6 @@ async function pollLoop(id: string, signal: AbortSignal) {
   }
 }
 
-/** Handles the server saying this device isn't in the session any more. */
 function gone(e: unknown): boolean {
   if (!(e instanceof ApiError) || e.status !== 404) return false
   const reason = (e.data as { reason?: string } | null)?.reason
@@ -205,7 +192,6 @@ function exit(message?: string) {
   if (message) toast(message)
 }
 
-/** Sends a change and applies the session it answers with. */
 async function command(
   send: (id: string, queue: number) => Promise<ListenState>,
   opts: { quiet?: boolean } = {},
@@ -239,19 +225,16 @@ function denied(what: string) {
   if (st) toast(`Only ${st.host.username} can ${what} in this session`)
 }
 
-/** Plays or pauses this device only; playing jumps to where the session is. */
 function followHere(play: boolean) {
   useListenStore.setState({ localPaused: !play })
   sync({ jump: play })
 }
 
-/** The session only stops when its queue runs out. */
 function queueEnded() {
   const st = useListenStore.getState().session
   if (st) toast(st.canControl ? "The queue has ended. Add a song to keep going." : "The queue has ended.")
 }
 
-/** Queues songs after the current one ("next"), at the end, or to play right away ("now"). */
 async function add(tracks: Track[], mode: "end" | "next" | "now") {
   const { session: st, entries } = useListenStore.getState()
   if (!st || tracks.length === 0) return
@@ -332,7 +315,6 @@ const handler: SessionHandler = {
   signedOut: () => exit(),
 }
 
-/** Starts a session with what's playing now and the queue after it. */
 export async function startListening(opts: { capacity: number; everyoneCanControl: boolean }) {
   const p = usePlayerStore.getState()
   const upcoming = p.currentTrack ? p.queue.slice(p.queueIndex + 1).map((t) => t.id) : []
@@ -349,7 +331,6 @@ export async function joinListening(code: string) {
   enter(await listenApi.join(code), true)
 }
 
-/** Picks up the session this account is in, e.g. after a reload. It stays paused here until played. */
 export async function restoreListening(): Promise<boolean> {
   try {
     const state = await listenApi.current()
@@ -386,7 +367,6 @@ export async function removeListener(userId: string) {
   await command((id, q) => listenApi.removeMember(id, q, userId))
 }
 
-// An invite link survives signing in (and switching to "create account").
 const INVITE_KEY = "listen-invite"
 
 export function rememberListenInvite(code: string) {
@@ -410,8 +390,6 @@ export function forgetListenInvite() {
 }
 
 if (typeof window !== "undefined") {
-  // Signing out here stops following; the account stays in the session, which
-  // its other devices may still be playing.
   useAuthStore.subscribe((s, prev) => {
     if (prev.token && !s.token) exit()
   })

@@ -40,7 +40,6 @@ actual class OfflineStore actual constructor() {
             fileManager.removeItemAtPath(partial, null)
             throw e
         }
-        // Only now does the earlier copy go, so a failed download doesn't lose it.
         namesFor(trackId).map { "$dir/$it" }.filter { it != partial }.forEach { fileManager.removeItemAtPath(it, null) }
         val moved = fileManager.moveItemAtPath(partial, target, null)
         if (!moved) {

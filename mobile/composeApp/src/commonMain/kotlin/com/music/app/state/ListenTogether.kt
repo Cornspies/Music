@@ -27,41 +27,25 @@ import kotlin.time.TimeSource
 const val MAX_LISTEN_GUESTS = 20
 const val DEFAULT_LISTEN_GUESTS = 5
 
-/** Songs queued after the current one, at most. */
 const val MAX_LISTEN_QUEUE = 1000
 
-// How often the player is checked against the session while it plays.
 private const val SYNC_INTERVAL_MS = 3_000L
 
-/** Why the player is asked to match the session. */
 enum class Follow {
-    /** The session changed. */
     CHANGE,
 
-    /** A session was just started or joined here: keep what already plays. */
     ADOPT,
 
-    /** Played or seeked here: catch up at once. */
     JUMP,
 
-    /** The regular check while playing: only correct drift. */
     TICK,
 }
 
-/**
- * Listen together. The server keeps a session's timeline; this device follows
- * it through a long poll and plays the audio itself (AppModel.followSession).
- * Whoever may control the session (the host, or everyone if the host allows
- * it) changes what plays with commands. Nobody pauses for everyone: pausing
- * stops this device only, and playing again jumps to where everyone else is.
- */
 class ListenTogether(
     private val api: ApiClient,
     private val scope: CoroutineScope,
     private val myId: () -> String?,
-    /** Makes the player match the session. */
     private val follow: (Follow) -> Unit,
-    /** This device stopped following; [message] says why, when there's something to say. */
     private val left: (message: String?) -> Unit,
     private val notify: (String) -> Unit,
 ) {
@@ -70,11 +54,9 @@ class ListenTogether(
     var entries by mutableStateOf<List<ListenEntry>>(emptyList())
         private set
 
-    /** Paused on this device while the session plays on. */
     var localPaused by mutableStateOf(false)
         private set
 
-    /** The entries' tracks: the queue the player shows. */
     var queueTracks: List<Track> = emptyList()
         private set
 
@@ -84,12 +66,9 @@ class ListenTogether(
     private var pollJob: Job? = null
     private var syncJob: Job? = null
 
-    // States at or below this version predate a change made on this device
-    // and would undo it for a moment.
     private var optimisticVersion = -1L
     private var knownMembers: Set<String>? = null
 
-    // Set while this device leaves, so the poll noticing doesn't announce it too.
     private var leaving = false
 
     fun currentEntry(): ListenEntry? = session?.let { st -> entries.firstOrNull { it.id == st.current } }
@@ -99,7 +78,6 @@ class ListenTogether(
         return if (index < 0) entries else entries.drop(index + 1)
     }
 
-    /** Where the session is now. */
     fun expectedPosition(): Double {
         val st = session ?: return 0.0
         val pos = if (st.playing) st.position + receivedAt.elapsedNow().toDouble(DurationUnit.SECONDS) else st.position
@@ -192,7 +170,6 @@ class ListenTogether(
         if (was) left(message) else message?.let(notify)
     }
 
-    /** Handles the server saying this device isn't in the session any more. */
     private fun gone(e: Exception): Boolean {
         val error = e as? ApiException ?: return false
         if (error.status == 401) {
@@ -218,7 +195,6 @@ class ListenTogether(
         return true
     }
 
-    /** Sends a change and applies the session it answers with. */
     private suspend fun send(quiet: Boolean = false, request: suspend (id: String, queue: Long) -> ListenState): Boolean {
         val st = session ?: return false
         return try {
@@ -251,7 +227,6 @@ class ListenTogether(
         }
     }
 
-    /** Back in the foreground: the poll may have been asleep. */
     fun catchUp() {
         scope.launch { refresh() }
     }
@@ -260,13 +235,11 @@ class ListenTogether(
         session?.let { notify("Only ${it.host.username} can $what in this session") }
     }
 
-    /** Plays or pauses this device only; playing catches up with the session. */
     private fun followHere(play: Boolean) {
         localPaused = !play
         follow(if (play) Follow.JUMP else Follow.CHANGE)
     }
 
-    /** Starts a session with [current] (the music starts with it) and what's queued after it. */
     suspend fun start(
         capacity: Int,
         everyoneCanControl: Boolean,
@@ -292,10 +265,6 @@ class ListenTogether(
         enter(api.listenJoin(code), followNow = true)
     }
 
-    /**
-     * Picks up the session this account is in, e.g. after the app restarted.
-     * Unless [followNow], it stays paused here until played.
-     */
     suspend fun restore(followNow: Boolean = false): Boolean {
         val state = try {
             api.listenCurrent()
@@ -308,7 +277,6 @@ class ListenTogether(
         return true
     }
 
-    /** Leaves, or for the host ends the session for everyone. */
     suspend fun leave() {
         val st = session ?: return
         leaving = true
@@ -322,7 +290,6 @@ class ListenTogether(
         exit(if (st.isHost) "You ended the listening session" else "You left the listening session")
     }
 
-    /** Signed out: stop following, without telling the server. */
     fun signedOut() = exit(null)
 
     fun togglePlay(playingHere: Boolean) {
@@ -330,22 +297,18 @@ class ListenTogether(
         if (st.playing) followHere(localPaused || !playingHere) else queueEnded()
     }
 
-    /** The session only stops when its queue runs out. */
     private fun queueEnded() {
         val st = session ?: return
         notify(if (st.canControl) "The queue has ended. Add a song to keep going." else "The queue has ended.")
     }
 
-    /** The player stopped without the app asking: the lock screen, a call, unplugged headphones. */
     fun stoppedHere() {
         if (session?.playing == true && !localPaused) localPaused = true
     }
 
-    /** The player started without the app asking, such as from the lock screen. */
     fun resumedHere() {
         val st = session ?: return
         when {
-            // Nothing to follow: pause it again.
             !st.playing -> follow(Follow.CHANGE)
             localPaused -> followHere(true)
         }
@@ -376,7 +339,6 @@ class ListenTogether(
         launchSend { id, q -> api.listenControl(id, q, ListenControlRequest("jump", entryId = entry.id)) }
     }
 
-    /** Queues songs at the "end", "next", or "now" (next, and start them). */
     fun add(tracks: List<Track>, mode: String) {
         if (session?.canControl != true) return denied("choose what plays")
         if (tracks.isEmpty()) return
@@ -400,7 +362,6 @@ class ListenTogether(
         launchSend { id, q -> api.listenRemove(id, q, entry.id) }
     }
 
-    /** Empties what's queued after the current song, for everyone; only the host may. */
     fun clear() {
         if (session?.isHost != true) return denied("clear the queue")
         launchSend { id, q -> api.listenClear(id, q) }

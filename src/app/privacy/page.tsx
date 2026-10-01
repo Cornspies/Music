@@ -3,9 +3,6 @@ import type { ReactNode } from "react"
 import Link from "next/link"
 import { AudioLines } from "lucide-react"
 
-// Who runs this server. The App Store listing and the apps link here, so this
-// has to stay reachable without signing in. Anyone else running Music changes
-// these, and whatever the text says about how their server is set up.
 const OPERATOR = "Cornspies"
 const CONTACT = "contact@cornspies.com"
 const SERVER = "music.cornspies.com"

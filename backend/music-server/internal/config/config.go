@@ -17,6 +17,7 @@ const (
 type Config struct {
 	Port                   string
 	DataDir                string
+	LogDir                 string
 	BindAddress            string
 	JWTSecret              string
 	YouTubeAPIKey          string
@@ -30,6 +31,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		Port:                   firstNonEmpty(os.Getenv("MUSIC_PORT"), os.Getenv("PORT"), DefaultPort),
 		DataDir:                firstNonEmpty(os.Getenv("MUSIC_DATA_DIR"), DefaultDataDir),
+		LogDir:                 Value("MUSIC_LOG_DIR"),
 		BindAddress:            Value("MUSIC_BIND"),
 		JWTSecret:              strings.TrimSpace(os.Getenv("MUSIC_JWT_SECRET")),
 		YouTubeAPIKey:          YouTubeAPIKey(),

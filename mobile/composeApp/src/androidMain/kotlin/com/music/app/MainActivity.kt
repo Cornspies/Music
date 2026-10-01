@@ -23,10 +23,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         appContext = applicationContext
-        // The app is always dark, so the system bars get light icons and no
-        // scrim whatever the phone's theme. The default follows the phone: dark
-        // status icons in light mode, and a scrim over the tab bar with
-        // three-button navigation.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),

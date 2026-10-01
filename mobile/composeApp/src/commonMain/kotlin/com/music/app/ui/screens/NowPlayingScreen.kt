@@ -117,8 +117,6 @@ private fun NowPlayingContent(track: Track) {
     val skipThresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
     var skipping by remember { mutableStateOf(false) }
     var lyricsOpen by remember { mutableStateOf(false) }
-    // In a listening session the session's queue plays in order, and only
-    // some people may skip.
     val session = model.listen.session
     val canSkip = session?.canControl ?: true
     LaunchedEffect(track.id) { model.loadLyrics(track) }

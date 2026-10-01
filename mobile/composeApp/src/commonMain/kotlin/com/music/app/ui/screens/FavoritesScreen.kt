@@ -156,7 +156,6 @@ private fun FavoritesDownloadButton(favorites: List<Track>) {
     var confirmRemove by remember { mutableStateOf(false) }
 
     TextButton(
-        // Offline, only removing makes sense.
         enabled = progress != null || allDownloaded || !model.offlineMode,
         onClick = {
             when {

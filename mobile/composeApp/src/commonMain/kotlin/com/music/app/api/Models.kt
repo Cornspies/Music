@@ -417,7 +417,6 @@ data class ApplyMetadataRequest(
 @Serializable
 data class ApiError(
     val error: String = "",
-    /** Why a listening session no longer answers: ended, left or removed. */
     val reason: String? = null,
 )
 
@@ -437,11 +436,9 @@ data class ListenEntry(
     val addedBy: Uploader = Uploader(),
 )
 
-/** A listening session as this account sees it; see state/ListenTogether.kt. */
 @Serializable
 data class ListenState(
     val id: String,
-    /** The invite code; only the host gets it. */
     val code: String? = null,
     val host: Uploader = Uploader(),
     val isHost: Boolean = false,
@@ -451,12 +448,9 @@ data class ListenState(
     val members: List<ListenMember> = emptyList(),
     val version: Long = 0,
     val queueVersion: Long = 0,
-    /** Left out when this device already has queueVersion. */
     val entries: List<ListenEntry>? = null,
     val current: String = "",
-    /** False only while there's nothing to play: nobody pauses for everyone. */
     val playing: Boolean = false,
-    /** Where the current entry was when the server answered. */
     val position: Double = 0.0,
 )
 

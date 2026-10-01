@@ -37,7 +37,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # v5, not v6: v6 moved caching into a proprietary component under Gradle's terms of use.
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       # The Kotlin/Native toolchain is a large download; keep it between runs.
       - name: Cache Kotlin/Native

@@ -21,7 +21,6 @@ actual class OfflineStore actual constructor() {
             partial.delete()
             throw e
         }
-        // Only now does the earlier copy go, so a failed download doesn't lose it.
         filesFor(trackId).filter { it != partial }.forEach { it.delete() }
         if (!partial.renameTo(target)) {
             partial.delete()

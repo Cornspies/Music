@@ -234,9 +234,6 @@ func (s *Server) markInLibrary(viewerID string, results []discoverResult) {
 	}
 }
 
-// trackFromSource finds the track a catalogue entry was added as, in the
-// viewer's library. A demo account adding something already in the shared
-// library gets its own copy, and the other way round.
 func (s *Server) trackFromSource(viewerID, source, sourceID string) (string, bool) {
 	var id string
 	err := s.db.QueryRow(`SELECT t.id FROM tracks t WHERE t.source = ? AND t.source_id = ? AND `+sameLibrary("t.user_id"),
@@ -433,12 +430,8 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 
 const maxCoverEdge = 1000
 
-// shrinkCover scales cover art down to maxCoverEdge, the most any screen
-// shows it at; smaller art is returned unchanged.
 func shrinkCover(raw []byte) []byte { return resizeCover(raw, maxCoverEdge) }
 
-// resizeCover scales an image down so neither side exceeds edge, returning a
-// JPEG, or raw itself when it is already small enough or can't be decoded.
 func resizeCover(raw []byte, edge int) []byte {
 	if len(raw) == 0 {
 		return raw

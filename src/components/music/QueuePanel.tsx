@@ -28,11 +28,9 @@ export function QueuePanel() {
   const queue = usePlayerStore((s) => s.queue)
   const queueIndex = usePlayerStore((s) => s.queueIndex)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
-  // In a listening session this is the session's queue, which the player mirrors.
   const session = useListenStore((s) => s.session)
   const entries = useListenStore((s) => s.entries)
   const canJump = session?.canControl ?? true
-  // Clearing a session's queue is the host's alone, and asks first.
   const canClear = !session || session.isHost
   const [confirmClear, setConfirmClear] = useState(false)
 

@@ -35,8 +35,7 @@ const (
 const (
 	roleUser  = "user"
 	roleAdmin = "admin"
-	// roleDemo is a regular account with a library of its own; see demo.go.
-	roleDemo = "demo"
+	roleDemo  = "demo"
 )
 
 func sessionTTL() time.Duration {
@@ -246,8 +245,6 @@ func (s *Server) authUser(r *http.Request, mediaRoute bool) (*User, error) {
 	if aud == audienceMedia && !mediaRoute {
 		return nil, errors.New("media token not accepted here")
 	}
-	// URLs end up in proxy logs, histories and share sheets, so the token in
-	// one has to be a media token: it only plays media, and only for hours.
 	if inURL && aud != audienceMedia {
 		return nil, errors.New("session tokens aren't accepted in URLs")
 	}

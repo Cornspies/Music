@@ -36,7 +36,6 @@ export function CollectionHeader({
 
   const addAll = () => {
     usePlayerStore.getState().addAllToQueue(tracks)
-    // A listening session says itself how that went.
     if (!inListenSession()) {
       toast.success(`Added ${tracks.length} ${tracks.length === 1 ? "song" : "songs"} to the queue`)
     }

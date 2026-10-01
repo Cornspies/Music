@@ -37,7 +37,6 @@ import { currentMediaToken } from "@/stores/media-token"
 
 const REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
 
-/** A failed request, with the status and whatever JSON the server sent. */
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -108,7 +107,6 @@ function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boole
   return probe.canPlayType(track.mimeType) !== ""
 }
 
-/** Edges the server scales covers down to; lists don't need the full image. */
 export type CoverSize = 128 | 256 | 512
 
 export function coverUrl(track: { id: string }, size?: CoverSize): string {
@@ -516,7 +514,6 @@ function jsonBody(body: unknown): RequestInit {
   return { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
 }
 
-/** Listening sessions; stores/listen.ts drives them. */
 export const listen = {
   current: () => api<ListenState | undefined>("/api/listen"),
   create: (body: {
@@ -529,7 +526,6 @@ export const listen = {
   invite: (code: string) => api<ListenInvite>(`/api/listen/invite/${encodeURIComponent(code)}`),
   join: (code: string) =>
     api<ListenState>(`/api/listen/invite/${encodeURIComponent(code)}/join`, { method: "POST" }),
-  /** Answers once the session is newer than `since`, or after about 25 seconds. */
   poll: (id: string, since: number, queue: number, signal?: AbortSignal) =>
     api<ListenState>(`/api/listen/${id}?since=${since}&queue=${queue}`, { signal }),
   control: (id: string, queue: number, body: { action: string; position?: number; entryId?: string }) =>

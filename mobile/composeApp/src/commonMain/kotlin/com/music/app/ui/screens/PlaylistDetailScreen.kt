@@ -210,7 +210,6 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
                         Spacer(Modifier.size(4.dp))
                         Text("Play all")
                     }
-                    // A listening session's queue is the one there is to add to.
                     if (model.listen.session?.canControl == true) {
                         OutlinedButton(
                             onClick = { model.listen.add(detail.tracks, "end") },

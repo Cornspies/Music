@@ -325,7 +325,6 @@ private fun SessionDetails(session: ListenState) {
                 Box(Modifier.weight(1f)) {
                     SectionTitle(if (upcoming.isEmpty()) "Up next" else "Up next · ${upcoming.size}")
                 }
-                // Clearing everyone's queue is the host's alone.
                 if (session.isHost && upcoming.isNotEmpty()) {
                     TextButton(onClick = { confirmClear = true }) {
                         Text("Clear queue", color = MaterialTheme.colorScheme.error)
@@ -568,7 +567,6 @@ private fun EmeraldSwitch(checked: Boolean, onChange: (Boolean) -> Unit) {
     )
 }
 
-/** The prompt an invite link opens. */
 @Composable
 fun ListenInviteDialog(code: String, onDismiss: () -> Unit) {
     val model = LocalAppModel.current

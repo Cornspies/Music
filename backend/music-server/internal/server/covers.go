@@ -10,9 +10,6 @@ import (
 	"strings"
 )
 
-// coverThumbSizes are the edges clients may ask for with ?size=, so a list
-// row doesn't download a 1000-pixel cover to show it at 48 dp. A thumbnail is
-// made on its first request and kept next to the cover until that changes.
 var coverThumbSizes = map[int]bool{128: true, 256: true, 512: true}
 
 func (s *Server) coverPath(id string) string { return filepath.Join(s.covDir, id+".img") }
@@ -21,7 +18,6 @@ func (s *Server) thumbPath(id string, size int) string {
 	return filepath.Join(s.covDir, id+"."+strconv.Itoa(size)+".img")
 }
 
-// coverBytes reads a track's cover, or with size > 0 a thumbnail of it.
 func (s *Server) coverBytes(id string, size int) ([]byte, error) {
 	if size == 0 {
 		return os.ReadFile(s.coverPath(id))
@@ -47,7 +43,6 @@ func (s *Server) coverBytes(id string, size int) ([]byte, error) {
 	return small, nil
 }
 
-// removeCoverFiles deletes a track's cover and its thumbnails.
 func (s *Server) removeCoverFiles(id string) {
 	os.Remove(s.coverPath(id))
 	s.removeThumbnails(id)
@@ -59,8 +54,6 @@ func (s *Server) removeThumbnails(id string) {
 	}
 }
 
-// writeFileAtomic replaces a file in one step, so concurrent readers never
-// see half of it.
 func writeFileAtomic(path string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
 	if err != nil {
@@ -84,9 +77,6 @@ func writeFileAtomic(path string, data []byte) error {
 	return nil
 }
 
-// shrinkStoredCovers scales covers stored before uploads were capped at
-// maxCoverEdge. Only each file's header is read unless it is too large, so
-// this costs little on later starts.
 func (s *Server) shrinkStoredCovers() {
 	defer logPanic("cover shrink")
 	paths, err := filepath.Glob(filepath.Join(s.covDir, "*.img"))
@@ -95,7 +85,7 @@ func (s *Server) shrinkStoredCovers() {
 	}
 	shrunk := 0
 	for _, p := range paths {
-		if strings.Count(filepath.Base(p), ".") != 1 { // thumbnails are <id>.<size>.img
+		if strings.Count(filepath.Base(p), ".") != 1 {
 			continue
 		}
 		f, err := os.Open(p)
@@ -111,7 +101,6 @@ func (s *Server) shrinkStoredCovers() {
 		if err != nil {
 			continue
 		}
-		// shrinkCover hands back raw itself when it can't decode the image.
 		if small := shrinkCover(raw); !bytes.Equal(small, raw) && writeFileAtomic(p, small) == nil {
 			shrunk++
 		}

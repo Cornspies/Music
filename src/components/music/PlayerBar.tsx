@@ -112,8 +112,6 @@ export function PlayerBar() {
   const queueLength = usePlayerStore((s) => s.queue.length)
   const crossfade = usePlayerStore((s) => s.crossfadeSeconds)
   const normalize = usePlayerStore((s) => s.normalizeVolume)
-  // In a listening session the session's queue plays in order, and only some
-  // people may skip.
   const inSession = useListenStore((s) => s.session !== null)
   const canSkip = useListenStore((s) => s.session?.canControl ?? true)
 

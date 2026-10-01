@@ -104,7 +104,6 @@ fun App() {
             DeepLinks.consumeShareToken()?.let { model.openSharedTrack(it) }
         }
     }
-    // Joining takes an account, so an invite waits until someone is signed in.
     val pendingListen = DeepLinks.pendingListenCode
     LaunchedEffect(pendingListen, model.user) {
         if (pendingListen != null && model.user != null) {
@@ -233,7 +232,6 @@ private fun MainScreen() {
             }
         }
 
-        // Above the player too; there it goes at the top, clear of the controls.
         SnackbarHost(
             snackbar,
             if (playerOpen) {
@@ -252,8 +250,6 @@ private fun MainScreen() {
 private fun BottomTabs(selected: Screen) {
     val model = LocalAppModel.current
     val current = selected
-    // The 64dp bar rather than the 80dp one: it also pads for the gesture area
-    // below it (34pt on iPhones), and the tall one left a lot of empty space.
     ShortNavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
         ShortNavigationBarItem(
             selected = current == Screen.Home,

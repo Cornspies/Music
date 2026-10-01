@@ -17,7 +17,6 @@ class PickedAudio(
 @Composable
 internal expect fun rememberAudioPickerLauncher(onPicked: (List<PickedAudio>) -> Unit): () -> Unit
 
-/** Opens the picked file for streaming; each call starts from the beginning. */
 internal expect fun PickedAudio.openChannel(): ByteReadChannel
 
 internal expect val canPickImageFromDevice: Boolean

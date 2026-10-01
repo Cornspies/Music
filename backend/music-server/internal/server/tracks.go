@@ -103,9 +103,6 @@ var extMime = map[string]string{
 	".m4b":  "audio/mp4",
 }
 
-// trackColumns selects tracks with the per-user fields (plays, favorite) filled
-// in for the user that trackColumnsArgs names. It isn't limited to what that
-// user may see, so only server jobs acting for nobody in particular use it.
 const trackColumns = `
 SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration,
        t.mime_type, t.file_size, t.has_cover,
@@ -124,14 +121,9 @@ LEFT JOIN metadata_jobs mj ON mj.track_id = t.id`
 
 func trackColumnsArgs(userID string) []any { return []any{userID, userID} }
 
-// trackSelect is trackColumns limited to the tracks the viewer may see (see
-// demo.go), so every query built on it respects demo accounts. Callers append
-// their own JOIN, WHERE and ORDER BY clauses.
 var trackSelect = trackColumns + `
 JOIN (SELECT 1) scope ON ` + visibleTo("t.user_id")
 
-// libraryTrackSelect is trackSelect limited to the viewer's own library (see
-// sameLibrary), for duplicate checks. It takes trackSelectArgs too.
 var libraryTrackSelect = trackColumns + `
 JOIN (SELECT 1) scope ON ` + sameLibrary("t.user_id")
 
@@ -690,7 +682,6 @@ func (s *Server) removeTrack(id string) error {
 	return nil
 }
 
-// removeTracksOf deletes every track a user uploaded, files included.
 func (s *Server) removeTracksOf(userID string) error {
 	rows, err := s.db.Query(`SELECT id FROM tracks WHERE user_id = ?`, userID)
 	if err != nil {

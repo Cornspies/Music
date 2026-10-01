@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"music-server/internal/config"
+	"music-server/internal/logfile"
 	"music-server/internal/server"
 )
 
@@ -23,11 +24,27 @@ func main() {
 	bind := flag.String("bind", cfg.BindAddress,
 		"address to listen on; empty means all interfaces (env: MUSIC_BIND)")
 	dataDir := flag.String("data", cfg.DataDir, "data directory for db, uploads, covers (env: MUSIC_DATA_DIR)")
+	logDir := flag.String("logs", cfg.LogDir,
+		"directory for daily log files, deleted after 14 days; empty means <data>/logs (env: MUSIC_LOG_DIR)")
 	flag.Parse()
 
 	abs, err := filepath.Abs(*dataDir)
 	if err != nil {
 		log.Fatalf("resolve data dir: %v", err)
+	}
+
+	logs := *logDir
+	if logs == "" {
+		logs = filepath.Join(abs, "logs")
+	}
+	if logs, err = filepath.Abs(logs); err != nil {
+		log.Fatalf("resolve log dir: %v", err)
+	}
+	if w, err := logfile.Open(logs); err != nil {
+		log.Printf("music-server logs: %v; logging to stderr only", err)
+	} else {
+		log.Printf("music-server logs: writing to %s, kept for %d days", logs, logfile.KeepDays)
+		log.SetOutput(w)
 	}
 
 	srv, err := server.New(abs, server.Options{JWTSecret: cfg.JWTSecret})
@@ -50,7 +67,7 @@ func main() {
 			"(set MUSIC_YOUTUBE_API_KEY to add YouTube)")
 	}
 	addr := *bind + ":" + *port
-	log.Printf("music-server listening on %s (data: %s, pid: %d)", addr, abs, os.Getpid())
+	log.Printf("music-server listening on %s (data: %s, logs: %s, pid: %d)", addr, abs, logs, os.Getpid())
 	srv.StartBackgroundWork()
 	httpServer := &http.Server{
 		Addr:              addr,

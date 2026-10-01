@@ -289,7 +289,6 @@ function SessionPanel({ session }: { session: ListenState }) {
   )
 }
 
-/** Asks the host before clearing the session's queue for everyone. */
 export function ClearQueueConfirm({
   open,
   onOpenChange,
@@ -369,7 +368,6 @@ function InviteLink({ code }: { code: string }) {
   )
 }
 
-/** The prompt an invite link opens. */
 export function ListenInviteDialog() {
   const code = useListenStore((s) => s.invite)
   const close = () => {

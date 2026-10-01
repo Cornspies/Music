@@ -17,6 +17,10 @@ interface MediaTokenState {
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let inflight: Promise<void> | null = null
 
+function retrySoon() {
+  scheduleRefresh(Date.now() + MIN_REFRESH_MS + REFRESH_MARGIN_MS)
+}
+
 function scheduleRefresh(expiresAt: number) {
   if (refreshTimer) clearTimeout(refreshTimer)
   const delay = Math.max(MIN_REFRESH_MS, expiresAt - Date.now() - REFRESH_MARGIN_MS)
@@ -38,13 +42,16 @@ export const useMediaTokenStore = create<MediaTokenState>()((set) => ({
         const res = await fetch("/api/auth/media-token", {
           headers: { Authorization: `Bearer ${session}` },
         })
-        if (!res.ok) return
+        if (!res.ok) {
+          if (res.status !== 401) retrySoon()
+          return
+        }
         const data = (await res.json()) as MediaToken
         const expiresAt = new Date(data.expiresAt).getTime()
         set({ token: data.token, expiresAt })
         scheduleRefresh(expiresAt)
       } catch {
-        scheduleRefresh(Date.now() + MIN_REFRESH_MS + REFRESH_MARGIN_MS)
+        retrySoon()
       } finally {
         inflight = null
       }
@@ -59,19 +66,21 @@ export const useMediaTokenStore = create<MediaTokenState>()((set) => ({
   },
 }))
 
-/**
- * The token for media URLs. Never the session token: a URL ends up in logs,
- * and the server refuses session tokens in one. Empty until the first media
- * token arrives; components that show media re-render then (useMediaToken).
- */
 export function currentMediaToken(): string {
   const { token, expiresAt } = useMediaTokenStore.getState()
   return token && expiresAt > Date.now() ? token : ""
 }
 
-/** Re-renders with each new media token, so image URLs pick it up. */
 export function useMediaToken(): string | null {
   return useMediaTokenStore((s) => s.token)
+}
+
+function refreshIfDue() {
+  if (!useAuthStore.getState().token) return
+  const { token, expiresAt } = useMediaTokenStore.getState()
+  if (!token || expiresAt - Date.now() < REFRESH_MARGIN_MS) {
+    useMediaTokenStore.getState().refresh().catch(() => {})
+  }
 }
 
 if (typeof window !== "undefined") {
@@ -80,4 +89,8 @@ if (typeof window !== "undefined") {
     if (!s.token) useMediaTokenStore.getState().clear()
     else useMediaTokenStore.getState().refresh().catch(() => {})
   })
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshIfDue()
+  })
+  window.addEventListener("online", refreshIfDue)
 }

@@ -34,8 +34,6 @@ class PlaybackService : MediaSessionService() {
                 true,
             )
             .setHandleAudioBecomingNoisy(true)
-            // Keeps the CPU and Wi-Fi awake while streaming with the screen
-            // off; ExoPlayer holds the locks only while playing.
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         val player = SkipForwardingPlayer(exo)

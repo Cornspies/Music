@@ -26,8 +26,6 @@ type playlistDetail struct {
 	Tracks []*Track `json:"tracks"`
 }
 
-// playlistSelect counts only the tracks the viewer may see. Which playlists
-// the viewer may see is up to each query: add visibleTo("p.user_id").
 var playlistSelect = `
 SELECT EXISTS(SELECT 1 FROM playlist_pins pp WHERE pp.user_id = ? AND pp.playlist_id = p.id),
        p.id, p.name, p.created_at, p.is_public, p.user_id,

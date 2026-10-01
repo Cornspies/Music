@@ -69,7 +69,6 @@ actual class PlayerController actual constructor() {
     private val _positionSec = MutableStateFlow(0.0)
     actual val positionSec: StateFlow<Double> = _positionSec
 
-    /** One player for the app's lifetime; each track replaces its item. */
     private val player = AVPlayer()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -77,7 +76,6 @@ actual class PlayerController actual constructor() {
     private var nowPlaying: MutableMap<Any?, Any?> = mutableMapOf()
     private var currentArtworkUrl: String? = null
 
-    // The player stops at the end of an item as if paused; wantsToPlay tells them apart.
     private var reachedEnd = false
 
     private val endObserver: NSObjectProtocol = NSNotificationCenter.defaultCenter
@@ -87,7 +85,6 @@ actual class PlayerController actual constructor() {
             onEnded?.invoke()
         }
 
-    // Play/pause arrives as an event rather than by polling the player.
     private val rateObserver: NSObjectProtocol = NSNotificationCenter.defaultCenter
         .addObserverForName(AVPlayerRateDidChangeNotification, `object` = player, queue = NSOperationQueue.mainQueue) { _ ->
             val playing = player.rate > 0f
@@ -125,15 +122,12 @@ actual class PlayerController actual constructor() {
         scope.tickPosition(_positionSec, _isPlaying, ::readPosition)
     }
 
-    // Until the item is ready its time isn't meaningful, and a seek made before
-    // then (restoring a saved position) is only in _positionSec.
     private fun readPosition(): Double? =
         player.currentItem?.takeIf { it.status == AVPlayerItemStatusReadyToPlay }
             ?.let { CMTimeGetSeconds(player.currentTime()).takeUnless { it.isNaN() } }
 
     actual fun currentPositionSec(): Double = readPosition() ?: _positionSec.value
 
-    // The rate stays up while buffering and drops to 0 when anything pauses.
     actual fun wantsToPlay(): Boolean = player.rate > 0f || reachedEnd
 
     actual fun load(url: String, autoplay: Boolean, info: NowPlayingInfo?) {

@@ -23,8 +23,6 @@ func (s *Server) ensureDeletedUser(tx *sql.Tx) error {
 	return err
 }
 
-// checkPassword confirms a signed-in account's password before a change that
-// needs it, so a stolen session alone can't take the account over.
 func (s *Server) checkPassword(w http.ResponseWriter, r *http.Request, userID, password string) bool {
 	if locked, retry := accountLocked(accountKey(userID)); locked {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
@@ -135,9 +133,6 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Other accounts' uploads stay in the library under the deleted-user
-	// placeholder; a demo account's never joined it, and handing them over
-	// would publish them, so they go with the account.
 	if u.Role == roleDemo {
 		if err := s.removeTracksOf(u.ID); err != nil {
 			s.internalErr(w, "delete tracks", err)

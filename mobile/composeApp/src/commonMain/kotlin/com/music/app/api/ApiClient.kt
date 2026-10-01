@@ -44,7 +44,6 @@ import kotlin.time.Instant
 class ApiException(
     message: String,
     val status: Int = 0,
-    /** What the server gave as the reason, where it gives one (listening sessions do). */
     val reason: String? = null,
 ) : Exception(message)
 
@@ -76,7 +75,6 @@ class ApiClient(private val store: TokenStore) {
         }
     }
 
-    /** Shared with the image loader, so covers reuse the API's connections. */
     val httpClient: HttpClient get() = client
 
     fun noteRefreshedToken(response: HttpResponse) {
@@ -98,9 +96,6 @@ class ApiClient(private val store: TokenStore) {
     private var mediaToken: String? = null
     private var mediaTokenExpiresAtMs: Long = 0L
 
-    // The token for media URLs. Never the session token: URLs end up in logs,
-    // and the server refuses session tokens in them. Empty until a media
-    // token arrives, which AppModel fetches before it shows anything.
     private val urlToken: String
         get() {
             val m = mediaToken
@@ -125,13 +120,10 @@ class ApiClient(private val store: TokenStore) {
         url("/api/tracks/$trackId/stream") + "?token=" + urlToken.encodeURLParameter()
 
     fun trackStreamUrl(track: Track): String {
-        // The version keeps the Android stream cache from playing audio that
-        // has been edited (trimmed, replaced) since it was cached.
         val base = trackStreamUrl(track.id) + "&v=" + track.updatedAt.encodeURLParameter()
         return if (prefersCompatible(track)) "$base&version=compatible" else base
     }
 
-    /** [size] asks for a thumbnail (128, 256 or 512 px) instead of the full cover. */
     fun coverUrl(trackId: String, size: Int? = null): String =
         url("/api/tracks/$trackId/cover") + "?token=" + urlToken.encodeURLParameter() +
             (if (size != null) "&size=$size" else "")
@@ -244,7 +236,6 @@ class ApiClient(private val store: TokenStore) {
         )
     }
 
-    /** Streams the file from [content], so a large one never sits in memory whole. */
     suspend fun uploadTrack(
         fileName: String,
         mimeType: String,
@@ -253,8 +244,6 @@ class ApiClient(private val store: TokenStore) {
         durationSec: Double?,
     ): Track {
         val safeName = fileName.replace("\"", "'").replace("\r", " ").replace("\n", " ")
-        // A request that fails midway leaves its file channel unread; cancelling
-        // it afterwards closes the file.
         val opened = mutableListOf<ByteReadChannel>()
         val response = try {
             client.submitFormWithBinaryData(
@@ -325,7 +314,6 @@ class ApiClient(private val store: TokenStore) {
     suspend fun deleteAvatar(): User =
         bodyOrError(client.delete(url("/api/auth/avatar")) { auth() })
 
-    /** Streams a track's file to [path], so it never sits in memory whole. */
     suspend fun downloadTrack(track: Track, useCompatible: Boolean, path: String) {
         val route = if (useCompatible && track.hasCompatible) {
             "/api/tracks/${track.id}/download?version=compatible"
@@ -496,7 +484,6 @@ class ApiClient(private val store: TokenStore) {
     suspend fun listenJoin(code: String): ListenState =
         listenBody(client.post(url("/api/listen/invite/" + code.encodeURLParameter() + "/join")) { auth() })
 
-    /** Answers once the session is newer than [since], or after about 25 seconds. */
     suspend fun listenPoll(id: String, since: Long, queue: Long): ListenState =
         listenBody(client.get(url("/api/listen/$id?since=$since&queue=$queue")) { auth() })
 
@@ -531,7 +518,6 @@ class ApiClient(private val store: TokenStore) {
         setBody(body)
     }
 
-    /** Like bodyOrError, keeping the status and reason a listening session answers with. */
     private suspend inline fun <reified T> listenBody(response: HttpResponse, empty: Boolean = false): T {
         noteRefreshedToken(response)
         if (!response.status.isSuccess()) {
@@ -607,7 +593,6 @@ class ApiClient(private val store: TokenStore) {
     }
 }
 
-/** Writes the channel to a file in small pieces; returns the number of bytes. */
 private suspend fun ByteReadChannel.copyToFile(path: String): Long = withContext(Dispatchers.Default) {
     var total = 0L
     SystemFileSystem.sink(Path(path)).buffered().use { sink ->

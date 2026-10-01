@@ -15,9 +15,7 @@ const (
 	authMaxAttempts          = 10
 	registrationMaxPerWindow = 3
 	authLimiterMaxKeys       = 10000
-	// Wrong passwords for one account within authAttemptWindow, from
-	// anywhere: someone with many addresses gets past the per-client limit.
-	accountMaxFailures = 10
+	accountMaxFailures       = 10
 )
 
 type attemptRecord struct {
@@ -26,16 +24,13 @@ type attemptRecord struct {
 	first         time.Time
 }
 
-// limiter counts attempts per key over authAttemptWindow.
 type limiter struct {
 	mu      sync.Mutex
 	entries map[string]*attemptRecord
 }
 
 var (
-	// Per client; see limiterKey.
-	authLimiter = &limiter{entries: map[string]*attemptRecord{}}
-	// Per account; see loginKey and accountKey.
+	authLimiter    = &limiter{entries: map[string]*attemptRecord{}}
 	accountLimiter = &limiter{entries: map[string]*attemptRecord{}}
 )
 
@@ -110,9 +105,6 @@ func clearAuthFailures(r *http.Request) {
 	authLimiter.clear(limiterKey(r))
 }
 
-// accountLocked: the account has had accountMaxFailures wrong passwords
-// lately. It's checked before the password, so from then on guesses aren't
-// even tried; devices already signed in carry on.
 func accountLocked(key string) (bool, time.Duration) {
 	return accountLimiter.blocked(key, func(rec *attemptRecord) bool { return rec.count >= accountMaxFailures })
 }
@@ -125,8 +117,6 @@ func clearAccountFailures(key string) {
 	accountLimiter.clear(key)
 }
 
-// loginKey counts sign-ins by the name tried, whether or not such an account
-// exists, so the limit doesn't give away which names do.
 func loginKey(username string) string {
 	if len(username) > 64 {
 		username = username[:64]
@@ -134,11 +124,8 @@ func loginKey(username string) string {
 	return "name:" + username
 }
 
-// accountKey counts password confirmations by a signed-in account.
 func accountKey(userID string) string { return "id:" + userID }
 
-// limiterKey is the client attempts count against: its address, or for IPv6
-// its /64, since one connection usually has a whole /64 to hop around in.
 func limiterKey(r *http.Request) string {
 	host := clientIP(r)
 	ip := net.ParseIP(strings.Trim(host, "[]"))

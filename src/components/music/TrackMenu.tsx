@@ -190,7 +190,6 @@ function TrackMenuContent({
       <DropdownMenuItem
         onClick={() => {
           usePlayerStore.getState().playNext(track)
-          // A listening session says itself whether that worked.
           if (!inListenSession()) toast.success(`Playing “${track.title}” next`)
         }}
       >

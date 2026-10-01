@@ -26,14 +26,8 @@ import com.music.app.ui.theme.EmeraldDark
 import com.music.app.ui.theme.Zinc500
 import com.music.app.ui.theme.Zinc800
 
-// Thumbnail edges the server keeps, in pixels.
 private val coverThumbSizes = listOf(128, 256, 512)
 
-/**
- * [displaySize] is how large the cover is drawn; the smallest thumbnail that
- * still covers it is loaded instead of the full image. Leave it out for
- * covers drawn larger than a thumbnail.
- */
 @Composable
 fun CoverImage(
     track: Track,

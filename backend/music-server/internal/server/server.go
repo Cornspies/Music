@@ -209,7 +209,6 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
 		next.ServeHTTP(sw, r)
 		positionSave := r.Method == http.MethodPut && r.URL.Path == "/api/playback" && sw.code < 400
-		// Every device in a listening session keeps one of these open.
 		listenPoll := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/listen/") &&
 			strings.Count(r.URL.Path, "/") == 3 && sw.code < 400
 		if r.URL.Path != "/healthz" && !positionSave && !listenPoll {

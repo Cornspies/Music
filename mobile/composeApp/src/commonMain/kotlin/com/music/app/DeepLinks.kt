@@ -25,7 +25,6 @@ object DeepLinks {
     var pendingShareToken by mutableStateOf<String?>(null)
         private set
 
-    /** The code from a listening-session invite link. */
     var pendingListenCode by mutableStateOf<String?>(null)
         private set
 

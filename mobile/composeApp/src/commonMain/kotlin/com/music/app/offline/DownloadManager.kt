@@ -127,11 +127,9 @@ class DownloadManager(
             transient.remove(track.id)
             persist()
         } catch (e: CancellationException) {
-            // Stopped rather than failed: the track is simply not downloaded.
             transient.remove(track.id)
             throw e
         } catch (e: Exception) {
-            // The store has dropped the partial file; an earlier copy stays playable.
             transient[track.id] = DownloadState.FAILED
             lastError = friendlyError(e)
         }
@@ -151,7 +149,6 @@ class DownloadManager(
         persist()
     }
 
-    /** Removes these downloads, except tracks a downloaded playlist still needs. */
     fun removeTracks(trackIds: Collection<String>) {
         val stillNeeded = playlistTracks.values.flatten().toSet()
         for (id in trackIds) {
@@ -276,10 +273,6 @@ class DownloadManager(
     }
 
 
-    /**
-     * Downloads the tracks that aren't on the device yet, one at a time. Stops
-     * when downloads have to wait for Wi-Fi, instead of failing every track.
-     */
     suspend fun downloadTracks(
         tracks: List<Track>,
         progress: (done: Int, total: Int) -> Unit = { _, _ -> },

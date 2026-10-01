@@ -19,47 +19,24 @@ import (
 	"github.com/google/uuid"
 )
 
-// Listen together: someone hosts a session and shares its invite link, and
-// everyone who joins hears the same queue at the same moment. The server keeps
-// the timeline (which entry plays, and where it was at a given time); every
-// device plays the audio itself and follows along through a long poll that
-// answers as soon as anything changes. Nobody pauses for everyone: a session
-// plays whenever there's something to play, pausing stops one device, and
-// playing again catches up. Sessions live in memory, so a restart ends them.
-
 const (
 	maxListenGuests     = 20
 	defaultListenGuests = 5
-	// Upcoming entries. Every device gets the whole queue when it changes,
-	// gzipped when it can take that (see writeListenState).
-	maxListenQueue = 1000
-	// Played entries kept for "previous"; the rest go in batches, since each
-	// trim sends the queue to everyone again.
-	listenHistoryKeep = 20
-	listenHistoryTrim = 30
+	maxListenQueue      = 1000
+	listenHistoryKeep   = 20
+	listenHistoryTrim   = 30
 
-	listenPollWait = 25 * time.Second
-	// A member who polled this recently is listening right now.
-	listenOnlineWindow = 45 * time.Second
-	// A session ends by itself once the host has been away this long, so a
-	// phone changing networks or an app restarting doesn't end it. Every
-	// device that follows a session checks in at least once a listenPollWait.
-	listenHostTimeout = 5 * time.Minute
-	// How long a session that ended that way is remembered, so the devices
-	// still following it can say why.
+	listenPollWait       = 25 * time.Second
+	listenOnlineWindow   = 45 * time.Second
+	listenHostTimeout    = 5 * time.Minute
 	listenTimedOutMemory = 15 * time.Minute
-	// The server moves on by itself this long after a track should have
-	// ended; a device reporting the end normally moves everyone on sooner.
-	listenEndGrace = 2 * time.Second
-	// A report that a track ended is only believed this close to its end, so
-	// it can't be used to skip.
-	listenEndSlack = 3.0
+	listenEndGrace       = 2 * time.Second
+	listenEndSlack       = 3.0
 )
 
-// Why a request about a session gets no answer about it.
 const (
 	listenGoneEnded    = "ended"
-	listenGoneTimedOut = "timeout" // the host was away for listenHostTimeout
+	listenGoneTimedOut = "timeout"
 	listenGoneLeft     = "left"
 	listenGoneRemoved  = "removed"
 )
@@ -67,7 +44,7 @@ const (
 type listenMember struct {
 	user     Uploader
 	lastSeen time.Time
-	online   bool // as last announced to the others
+	online   bool
 }
 
 type listenEntry struct {
@@ -79,24 +56,24 @@ type listenEntry struct {
 
 type listenSession struct {
 	id                 string
-	code               string // the invite link's
+	code               string
 	hostID             string
-	capacity           int // guests, not counting the host
+	capacity           int
 	everyoneCanControl bool
 
 	members map[string]*listenMember
-	order   []string          // member IDs, in the order they joined
-	gone    map[string]string // former members: listenGoneLeft or listenGoneRemoved
+	order   []string
+	gone    map[string]string
 
 	entries  []listenEntry
-	current  int     // index into entries; -1 until something is queued
-	position float64 // seconds into the current entry at time at
+	current  int
+	position float64
 	at       time.Time
-	finished bool // the queue ran out; a song added now starts right away
+	finished bool
 
 	version      int64
 	queueVersion int64
-	changed      chan struct{} // closed on every change
+	changed      chan struct{}
 	timerGen     int
 }
 
@@ -104,8 +81,8 @@ type listenHub struct {
 	mu       sync.Mutex
 	sessions map[string]*listenSession
 	byCode   map[string]*listenSession
-	byUser   map[string]*listenSession // every member, the host included
-	timedOut map[string]time.Time      // sessions that ended with the host away, and when
+	byUser   map[string]*listenSession
+	timedOut map[string]time.Time
 }
 
 func newListenHub() *listenHub {
@@ -131,11 +108,9 @@ type ListenEntry struct {
 	AddedBy Uploader `json:"addedBy"`
 }
 
-// ListenState is a session as one member sees it. Position is where the
-// current entry is at the moment the answer was written.
 type ListenState struct {
 	ID                 string         `json:"id"`
-	Code               string         `json:"code,omitempty"` // for the host, who shares the link
+	Code               string         `json:"code,omitempty"`
 	Host               Uploader       `json:"host"`
 	IsHost             bool           `json:"isHost"`
 	CanControl         bool           `json:"canControl"`
@@ -144,12 +119,10 @@ type ListenState struct {
 	Members            []ListenMember `json:"members"`
 	Version            int64          `json:"version"`
 	QueueVersion       int64          `json:"queueVersion"`
-	// Left out when the device already has this queue version.
-	Entries *[]ListenEntry `json:"entries,omitempty"`
-	Current string         `json:"current"`
-	// False only while there's nothing to play: nobody pauses for everyone.
-	Playing  bool    `json:"playing"`
-	Position float64 `json:"position"`
+	Entries            *[]ListenEntry `json:"entries,omitempty"`
+	Current            string         `json:"current"`
+	Playing            bool           `json:"playing"`
+	Position           float64        `json:"position"`
 }
 
 type ListenInvite struct {
@@ -169,7 +142,7 @@ type ListenInviteTrack struct {
 
 type listenSnapshot struct {
 	state   ListenState
-	entries []listenEntry // nil when the viewer already has this queue version
+	entries []listenEntry
 }
 
 func newListenCode() (string, error) {
@@ -180,8 +153,6 @@ func newListenCode() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-// newEntryID is random rather than counted, so that a device moving on to
-// another session never mistakes an entry there for the one it was playing.
 func newEntryID() string {
 	buf := make([]byte, 8)
 	_, _ = rand.Read(buf)
@@ -195,7 +166,6 @@ func clampGuests(n int) int {
 	return min(n, maxListenGuests)
 }
 
-// playing: the session plays whenever there's something to play.
 func (ls *listenSession) playing() bool { return ls.current >= 0 && !ls.finished }
 
 func (ls *listenSession) positionAt(now time.Time) float64 {
@@ -230,7 +200,6 @@ func (ls *listenSession) startEntry(i int, now time.Time) {
 	ls.finished = false
 }
 
-// seek also starts a queue that ran out over, at that point of its last song.
 func (ls *listenSession) seek(pos float64, now time.Time) {
 	if ls.current < 0 {
 		return
@@ -242,8 +211,6 @@ func (ls *listenSession) seek(pos float64, now time.Time) {
 	ls.finished = false
 }
 
-// advance moves on to the next entry, or at the end of the queue stops at the
-// start of the last one. It reports whether the queue itself changed.
 func (ls *listenSession) advance(now time.Time) bool {
 	if ls.current < 0 {
 		return false
@@ -275,8 +242,6 @@ func (ls *listenSession) previous(now time.Time) {
 	ls.startEntry(ls.current-1, now)
 }
 
-// ended is a device saying the entry played to its end. The first report moves
-// everyone on; later ones, and ones long before the end, change nothing.
 func (ls *listenSession) ended(entryID string, now time.Time) (changed, queueChanged bool) {
 	if !ls.playing() || ls.entries[ls.current].id != entryID {
 		return false, false
@@ -287,8 +252,6 @@ func (ls *listenSession) ended(entryID string, now time.Time) (changed, queueCha
 	return true, ls.advance(now)
 }
 
-// add queues entries at the end, after the current one ("next"), or after the
-// current one and starts them ("now"). With nothing to play they start anyway.
 func (ls *listenSession) add(entries []listenEntry, mode string, now time.Time) {
 	at := len(ls.entries)
 	if mode != "end" && ls.current >= 0 {
@@ -340,8 +303,6 @@ func (ls *listenSession) snapshot(viewerID string, knownQueue int64, now time.Ti
 	return snap
 }
 
-// touch tells everyone following the session that it changed, and plans the
-// move to the next entry. The caller holds h.mu.
 func (h *listenHub) touch(ls *listenSession, queueChanged bool) {
 	ls.version++
 	if queueChanged {
@@ -382,7 +343,6 @@ func (h *listenHub) end(ls *listenSession) {
 		}
 	}
 	ls.timerGen++
-	// Wakes everyone polling, who then find the session gone.
 	close(ls.changed)
 	ls.changed = make(chan struct{})
 }
@@ -397,7 +357,6 @@ func (h *listenHub) removeMember(ls *listenSession, userID, reason string) {
 	h.touch(ls, false)
 }
 
-// leave takes a user out of whatever session they're in; a host leaving ends it.
 func (h *listenHub) leave(userID string) {
 	ls := h.byUser[userID]
 	switch {
@@ -409,22 +368,18 @@ func (h *listenHub) leave(userID string) {
 	}
 }
 
-// forgetListener takes a deleted account out of its session.
 func (s *Server) forgetListener(userID string) {
 	s.listen.mu.Lock()
 	defer s.listen.mu.Unlock()
 	s.listen.leave(userID)
 }
 
-// member finds the session a request is about and answers for it when the user
-// isn't (or is no longer) in it. The caller holds h.mu.
 func (h *listenHub) member(w http.ResponseWriter, id, userID string) (*listenSession, bool) {
 	ls := h.sessions[id]
 	if ls == nil {
 		if _, ok := h.timedOut[id]; ok {
 			writeListenGone(w, listenGoneTimedOut)
 		} else {
-			// Unknown IDs included: a restart forgets every session.
 			writeListenGone(w, listenGoneEnded)
 		}
 		return nil, false
@@ -457,8 +412,6 @@ func writeListenForbidden(w http.ResponseWriter, ls *listenSession) {
 	writeErr(w, http.StatusForbidden, "only "+ls.members[ls.hostID].user.Username+" can do that in this session")
 }
 
-// sweep ends sessions whose host has been away for listenHostTimeout, and tells
-// members when someone comes or goes offline.
 func (h *listenHub) sweep(now time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -488,7 +441,6 @@ func (h *listenHub) sweep(now time.Time) {
 	}
 }
 
-// seen notes that a member's device was there until now.
 func (h *listenHub) seen(id, userID string, now time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -508,8 +460,6 @@ func (s *Server) startListenSweeper() {
 	}()
 }
 
-// writeListenState fills in the queue's tracks as the viewer sees them (plays,
-// favorite) and answers with the state. It runs without h.mu held.
 func (s *Server) writeListenState(w http.ResponseWriter, r *http.Request, code int, viewerID string, snap listenSnapshot) {
 	st := snap.state
 	if snap.entries != nil {
@@ -530,7 +480,6 @@ func (s *Server) writeListenState(w http.ResponseWriter, r *http.Request, code i
 		for _, t := range tracks {
 			byID[t.ID] = t
 		}
-		// A track deleted since it was queued drops out.
 		entries := make([]ListenEntry, 0, len(snap.entries))
 		for _, e := range snap.entries {
 			if t, ok := byID[e.trackID]; ok {
@@ -540,9 +489,6 @@ func (s *Server) writeListenState(w http.ResponseWriter, r *http.Request, code i
 		st.Entries = &entries
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	// A full queue runs to a megabyte of JSON, and every device gets it on
-	// each change; compressed it's a tenth of that. Browsers, OkHttp and
-	// NSURLSession all ask for gzip and unpack it themselves.
 	if st.Entries != nil && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Encoding", "gzip")
@@ -564,17 +510,12 @@ func knownQueueVersion(r *http.Request) int64 {
 	return v
 }
 
-// libraryOf is the library a user plays from (see demo.go): their own for a
-// demo account, the shared one ("") for everyone else.
 func (s *Server) libraryOf(userID string) (string, error) {
 	var scope string
 	err := s.db.QueryRow(`SELECT `+demoScope("?"), userID).Scan(&scope)
 	return scope, err
 }
 
-// canJoinListen: everyone in a session has to be able to play what the host
-// queues, so only accounts with the host's library join (and admins, who see
-// every library).
 func (s *Server) canJoinListen(u *User, hostID string) (bool, error) {
 	if u.IsAdmin() || u.ID == hostID {
 		return true, nil
@@ -587,8 +528,6 @@ func (s *Server) canJoinListen(u *User, hostID string) (bool, error) {
 	return mine == host, err
 }
 
-// listenEntries makes entries for the given tracks, in order, leaving out any
-// the adder can't see or that aren't in the host's library.
 func (s *Server) listenEntries(adder Uploader, hostID string, ids []string) ([]listenEntry, error) {
 	unique := make([]string, 0, len(ids))
 	seen := map[string]bool{}
@@ -657,12 +596,11 @@ func (s *Server) handleListenCurrent(w http.ResponseWriter, r *http.Request) {
 }
 
 type listenCreateRequest struct {
-	Capacity           int     `json:"capacity"`
-	EveryoneCanControl bool    `json:"everyoneCanControl"`
-	TrackID            string  `json:"trackId"`
-	Position           float64 `json:"position"`
-	// What the host had queued after the current track.
-	Upcoming []string `json:"upcoming"`
+	Capacity           int      `json:"capacity"`
+	EveryoneCanControl bool     `json:"everyoneCanControl"`
+	TrackID            string   `json:"trackId"`
+	Position           float64  `json:"position"`
+	Upcoming           []string `json:"upcoming"`
 }
 
 func (s *Server) handleListenCreate(w http.ResponseWriter, r *http.Request) {
@@ -709,7 +647,6 @@ func (s *Server) handleListenCreate(w http.ResponseWriter, r *http.Request) {
 		changed:            make(chan struct{}),
 	}
 	if len(entries) > 0 {
-		// Starting it starts the music, from where the host was.
 		ls.add(entries, "end", now)
 		if entries[0].trackID == body.TrackID {
 			ls.seek(body.Position, now)
@@ -838,8 +775,6 @@ func (s *Server) handleListenJoin(w http.ResponseWriter, r *http.Request) {
 	s.writeListenState(w, r, http.StatusOK, u.ID, snap)
 }
 
-// handleListenPoll answers with the session once it's newer than the version
-// the device has ("since"), or after listenPollWait with what there is.
 func (s *Server) handleListenPoll(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
@@ -870,8 +805,6 @@ func (s *Server) handleListenPoll(w http.ResponseWriter, r *http.Request) {
 		case <-deadline.C:
 			since = -1
 		case <-r.Context().Done():
-			// The device was there while it waited; the host's time away
-			// starts from here.
 			h.seen(id, u.ID, time.Now())
 			return
 		}
@@ -971,8 +904,6 @@ func (s *Server) handleListenKick(w http.ResponseWriter, r *http.Request) {
 }
 
 type listenControlRequest struct {
-	// seek, next, previous, jump, or ended (a track played to its end on the
-	// device; anyone may say so). There's no pause: that's up to each device.
 	Action   string   `json:"action"`
 	Position *float64 `json:"position"`
 	EntryID  string   `json:"entryId"`
@@ -1035,9 +966,7 @@ func (s *Server) handleListenControl(w http.ResponseWriter, r *http.Request) {
 
 type listenAddRequest struct {
 	TrackIDs []string `json:"trackIds"`
-	// end (the default), next (after the current song), or now (next, and
-	// start it).
-	Mode string `json:"mode"`
+	Mode     string   `json:"mode"`
 }
 
 func (s *Server) handleListenAdd(w http.ResponseWriter, r *http.Request) {
@@ -1143,8 +1072,6 @@ func (s *Server) handleListenRemove(w http.ResponseWriter, r *http.Request) {
 	s.writeListenState(w, r, http.StatusOK, u.ID, snap)
 }
 
-// handleListenClear empties what's queued after the current song, which plays
-// on. It's the host's alone, even when everyone may add songs and skip.
 func (s *Server) handleListenClear(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	h := s.listen

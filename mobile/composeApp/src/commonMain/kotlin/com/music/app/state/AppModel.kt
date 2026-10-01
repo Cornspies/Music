@@ -63,15 +63,9 @@ private const val KEY_SWIPE_TO_DELETE = "ui.swipeToDelete"
 private const val KEY_UPDATE_DISMISSED = "update.dismissed"
 private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 private const val CHANGE_CHECK_INTERVAL_MS = 30_000L
-// While playback runs uninterrupted, listening time and the position are
-// still sent this often; everything else is sent when playback changes.
 private const val PLAYBACK_SYNC_INTERVAL_MS = 5L * 60_000L
-// Buffering also reads as "not playing"; a pause is only synced once it lasts.
 private const val PAUSE_SETTLE_MS = 2_000L
 
-// In a listening session: further from the session than this, the player
-// jumps to where it is (closer isn't worth the skip in the audio), and not
-// again for a while, in case catching up takes a moment of buffering.
 private const val SESSION_DRIFT_SEC = 1.5
 private val SESSION_DRIFT_COOLDOWN = 5.seconds
 
@@ -111,14 +105,12 @@ class AppModel(
 
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
-    /** Short messages for the snackbar. */
     val notices: SharedFlow<String> = _notices
 
     fun notify(message: String) {
         _notices.tryEmit(message)
     }
 
-    /** Listening sessions; while this device is in one, the session decides what plays. */
     val listen = ListenTogether(
         api = api,
         scope = scope,
@@ -128,7 +120,6 @@ class AppModel(
         notify = ::notify,
     )
 
-    /** An invite link waiting for its join prompt. */
     var listenInvite by mutableStateOf<String?>(null)
 
     var swipeToDelete by mutableStateOf(localStore.loadMeta(KEY_SWIPE_TO_DELETE) == "1")
@@ -201,7 +192,6 @@ class AppModel(
     var favoritesError by mutableStateOf<String?>(null)
         private set
 
-    /** Done and total while "download all favorites" runs, which goes on when the screen is left. */
     var favoritesDownload by mutableStateOf<Pair<Int, Int>?>(null)
         private set
     var favoritesDownloadError by mutableStateOf<String?>(null)
@@ -240,8 +230,6 @@ class AppModel(
     var shuffle by mutableStateOf(false)
     var repeatMode by mutableStateOf(RepeatMode.OFF)
 
-    // Stats go out one at a time, in order: listening time for a finished play
-    // must arrive before the next play of the same track is counted.
     private val statsQueue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
     init {
@@ -267,12 +255,9 @@ class AppModel(
             }
         }
 
-        // Skips the initial "not playing": only a real pause is worth syncing.
         scope.launch {
             player.isPlaying.drop(1).collectLatest { playing ->
                 if (listen.active) {
-                    // Buffering reads as not playing too, but still wants to
-                    // play; and a song ending isn't someone pausing it.
                     if (playing) {
                         listen.resumedHere()
                     } else if (!player.wantsToPlay() && !atEndOfTrack()) {
@@ -489,8 +474,6 @@ class AppModel(
         refreshMediaTokenIfDue()
     }
 
-    // Media URLs carry a media token, never the session token, so there has
-    // to be a current one before they're made.
     private fun refreshMediaTokenIfDue() {
         if (user == null || offlineMode || !api.mediaTokenNeedsRefresh) return
         scope.launch { runCatching { api.refreshMediaToken() } }
@@ -962,8 +945,6 @@ class AppModel(
                 artworkUrl = if (track.hasCover && !offlineMode) api.coverUrl(track.id) else null,
             ),
         )
-        // Playback may carry straight on into the new track without ever
-        // reading as stopped, so its listening can't wait for a start event.
         if (autoplay) startListening(fromSec = 0.0)
         return track
     }
@@ -1090,14 +1071,10 @@ class AppModel(
         if (wasListening) startListening(fromSec = seconds)
     }
 
-    // While in a listening session: the entry loaded here, the entry this
-    // account's play was counted for, and when the player was last pulled
-    // back in line.
     private var sessionEntryId: String? = null
     private var sessionCountedEntry: String? = null
     private var lastDriftSeek: TimeMark? = null
 
-    /** Makes the player match the session; runs on every change and every few seconds. */
     private fun followSession(how: Follow) {
         val st = listen.session ?: return
         val entries = listen.entries
@@ -1120,15 +1097,12 @@ class AppModel(
         val playing = st.playing && !listen.localPaused
         if (how == Follow.JUMP) lastDriftSeek = null
         if (how == Follow.ADOPT && entry.id != sessionEntryId && currentTrack?.id == entry.track.id) {
-            // Starting a session from what plays here: carry on without a reload.
             sessionEntryId = entry.id
             sessionCountedEntry = entry.id
         }
         if (entry.id != sessionEntryId) {
             sessionEntryId = entry.id
             loadCurrent(autoplay = playing)
-            // Joining halfway starts halfway; a song that just began starts at
-            // 0, which is closer than any seek would land.
             if (expected > SESSION_DRIFT_SEC) seekHere(expected)
             if (playing) countSessionPlay(entry.id, entry.track)
             return
@@ -1142,8 +1116,6 @@ class AppModel(
                     lastDriftSeek = TimeSource.Monotonic.markNow()
                     seekHere(expected)
                 }
-                // Not on a tick: a pause from the lock screen may not have
-                // been noticed yet, and would be undone.
                 if (!player.wantsToPlay() && how != Follow.TICK) player.play()
                 countSessionPlay(entry.id, entry.track)
             }
@@ -1172,7 +1144,6 @@ class AppModel(
         message?.let(::notify)
     }
 
-    /** Starts a session with what plays now and the queue after it. */
     suspend fun startListening(capacity: Int, everyoneCanControl: Boolean) {
         val track = currentTrack
         listen.start(
@@ -1193,10 +1164,6 @@ class AppModel(
         if (stamp > knownPlaybackUpdatedAt) knownPlaybackUpdatedAt = stamp
     }
 
-    // One stretch of listening, from playback starting until it stops. It counts
-    // as far as the position moved, but never more than the time that passed:
-    // a stall or a seek forward adds nothing. After a seek backwards (only the
-    // lock screen can do that unannounced) the time that passed is used.
     private class Listening(val trackId: String, val fromSec: Double, val since: TimeMark)
 
     private var listening: Listening? = null
@@ -1229,7 +1196,6 @@ class AppModel(
         statsQueue.trySend { api.reportListened(id, seconds) }
     }
 
-    /** Sends the listening so far and the position, without interrupting playback. */
     private fun syncProgress() {
         if (listening != null) {
             stopListening()
@@ -1239,7 +1205,6 @@ class AppModel(
         savePlayback()
     }
 
-    /** The app may be stopped while in the background, so sync before that. */
     fun onBackground() = syncProgress()
 
     private var lastSavedTrackId: String? = null
@@ -1247,12 +1212,9 @@ class AppModel(
 
     private fun savePlayback(position: Double = player.currentPositionSec()) {
         val track = currentTrack ?: return
-        // A session's queue isn't this account's own playback to resume elsewhere.
         if (user == null || offlineMode || listen.active) return
         val ids = queue.map { it.id }
         val queueChanged = ids != lastSavedQueueIds
-        // Saving an unchanged state again would only overwrite whatever another
-        // device saved since.
         if (!queueChanged && track.id == lastSavedTrackId && abs(position - lastSavedPosition) < 1) return
         lastSavedTrackId = track.id
         lastSavedPosition = position
@@ -1328,7 +1290,6 @@ class AppModel(
 
     private fun onTrackEnded() {
         stopListening()
-        // The session moves everyone on; the first device to get here tells it.
         if (listen.active) return listen.trackEnded(sessionEntryId)
         when (repeatMode) {
             RepeatMode.ONE -> {

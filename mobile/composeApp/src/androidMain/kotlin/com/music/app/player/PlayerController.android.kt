@@ -46,7 +46,6 @@ actual class PlayerController actual constructor() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    // Ended counts too: listening is measured up to where the track stopped.
     private fun readPosition(): Double? {
         val c = controller ?: return null
         return if (c.playbackState != Player.STATE_IDLE) c.currentPosition / 1000.0 else null
@@ -54,7 +53,6 @@ actual class PlayerController actual constructor() {
 
     actual fun currentPositionSec(): Double = readPosition() ?: _positionSec.value
 
-    // What the app last asked for, until the controller is connected to say.
     private var playRequested = false
 
     actual fun wantsToPlay(): Boolean = controller?.playWhenReady ?: playRequested

@@ -34,9 +34,7 @@ interface PlayerState {
   toggleShuffle: () => void
   playNext: (track: Track) => void
   addToQueue: (track: Track) => void
-  /** Plays these songs from the first, or shuffled; in a listening session they're queued to play now. */
   playAll: (tracks: Track[], opts?: { shuffle?: boolean }) => void
-  /** Queues these songs after everything else. */
   addAllToQueue: (tracks: Track[]) => void
   removeFromQueue: (index: number) => void
   jumpTo: (index: number) => void
@@ -53,11 +51,6 @@ interface PlayerState {
   setNormalizeVolume: (on: boolean) => void
 }
 
-/**
- * While this device is in a listening session, the session decides what plays
- * (see stores/listen.ts): the player's controls go to it, and it drives the
- * player through followSession.
- */
 export interface SessionHandler {
   togglePlay: () => void
   next: () => void
@@ -70,13 +63,9 @@ export interface SessionHandler {
   addAll: (tracks: Track[], mode: "now" | "end") => void
   removeFromQueue: (index: number) => void
   clearQueue: () => void
-  /** The entry played to its end here. */
   trackEnded: (entryId: string) => void
-  /** Playback stopped here without anyone asking (autoplay refused, an error, the sleep timer). */
   stoppedHere: () => void
-  /** The media keys or lock screen asked to play or pause this device. */
   playHere: (play: boolean) => void
-  /** Signed out: forget the session without telling the server. */
   signedOut: () => void
 }
 
@@ -89,32 +78,23 @@ export function setSessionHandler(handler: SessionHandler | null) {
   sessionCounted = ""
   const e = getEngine()
   if (!e) return
-  // A crossfade would start the next song early and put this device ahead.
   e.crossfadeSeconds = handler ? 0 : usePlayerStore.getState().crossfadeSeconds
   if (!handler) prepareNext()
 }
 
 export interface SessionSync {
   queue: Track[]
-  /** Into queue; -1 when there's nothing to play. */
   index: number
   entryId: string
   nextEntryId: string
   sessionPlaying: boolean
-  /** False while paused on this device only. */
   follow: boolean
-  /** Where the session is now. */
   position: number
-  /** Take over the song already playing here instead of loading it again. */
   adopt?: boolean
-  /** Catch up now, even right after the last correction. */
   jump?: boolean
-  /** The regular check while playing: only correct drift. */
   tick?: boolean
 }
 
-// Further apart than this, the player jumps to where the session is. Closer
-// than that isn't worth the skip in the audio.
 const SESSION_DRIFT_S = 1.5
 const SESSION_DRIFT_COOLDOWN_MS = 5000
 
@@ -123,7 +103,6 @@ let sessionNextEntry = ""
 let sessionCounted = ""
 let lastDriftSeekAt = 0
 
-/** Makes the player match the session; called on every change and every few seconds. */
 export function followSession(sync: SessionSync): void {
   const e = getEngine()
   if (!e) return
@@ -142,7 +121,6 @@ export function followSession(sync: SessionSync): void {
   const playing = sync.sessionPlaying && sync.follow
   if (sync.jump) lastDriftSeekAt = 0
   if (sync.adopt && sync.entryId !== sessionEntry && e.current?.id === track.id) {
-    // Starting a session from what plays here: carry on without a reload.
     sessionEntry = sync.entryId
     sessionCounted = sync.entryId
   }
@@ -156,10 +134,7 @@ export function followSession(sync: SessionSync): void {
       duration: track.duration || 0,
       isPlaying: playing,
     })
-    // Joining halfway starts halfway; a song that just began starts at 0,
-    // which is closer than any seek would land.
     e.load(track, { autoplay: playing, startAt: sync.position > SESSION_DRIFT_S ? sync.position : 0 })
-    // Loading may have dropped the song that was ready to follow.
     sessionNextEntry = ""
     if (playing) countSessionPlay(track, sync.entryId)
     updateMediaSession(track)
@@ -171,7 +146,6 @@ export function followSession(sync: SessionSync): void {
         lastDriftSeekAt = now
         e.seek(sync.position)
       }
-      // Not on a tick: a pause the page hasn't heard about yet would be undone.
       if (e.paused && !e.ended && !sync.tick) {
         e.play().catch((err: unknown) => {
           if ((err as Error)?.name !== "AbortError") session?.stoppedHere()
@@ -210,7 +184,6 @@ function countSessionPlay(track: Track, entryId: string) {
   reportPlay(track)
 }
 
-/** Seeks this device only, for a seek the session is about to confirm. */
 export function seekHere(sec: number) {
   const e = getEngine()
   if (!e) return
@@ -219,7 +192,6 @@ export function seekHere(sec: number) {
   usePlayerStore.setState({ position: sec })
 }
 
-/** Stops following a session; what played stays loaded, paused. */
 export function leaveSessionPlayback() {
   setSessionHandler(null)
   const e = getEngine()
@@ -265,7 +237,6 @@ function getEngine(): AudioEngine | null {
         usePlayerStore.setState({ isPlaying: false })
         flushListening()
         persistPlayback({ force: true })
-        // A song reaching its end pauses too, just before moving on.
         if (session && !engine?.ended) session.stoppedHere()
       },
       onEnded: () => {
@@ -295,7 +266,6 @@ function getEngine(): AudioEngine | null {
       onAdvanced: (track) => {
         const s = usePlayerStore.getState()
         if (session) {
-          // The next entry was ready and the audio carried straight on.
           const ended = sessionEntry
           sessionEntry = sessionNextEntry
           sessionNextEntry = ""
@@ -345,16 +315,11 @@ function getEngine(): AudioEngine | null {
 }
 
 function reportPlay(track: Track) {
-  // The server adds listening time to the latest play of a track, so the
-  // previous play's time has to arrive first (repeat-one plays it again).
   const flushed = flushListening()
   listening = { trackId: track.id, lastPosition: null, unreported: 0 }
   flushed.then(() => api(`/api/tracks/${track.id}/play`, { method: "POST" })).catch(() => {})
 }
 
-// Listening time is also reported on pause, track changes and when the page is
-// hidden; this only bounds what an uninterrupted session could lose. Frequent
-// requests keep a phone's radio awake.
 const LISTEN_REPORT_INTERVAL_S = 5 * 60
 
 let listening: { trackId: string; lastPosition: number | null; unreported: number } | null = null
@@ -479,9 +444,6 @@ function playIndex(index: number) {
   prepareNext()
 }
 
-// The position is also saved on pause, track changes and when the page is
-// hidden, which is what resuming on another device relies on; this interval
-// is only a fallback for long uninterrupted playback.
 const SAVE_INTERVAL_MS = 5 * 60_000
 const SYNC_INTERVAL_MS = 60_000
 let positionDirty = false
@@ -501,7 +463,6 @@ function noteUpdatedAt(stamp: string | undefined) {
 }
 
 function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
-  // A session's queue isn't this account's own playback to resume elsewhere.
   if (restoring || session) return
   const s = usePlayerStore.getState()
   if (!s.currentTrack || !useAuthStore.getState().token) return
@@ -784,7 +745,6 @@ export const usePlayerStore = create<PlayerState>()(
 
       playAll: (tracks, opts = {}) => {
         if (tracks.length === 0) return
-        // A session has no shuffle mode; the songs go in shuffled instead.
         if (session) return session.addAll(opts.shuffle ? shuffled(tracks) : tracks, "now")
         const s = get()
         if (!opts.shuffle) return s.playNow(tracks[0], tracks)
@@ -886,7 +846,6 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       handleTrackDeleted: (id) => {
-        // The session drops deleted songs itself.
         if (session) return
         const { queue, queueIndex, currentTrack } = get()
         const idx = queue.findIndex((t) => t.id === id)

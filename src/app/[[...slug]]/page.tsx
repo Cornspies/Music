@@ -41,7 +41,6 @@ export default function Home() {
   )
 
   useEffect(() => {
-    // Joining takes an account; the invite waits until someone signs in.
     if (view === "listen" && viewArg && !token) rememberListenInvite(viewArg)
   }, [view, viewArg, token])
 

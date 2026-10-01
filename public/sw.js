@@ -2,8 +2,6 @@ const VERSION = "music-v3"
 const CACHE = VERSION
 const OFFLINE_CACHE = "music-offline-v1"
 
-// Pages that aren't the app. Every other page load is the app itself and is
-// kept as its offline copy; these must never take its place.
 const STANDALONE_PAGES = ["/privacy"]
 
 const PRECACHE = [

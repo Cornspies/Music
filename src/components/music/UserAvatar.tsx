@@ -17,7 +17,6 @@ interface Props {
 
 export function UserAvatar({ userId, username, hasAvatar, size = 20, className, label }: Props) {
   const mediaToken = useMediaToken()
-  // What failed to load; another user, or a new media token, gets a new try.
   const attempt = `${userId}:${mediaToken}`
   const [failedAttempt, setFailedAttempt] = useState<string | null>(null)
 

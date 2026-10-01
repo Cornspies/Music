@@ -14,7 +14,6 @@ interface CoverArtProps {
   className?: string
   iconClassName?: string
   initialsClassName?: string
-  /** Thumbnail edge to load: the default suits list rows; "full" is the stored cover. */
   size?: CoverSize | "full"
 }
 
@@ -28,7 +27,6 @@ export function CoverArt({
   size = 128,
 }: CoverArtProps) {
   const mediaToken = useMediaToken()
-  // A cover that failed gets another try with the next media token.
   const [failedWith, setFailedWith] = useState<string | null>(null)
 
   if (hasCover && mediaToken && failedWith !== mediaToken) {

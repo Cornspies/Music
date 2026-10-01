@@ -40,7 +40,6 @@ export interface Uploader {
   hasAvatar: boolean
 }
 
-// A demo account sees only its own uploads, and apart from admins nobody else sees them.
 export type Role = "user" | "admin" | "demo"
 
 export interface User {
@@ -301,10 +300,8 @@ export interface ListenEntry {
   addedBy: Uploader
 }
 
-/** A listening session as one member sees it; see stores/listen.ts. */
 export interface ListenState {
   id: string
-  /** The invite code; only the host gets it. */
   code?: string
   host: Uploader
   isHost: boolean
@@ -314,12 +311,9 @@ export interface ListenState {
   members: ListenMember[]
   version: number
   queueVersion: number
-  /** Left out when this device already has queueVersion. */
   entries?: ListenEntry[]
   current: string
-  /** False only while there's nothing to play: nobody pauses for everyone. */
   playing: boolean
-  /** Where the current entry was when the server answered. */
   position: number
 }
 

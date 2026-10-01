@@ -130,8 +130,6 @@ fun SearchScreen() {
                 }
             },
             singleLine = true,
-            // Results follow the typing, so the keyboard's search key only
-            // needs to put the keyboard away.
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
         )
@@ -144,11 +142,6 @@ fun SearchScreen() {
     }
 }
 
-/**
- * Puts the keyboard away as soon as a touch lands here (on a result, a chip,
- * empty space, or to scroll), and still lets that touch do what it does.
- * Some phones offer no other way to close the keyboard.
- */
 private fun Modifier.hideKeyboardOnTouch(focusManager: FocusManager): Modifier =
     pointerInput(focusManager) {
         awaitEachGesture {
