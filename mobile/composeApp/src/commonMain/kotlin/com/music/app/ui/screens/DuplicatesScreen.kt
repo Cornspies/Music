@@ -88,7 +88,7 @@ fun DuplicatesScreen() {
                 modifier = Modifier.weight(1f),
             )
         }
-        if (groups != null && groups.isNotEmpty()) {
+        if (!groups.isNullOrEmpty()) {
             val extra = groups.sumOf { it.tracks.size - 1 }
             Text(
                 "${groups.size} ${if (groups.size == 1) "song" else "songs"} with extra copies • $extra to look at",

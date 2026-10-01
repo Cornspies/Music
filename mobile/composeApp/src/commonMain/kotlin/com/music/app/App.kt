@@ -130,7 +130,7 @@ fun App() {
 private fun Root() {
     val model = LocalAppModel.current
     if (model.bootstrapping) {
-        Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
@@ -249,38 +249,37 @@ private fun MainScreen() {
 @Composable
 private fun BottomTabs(selected: Screen) {
     val model = LocalAppModel.current
-    val current = selected
     ShortNavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
         ShortNavigationBarItem(
-            selected = current == Screen.Home,
+            selected = selected == Screen.Home,
             onClick = { model.selectTab(Screen.Home) },
             icon = { Icon(Icons.Filled.Home, contentDescription = null) },
             label = { Text("Home") },
         )
         ShortNavigationBarItem(
-            selected = current == Screen.Library,
+            selected = selected == Screen.Library,
             onClick = { model.selectTab(Screen.Library) },
             icon = { Icon(Icons.Filled.LibraryMusic, contentDescription = null) },
             label = { Text("Library") },
         )
         ShortNavigationBarItem(
-            selected = current == Screen.Search,
+            selected = selected == Screen.Search,
             onClick = { model.selectTab(Screen.Search) },
             icon = { Icon(Icons.Filled.Search, contentDescription = null) },
             label = { Text("Search") },
         )
         ShortNavigationBarItem(
-            selected = current == Screen.Playlists,
+            selected = selected == Screen.Playlists,
             onClick = { model.selectTab(Screen.Playlists) },
             icon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null) },
             label = { Text("Playlists") },
         )
         ShortNavigationBarItem(
-            selected = current == Screen.Favorites,
+            selected = selected == Screen.Favorites,
             onClick = { model.selectTab(Screen.Favorites) },
             icon = {
                 Icon(
-                    if (current == Screen.Favorites) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    if (selected == Screen.Favorites) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                     contentDescription = null,
                 )
             },
