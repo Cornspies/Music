@@ -49,7 +49,11 @@ targets:
         CURRENT_PROJECT_VERSION: "0.3.1"
         DEVELOPMENT_TEAM: $(TEAM_ID)
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # iPhone only: with "1,2" (iPhone and iPad) App Store Connect also wants
+        # 13-inch iPad screenshots. iPads still run it as an iPhone app. iPad
+        # support can be added in a later version, but never removed once a
+        # version with it is on the App Store.
+        TARGETED_DEVICE_FAMILY: "1"
         # Simulator builds only: skiko's simulator library carries one object
         # (ICU's data table, no code) stamped for iOS 18.5, and the linker
         # warns when linking it for anything older. Devices keep 15.6.
