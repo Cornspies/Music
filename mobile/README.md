@@ -27,7 +27,10 @@ running natively on both platforms:
 
 ## Prerequisites
 
-- **JDK 17** (Temurin/Corretto)
+- **JetBrains Runtime 21** for Gradle, as `gradle/gradle-daemon-jvm.properties`
+  asks; Gradle downloads it if it isn't installed. Other Java 21 builds don't
+  count: some lack `jlink`, which the Android build needs (VS Code's Java
+  extension ships one).
 - **Android Studio Otter 3+** (or plain Gradle 9.7+ with the Android SDK; compileSdk 37)
 - **Xcode 15+** with an active command-line tools selection (iOS builds only).
   Simulator builds are Apple-silicon only (`iosSimulatorArm64`): Compose
