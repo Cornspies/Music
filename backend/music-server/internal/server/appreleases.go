@@ -13,7 +13,31 @@ import (
 	"music-server/internal/config"
 )
 
-var apkNameRe = regexp.MustCompile(`^Music-([0-9A-Za-z._+-]{1,40})\.apk$`)
+type releaseKind struct {
+	name        *regexp.Regexp
+	contentType string
+}
+
+var releaseKinds = map[string]releaseKind{
+	"android":  {regexp.MustCompile(`^Music-([0-9A-Za-z._+-]{1,40})\.apk$`), "application/vnd.android.package-archive"},
+	"appimage": {regexp.MustCompile(`^Music_([0-9A-Za-z.+-]{1,40})_(?:amd64|x86_64)\.AppImage$`), "application/octet-stream"},
+	"deb":      {regexp.MustCompile(`^Music_([0-9A-Za-z.+-]{1,40})_amd64\.deb$`), "application/vnd.debian.binary-package"},
+	"rpm":      {regexp.MustCompile(`^Music-([0-9A-Za-z.+]{1,40})-[0-9]+\.x86_64\.rpm$`), "application/x-rpm"},
+	"windows":  {regexp.MustCompile(`^Music_([0-9A-Za-z.+-]{1,40})_x64-setup\.exe$`), "application/vnd.microsoft.portable-executable"},
+	"msi":      {regexp.MustCompile(`^Music_([0-9A-Za-z.+-]{1,40})_x64_[A-Za-z-]{2,10}\.msi$`), "application/x-msi"},
+}
+
+func requestedKind(w http.ResponseWriter, r *http.Request) (releaseKind, bool) {
+	platform := strings.TrimSpace(r.URL.Query().Get("platform"))
+	if platform == "" {
+		platform = "android"
+	}
+	kind, ok := releaseKinds[platform]
+	if !ok {
+		writeErr(w, http.StatusBadRequest, "unknown platform")
+	}
+	return kind, ok
+}
 
 type AppRelease struct {
 	Version    string `json:"version"`
@@ -29,18 +53,26 @@ func (s *Server) apkDir() string {
 	return filepath.Join(s.dataDir, "apk")
 }
 
-func (s *Server) handleAppReleases(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleAppReleases(w http.ResponseWriter, r *http.Request) {
+	kind, ok := requestedKind(w, r)
+	if !ok {
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, s.appReleases())
+	writeJSON(w, http.StatusOK, s.appReleases(kind))
 }
 
 func (s *Server) handleLatestAppRelease(w http.ResponseWriter, r *http.Request) {
+	kind, ok := requestedKind(w, r)
+	if !ok {
+		return
+	}
 	current := strings.TrimSpace(r.URL.Query().Get("current"))
 	var out struct {
 		Latest          *AppRelease `json:"latest"`
 		UpdateAvailable bool        `json:"updateAvailable"`
 	}
-	if releases := s.appReleases(); len(releases) > 0 {
+	if releases := s.appReleases(kind); len(releases) > 0 {
 		out.Latest = &releases[0]
 		out.UpdateAvailable = current != "" && compareVersions(releases[0].Version, current) > 0
 	}
@@ -48,7 +80,7 @@ func (s *Server) handleLatestAppRelease(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) appReleases() []AppRelease {
+func (s *Server) appReleases(kind releaseKind) []AppRelease {
 	entries, err := os.ReadDir(s.apkDir())
 	out := []AppRelease{}
 	if err == nil {
@@ -56,7 +88,7 @@ func (s *Server) appReleases() []AppRelease {
 			if e.IsDir() {
 				continue
 			}
-			m := apkNameRe.FindStringSubmatch(e.Name())
+			m := kind.name.FindStringSubmatch(e.Name())
 			if m == nil {
 				continue
 			}
@@ -74,7 +106,14 @@ func (s *Server) appReleases() []AppRelease {
 
 func (s *Server) handleAppReleaseDownload(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("file")
-	if !apkNameRe.MatchString(name) {
+	contentType := ""
+	for _, kind := range releaseKinds {
+		if kind.name.MatchString(name) {
+			contentType = kind.contentType
+			break
+		}
+	}
+	if contentType == "" {
 		writeErr(w, http.StatusNotFound, "no such build")
 		return
 	}
@@ -89,7 +128,7 @@ func (s *Server) handleAppReleaseDownload(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusNotFound, "no such build")
 		return
 	}
-	w.Header().Set("Content-Type", "application/vnd.android.package-archive")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=3600")

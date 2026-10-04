@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/music/EmptyState"
 
 interface SearchState {
-  key: string // `${source}\n${query}` — results only show for the query on screen
+  key: string
   results: DiscoverResult[]
   page: number
   hasMore: boolean

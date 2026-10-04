@@ -80,13 +80,13 @@ function PlaylistGrid({
             className={`relative flex aspect-square w-full items-center justify-center rounded-lg bg-linear-to-br shadow-lg ${hashGradient(playlist.name)}`}
           >
             <Music4 className="size-8 text-zinc-400/70" />
-            <span className="absolute bottom-2 left-2 rounded-full bg-zinc-950/60 px-2 py-0.5 text-[10px] font-medium text-zinc-300 backdrop-blur">
+            <span className="absolute bottom-2 left-2 rounded-full bg-zinc-950/60 px-2 py-0.5 text-[10px] font-medium text-zinc-300">
               {playlist.trackCount}
             </span>
             {playlist.isMine && playlist.isPublic && (
               <span
                 title="Public — anyone signed in can see this"
-                className="absolute top-2 right-2 rounded-full bg-zinc-950/60 p-1 text-emerald-400 backdrop-blur"
+                className="absolute top-2 right-2 rounded-full bg-zinc-950/60 p-1 text-emerald-400"
               >
                 <Globe className="size-3" />
               </span>

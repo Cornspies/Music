@@ -18,6 +18,7 @@ import { api } from "@/lib/api"
 import { formatTotal, hashGradient } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
+import { publicUrl } from "@/lib/desktop"
 import type { PlaylistDetail } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
@@ -43,7 +44,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 async function copyPlaylistLink(playlistId: string): Promise<void> {
-  const url = `${window.location.origin}/playlists/${encodeURIComponent(playlistId)}`
+  const url = publicUrl(`/playlists/${encodeURIComponent(playlistId)}`)
   if (await copyText(url)) toast.success("Link copied")
   else toast.error(`Couldn't copy automatically. The link is: ${url}`)
 }

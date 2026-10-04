@@ -56,7 +56,7 @@ function EventRow({ event, queue }: { event: PlayEvent; queue: PlayEvent[] }) {
       tabIndex={0}
       onDoubleClick={play}
       onKeyDown={(e) => {
-        if (e.key === "Enter") play()
+        if (e.key === "Enter" && e.target === e.currentTarget) play()
       }}
       className={cn(
         "group flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-zinc-800/60 md:px-3",
@@ -67,8 +67,13 @@ function EventRow({ event, queue }: { event: PlayEvent; queue: PlayEvent[] }) {
         <CoverArt trackId={event.track.id} title={event.track.title} hasCover={event.track.hasCover} />
         <button
           type="button"
-          aria-label={`Play ${event.track.title}`}
-          onClick={play}
+          aria-label={isCurrent ? (isPlaying ? "Pause" : "Play") : `Play ${event.track.title}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (isCurrent) usePlayerStore.getState().togglePlay()
+            else play()
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
           className="absolute inset-0 flex items-center justify-center rounded-md bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100"
         >
           {isCurrent ? <EqualizerIcon playing={isPlaying} /> : <Play className="size-4 fill-current" />}

@@ -33,6 +33,7 @@ import type {
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
+import { apiUrl, publicUrl } from "@/lib/desktop"
 
 
 const REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
@@ -60,7 +61,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) headers.set("Authorization", `Bearer ${token}`)
   let res: Response
   try {
-    res = await fetch(path, { ...init, headers })
+    res = await fetch(apiUrl(path), { ...init, headers })
   } catch (e) {
     const err = e as Error
     if (err?.name === "AbortError") throw err
@@ -92,7 +93,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function withToken(path: string): string {
-  return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(currentMediaToken())}`
+  return `${apiUrl(path)}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(currentMediaToken())}`
 }
 
 export function streamUrl(track: Pick<Track, "id" | "mimeType" | "hasCompatible">): string {
@@ -100,14 +101,18 @@ export function streamUrl(track: Pick<Track, "id" | "mimeType" | "hasCompatible"
   return withToken(`/api/tracks/${track.id}/stream`) + version
 }
 
+export function nativeStreamUrl(track: Pick<Track, "id" | "hasCompatible">): string {
+  return withToken(`/api/tracks/${track.id}/stream`) + (track.hasCompatible ? "&version=compatible" : "")
+}
+
 function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boolean {
-  if (!track.hasCompatible) return true // nothing else to offer anyway
-  if (typeof document === "undefined") return true // SSR: decided on the client
+  if (!track.hasCompatible) return true
+  if (typeof document === "undefined") return true
   const probe = document.createElement("audio")
   return probe.canPlayType(track.mimeType) !== ""
 }
 
-export type CoverSize = 128 | 256 | 512
+export type CoverSize = 32 | 128 | 256 | 512
 
 export function coverUrl(track: { id: string }, size?: CoverSize): string {
   return withToken(`/api/tracks/${track.id}/cover${size ? `?size=${size}` : ""}`)
@@ -126,7 +131,7 @@ export function downloadUrl(
 }
 
 export function uploadUrl(): string {
-  return "/api/tracks"
+  return apiUrl("/api/tracks")
 }
 
 export function confirmPendingUpload(pendingId: string): Promise<Track> {
@@ -246,7 +251,7 @@ export function applyMetadataCandidate(trackId: string, candidateId: string): Pr
 async function postConfirmed<T>(path: string, body: unknown): Promise<T | undefined> {
   let res: Response
   try {
-    res = await fetch(path, {
+    res = await fetch(apiUrl(path), {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentToken() ?? ""}` },
       body: JSON.stringify(body),
@@ -297,6 +302,14 @@ export function fetchAppReleases(): Promise<AppRelease[]> {
   return api<AppRelease[]>("/api/app/releases")
 }
 
+export function fetchLatestAppRelease(
+  platform: string,
+  current: string
+): Promise<{ latest: AppRelease | null; updateAvailable: boolean }> {
+  const query = `platform=${encodeURIComponent(platform)}&current=${encodeURIComponent(current)}`
+  return api(`/api/app/releases/latest?${query}`)
+}
+
 export function appReleaseUrl(fileName: string): string {
   return withToken(`/api/app/releases/${encodeURIComponent(fileName)}`)
 }
@@ -330,11 +343,11 @@ export function fetchSharedTrackForMember(token: string): Promise<Track> {
 }
 
 export function sharedStreamUrl(token: string): string {
-  return `/api/share/${encodeURIComponent(token)}/stream`
+  return apiUrl(`/api/share/${encodeURIComponent(token)}/stream`)
 }
 
 export function sharedCoverUrl(token: string): string {
-  return `/api/share/${encodeURIComponent(token)}/cover`
+  return apiUrl(`/api/share/${encodeURIComponent(token)}/cover`)
 }
 
 export function fetchDuplicates(): Promise<DuplicateGroup[]> {
@@ -544,11 +557,9 @@ export const listen = {
 }
 
 export function listenLink(code: string): string {
-  const origin = typeof window !== "undefined" ? window.location.origin : ""
-  return `${origin}/listen/${encodeURIComponent(code)}`
+  return publicUrl(`/listen/${encodeURIComponent(code)}`)
 }
 
 export function inviteLink(code: string): string {
-  const origin = typeof window !== "undefined" ? window.location.origin : ""
-  return `${origin}/register?invite=${encodeURIComponent(code)}`
+  return publicUrl(`/register?invite=${encodeURIComponent(code)}`)
 }

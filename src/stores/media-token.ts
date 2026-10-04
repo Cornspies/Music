@@ -3,6 +3,7 @@
 import { create } from "zustand"
 import type { MediaToken } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
+import { apiUrl } from "@/lib/desktop"
 
 const REFRESH_MARGIN_MS = 10 * 60_000
 const MIN_REFRESH_MS = 60_000
@@ -11,6 +12,7 @@ interface MediaTokenState {
   token: string | null
   expiresAt: number
   refresh: () => Promise<void>
+  adopt: (token: string, expiresAt: number) => void
   clear: () => void
 }
 
@@ -39,7 +41,7 @@ export const useMediaTokenStore = create<MediaTokenState>()((set) => ({
       const session = useAuthStore.getState().token
       if (!session) return
       try {
-        const res = await fetch("/api/auth/media-token", {
+        const res = await fetch(apiUrl("/api/auth/media-token"), {
           headers: { Authorization: `Bearer ${session}` },
         })
         if (!res.ok) {
@@ -57,6 +59,11 @@ export const useMediaTokenStore = create<MediaTokenState>()((set) => ({
       }
     })()
     return inflight
+  },
+
+  adopt: (token, expiresAt) => {
+    set({ token, expiresAt })
+    scheduleRefresh(expiresAt)
   },
 
   clear: () => {

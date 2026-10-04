@@ -12,6 +12,7 @@ import {
   Copy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { isDesktop } from "@/lib/desktop"
 import { confirmPendingUpload, currentToken, discardPendingUpload, uploadUrl } from "@/lib/api"
 import { formatFileSize } from "@/lib/format"
 import type { DuplicateResponse, Track } from "@/lib/types"
@@ -56,6 +57,7 @@ function isAudioFile(file: File): boolean {
 }
 
 function measureDuration(file: File): Promise<number | undefined> {
+  if (isDesktop) return Promise.resolve(undefined)
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file)
     const el = new Audio()

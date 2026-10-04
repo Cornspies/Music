@@ -9,11 +9,26 @@ import type { Album } from "@/lib/types"
 import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { EmptyState } from "@/components/music/EmptyState"
+import { VirtualGrid, useColumns } from "@/components/music/VirtualGrid"
 import { Skeleton } from "@/components/ui/skeleton"
+
+const ALBUM_COLUMNS = [
+  [640, 3],
+  [768, 4],
+  [1280, 5],
+] as const
+
+const ALBUM_COVER_SIZES =
+  "(min-width: 1280px) calc((100vw - 340px) / 5), (min-width: 768px) calc((100vw - 340px) / 4), (min-width: 640px) calc((100vw - 60px) / 3), calc((100vw - 48px) / 2)"
+
+function albumKey(album: Album): string {
+  return JSON.stringify({ name: album.name, artist: album.artist })
+}
 
 export function AlbumsView() {
   const navigate = useUIStore((s) => s.navigate)
   const [albums, setAlbums] = useState<Album[] | null>(null)
+  const columns = useColumns(2, ALBUM_COLUMNS)
 
   useEffect(() => {
     let cancelled = false
@@ -53,12 +68,15 @@ export function AlbumsView() {
             title="No albums yet"
           />
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
-            {albums.map((album) => {
-              const key = JSON.stringify({ name: album.name, artist: album.artist })
+          <VirtualGrid
+            items={albums}
+            columns={columns}
+            gap={12}
+            itemKey={albumKey}
+            renderItem={(album) => {
+              const key = albumKey(album)
               return (
                 <button
-                  key={key}
                   type="button"
                   onClick={() => navigate("album", key)}
                   className="group rounded-xl p-2 text-left transition-colors hover:bg-zinc-800/60"
@@ -69,9 +87,10 @@ export function AlbumsView() {
                       trackId={album.hasCover ? album.coverTrackId : key}
                       title={album.name}
                       hasCover={album.hasCover}
-                      size={512}
+                      size={256}
+                      sizes={ALBUM_COVER_SIZES}
                     />
-                    <span className="absolute top-2 right-2 rounded-full bg-zinc-950/70 px-2 py-0.5 text-[10px] font-medium text-zinc-300 backdrop-blur">
+                    <span className="absolute top-2 right-2 rounded-full bg-zinc-950/80 px-2 py-0.5 text-[10px] font-medium text-zinc-300">
                       {album.trackCount}
                     </span>
                   </div>
@@ -83,8 +102,8 @@ export function AlbumsView() {
                   </p>
                 </button>
               )
-            })}
-          </div>
+            }}
+          />
         )}
       </div>
     </div>

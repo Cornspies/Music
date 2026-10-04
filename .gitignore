@@ -15,10 +15,13 @@ node_modules
 
 # next.js
 /.next/
+/.next-desktop/
 /out/
 
 # production
 /build
+/desktop/src-tauri/target/
+/desktop/src-tauri/gen/
 
 # misc
 .DS_Store

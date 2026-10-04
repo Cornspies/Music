@@ -447,8 +447,16 @@ func resizeCover(raw []byte, edge int) []byte {
 	if err != nil {
 		return raw
 	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, downscale(src, edge), &jpeg.Options{Quality: 88}); err != nil {
+		return raw
+	}
+	return buf.Bytes()
+}
+
+func downscale(src image.Image, edge int) *image.RGBA {
 	b := src.Bounds()
-	scale := float64(edge) / float64(max(b.Dx(), b.Dy()))
+	scale := min(1, float64(edge)/float64(max(b.Dx(), b.Dy())))
 	w, h := max(1, int(float64(b.Dx())*scale)), max(1, int(float64(b.Dy())*scale))
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
@@ -467,9 +475,5 @@ func resizeCover(raw []byte, edge int) []byte {
 			out.Set(x, y, color.RGBA{uint8(r / n), uint8(g / n), uint8(bl / n), 255})
 		}
 	}
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, out, &jpeg.Options{Quality: 88}); err != nil {
-		return raw
-	}
-	return buf.Bytes()
+	return out
 }

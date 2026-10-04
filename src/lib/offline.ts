@@ -1,5 +1,7 @@
+import { Channel, invoke } from "@tauri-apps/api/core"
 import type { Track } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
+import { apiUrl, isDesktop, resetLocalCovers, setLocalCover } from "@/lib/desktop"
 
 const OFFLINE_CACHE = "music-offline-v1"
 
@@ -8,7 +10,52 @@ const coverKey = (id: string) => `/offline/cover/${id}`
 const metaKey = (id: string) => `/offline/meta/${id}`
 
 export function offlineSupported(): boolean {
+  if (isDesktop) return true
   return typeof window !== "undefined" && "caches" in window
+}
+
+function newestFirst(tracks: Track[]): Track[] {
+  return tracks.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+}
+
+async function listOnDisk(): Promise<Track[]> {
+  const metas = await invoke<string[]>("offline_list").catch(() => [] as string[])
+  const tracks = metas.flatMap((meta) => {
+    try {
+      return [JSON.parse(meta) as Track]
+    } catch {
+      return []
+    }
+  })
+  resetLocalCovers(tracks.filter((t) => t.hasCover).map((t) => t.id))
+  return newestFirst(tracks)
+}
+
+async function downloadToDisk(track: Track, onProgress?: DownloadProgress, signal?: AbortSignal): Promise<void> {
+  const token = useAuthStore.getState().token
+  if (!token) throw new Error("Not signed in.")
+  const progress = new Channel<{ loaded: number; total: number }>()
+  progress.onmessage = ({ loaded, total }) => onProgress?.(loaded, total)
+  const cancel = () => {
+    invoke("offline_cancel", { id: track.id }).catch(() => {})
+  }
+  signal?.addEventListener("abort", cancel)
+  try {
+    await invoke("offline_download", {
+      id: track.id,
+      url: apiUrl(`/api/tracks/${track.id}/stream${track.hasCompatible ? "?version=compatible" : ""}`),
+      coverUrl: track.hasCover ? apiUrl(`/api/tracks/${track.id}/cover`) : null,
+      auth: `Bearer ${token}`,
+      meta: JSON.stringify({ ...track, updatedAt: new Date().toISOString() }),
+      progress,
+    })
+  } catch (err) {
+    if (signal?.aborted) throw new DOMException("Download cancelled", "AbortError")
+    throw new Error(typeof err === "string" ? err : "Download failed")
+  } finally {
+    signal?.removeEventListener("abort", cancel)
+  }
+  if (track.hasCover) setLocalCover(track.id, true)
 }
 
 async function openCache(): Promise<Cache | null> {
@@ -21,6 +68,7 @@ async function openCache(): Promise<Cache | null> {
 }
 
 export async function listOfflineTracks(): Promise<Track[]> {
+  if (isDesktop) return listOnDisk()
   const cache = await openCache()
   if (!cache) return []
   const keys = await cache.keys()
@@ -34,10 +82,11 @@ export async function listOfflineTracks(): Promise<Track[]> {
       tracks.push((await res.json()) as Track)
     } catch {}
   }
-  return tracks.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+  return newestFirst(tracks)
 }
 
 export async function offlineBytesUsed(): Promise<number> {
+  if (isDesktop) return invoke<number>("offline_usage").catch(() => 0)
   const cache = await openCache()
   if (!cache) return 0
   let total = 0
@@ -57,6 +106,7 @@ export async function downloadTrackOffline(
   onProgress?: DownloadProgress,
   signal?: AbortSignal
 ): Promise<void> {
+  if (isDesktop) return downloadToDisk(track, onProgress, signal)
   const cache = await openCache()
   if (!cache) throw new Error("Offline storage isn't available in this browser.")
   const token = useAuthStore.getState().token
@@ -67,7 +117,7 @@ export async function downloadTrackOffline(
   const useCompatible = Boolean(track.hasCompatible && probe && probe.canPlayType(track.mimeType) === "")
   const path = `/api/tracks/${track.id}/stream${useCompatible ? "?version=compatible" : ""}`
 
-  const res = await fetch(`${path}${path.includes("?") ? "&" : "?"}offline=bypass`, { headers, signal })
+  const res = await fetch(apiUrl(`${path}${path.includes("?") ? "&" : "?"}offline=bypass`), { headers, signal })
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status})`)
   const contentType = res.headers.get("Content-Type") ?? (useCompatible ? "audio/mp4" : track.mimeType)
   const total = Number(res.headers.get("Content-Length") ?? 0)
@@ -92,7 +142,7 @@ export async function downloadTrackOffline(
 
   if (track.hasCover) {
     try {
-      const cover = await fetch(`/api/tracks/${track.id}/cover?offline=bypass`, { headers, signal })
+      const cover = await fetch(apiUrl(`/api/tracks/${track.id}/cover?offline=bypass`), { headers, signal })
       if (cover.ok) {
         const b = await cover.blob()
         await cache.put(
@@ -120,6 +170,7 @@ function inOrder<T>(task: () => Promise<T>): Promise<T> {
 }
 
 export function updateOfflineTrack(track: Track): Promise<void> {
+  if (isDesktop) return invoke<void>("offline_update", { id: track.id, meta: JSON.stringify(track) })
   return inOrder(async () => {
     const cache = await openCache()
     if (!cache || !(await cache.match(metaKey(track.id))) || !(await cache.match(audioKey(track.id)))) return
@@ -131,6 +182,10 @@ export function updateOfflineTrack(track: Track): Promise<void> {
 }
 
 export function removeTrackOffline(id: string): Promise<void> {
+  if (isDesktop) {
+    setLocalCover(id, false)
+    return invoke<void>("offline_remove", { id })
+  }
   return inOrder(async () => {
     const cache = await openCache()
     if (!cache) return
@@ -139,6 +194,11 @@ export function removeTrackOffline(id: string): Promise<void> {
 }
 
 export async function clearOffline(): Promise<void> {
+  if (isDesktop) {
+    resetLocalCovers([])
+    await invoke("offline_clear").catch(() => {})
+    return
+  }
   if (!offlineSupported()) return
   try {
     await caches.delete(OFFLINE_CACHE)
@@ -146,6 +206,7 @@ export async function clearOffline(): Promise<void> {
 }
 
 export async function requestPersistentStorage(): Promise<boolean> {
+  if (isDesktop) return true
   try {
     if (navigator.storage?.persist) return await navigator.storage.persist()
   } catch {}

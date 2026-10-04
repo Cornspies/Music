@@ -870,7 +870,7 @@ func (s *Server) handleTrackCover(w http.ResponseWriter, r *http.Request) {
 		if n, err := strconv.Atoi(raw); err == nil && coverThumbSizes[n] {
 			size = n
 		} else {
-			writeErr(w, http.StatusBadRequest, "size must be 128, 256 or 512")
+			writeErr(w, http.StatusBadRequest, "size must be 32, 128, 256 or 512")
 			return
 		}
 	}

@@ -5,6 +5,17 @@ import { toast } from "sonner"
 import { AudioLines, Loader2, LogIn, Ticket, UserPlus, Users } from "lucide-react"
 import type { AuthConfig, InviteCheck } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import {
+  DEFAULT_SERVER,
+  SERVER_REFUSES_APP,
+  insecureServerWarning,
+  isDesktop,
+  normalizeServer,
+  serverAnswers,
+  serverUrl,
+  setServerUrl,
+  usesDevProxy,
+} from "@/lib/desktop"
 import { useAuthStore } from "@/stores/auth"
 import { pendingListenInvite } from "@/stores/listen"
 import { Button } from "@/components/ui/button"
@@ -49,10 +60,27 @@ export function AuthView() {
   const [busy, setBusy] = useState(false)
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
   const [inviteCheck, setInviteCheck] = useState<InviteCheck | null>(null)
+  const [server, setServer] = useState(serverUrl)
+  const [activeServer, setActiveServer] = useState(serverUrl)
+  const [acceptInsecure, setAcceptInsecure] = useState(false)
+  const [serverProblem, setServerProblem] = useState<string | null>(null)
+  const choosesServer = isDesktop && !usesDevProxy
+  const normalizedServer = choosesServer ? normalizeServer(server) : null
+  const insecureWarning = normalizedServer ? insecureServerWarning(normalizedServer) : null
   const viaLink = Boolean(initial.invite)
   const [listenInvite] = useState(
     () => typeof window !== "undefined" && (/^\/listen\/[^/]+/.test(window.location.pathname) || pendingListenInvite() !== null)
   )
+
+  const commitServer = () => {
+    if (!normalizedServer) return
+    setServer(normalizedServer)
+    if (normalizedServer !== activeServer) {
+      setActiveServer(normalizedServer)
+      setAuthConfig(null)
+      setServerProblem(null)
+    }
+  }
 
   const setMode = (next: Mode) => {
     setModeState(next)
@@ -62,7 +90,7 @@ export function AuthView() {
   useEffect(() => {
     if (!initial.invite) return
     let cancelled = false
-    fetch(`/api/auth/invite/${encodeURIComponent(initial.invite)}`)
+    fetch(`${activeServer}/api/auth/invite/${encodeURIComponent(initial.invite)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((check: InviteCheck | null) => {
         if (!cancelled && check) setInviteCheck(check)
@@ -71,20 +99,26 @@ export function AuthView() {
     return () => {
       cancelled = true
     }
-  }, [initial.invite])
+  }, [initial.invite, activeServer])
 
   useEffect(() => {
     let cancelled = false
-    fetch("/api/auth/config")
+    fetch(`${activeServer}/api/auth/config`)
       .then((r) => (r.ok ? r.json() : null))
       .then((cfg: AuthConfig | null) => {
-        if (!cancelled && cfg) setAuthConfig(cfg)
+        if (cancelled) return
+        setServerProblem(null)
+        if (cfg) setAuthConfig(cfg)
       })
-      .catch(() => {})
+      .catch(async () => {
+        if (!isDesktop) return
+        const answers = await serverAnswers(activeServer)
+        if (!cancelled) setServerProblem(answers ? SERVER_REFUSES_APP : "Can't reach this server.")
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [activeServer])
 
   const minPassword = authConfig?.minPasswordLength ?? 8
   const linkValid = viaLink && inviteCheck?.valid !== false
@@ -94,6 +128,14 @@ export function AuthView() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     const uname = username.trim()
+    if (choosesServer && !normalizedServer) {
+      toast.error("Enter the address of your Music server")
+      return
+    }
+    if (insecureWarning && !acceptInsecure) {
+      toast.error(insecureWarning)
+      return
+    }
     if (!uname || !password) {
       toast.error("Please fill in all fields")
       return
@@ -111,6 +153,10 @@ export function AuthView() {
       return
     }
     setBusy(true)
+    if (normalizedServer) {
+      setServerUrl(normalizedServer)
+      commitServer()
+    }
     try {
       if (mode === "login") {
         await login(uname, password)
@@ -200,6 +246,40 @@ export function AuthView() {
             </div>
           ) : null}
           <form className="flex flex-col gap-4" onSubmit={submit}>
+            {choosesServer ? (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="auth-server">Server</Label>
+                <Input
+                  id="auth-server"
+                  inputMode="url"
+                  autoComplete="url"
+                  spellCheck={false}
+                  placeholder={DEFAULT_SERVER}
+                  value={server}
+                  onChange={(e) => {
+                    setServer(e.target.value)
+                    setAcceptInsecure(false)
+                  }}
+                  onBlur={commitServer}
+                  className="border-zinc-700/80 bg-zinc-950/60"
+                />
+                {serverProblem ? <p className="text-xs text-red-300">{serverProblem}</p> : null}
+                {insecureWarning ? (
+                  <div className="rounded-lg border border-amber-900/60 bg-amber-950/40 px-3 py-2.5 text-xs text-amber-100">
+                    <p>{insecureWarning}</p>
+                    <label className="mt-2 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={acceptInsecure}
+                        onChange={(e) => setAcceptInsecure(e.target.checked)}
+                        className="size-3.5 accent-amber-400"
+                      />
+                      Connect anyway
+                    </label>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex flex-col gap-2">
               <Label htmlFor="auth-username">Username</Label>
               <Input
@@ -298,7 +378,10 @@ export function AuthView() {
           </p>
 
           <p className="mt-6 text-center text-xs">
-            <a href="/privacy" className="text-zinc-500 hover:text-zinc-300 hover:underline">
+            <a
+              href={isDesktop ? `${DEFAULT_SERVER}/privacy` : "/privacy"}
+              className="text-zinc-500 hover:text-zinc-300 hover:underline"
+            >
               Privacy policy
             </a>
           </p>

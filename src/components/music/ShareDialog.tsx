@@ -5,6 +5,7 @@ import { Check, Copy, Link2, Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { createTrackShare, deleteTrackShare, fetchTrackShare } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
+import { publicUrl } from "@/lib/desktop"
 import { formatTimeUntil } from "@/lib/format"
 import type { Track, TrackShare } from "@/lib/types"
 import { useUIStore } from "@/stores/ui"
@@ -22,7 +23,7 @@ export function ShareDialog() {
 }
 
 function urlFor(share: TrackShare): string {
-  return `${window.location.origin}/s/${share.token}`
+  return publicUrl(`/s/${share.token}`)
 }
 
 function ShareBody({ track, onClose }: { track: Track; onClose: () => void }) {

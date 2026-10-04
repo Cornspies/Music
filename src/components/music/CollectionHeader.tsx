@@ -50,12 +50,12 @@ export function CollectionHeader({
     >
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -top-24 -right-10 size-64 rounded-full bg-emerald-500/10 blur-3xl"
+        className="pointer-events-none absolute -top-40 -right-26 size-96 rounded-full bg-[radial-gradient(closest-side,rgba(16,185,129,0.1),transparent)]"
       />
 
       <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:gap-6">
         {cover ? (
-          <div className="w-40 shrink-0 drop-shadow-2xl md:w-48 lg:w-56">{cover}</div>
+          <div className="w-40 shrink-0 rounded-md shadow-2xl shadow-black/40 md:w-48 lg:w-56">{cover}</div>
         ) : (
           <div
             aria-hidden="true"

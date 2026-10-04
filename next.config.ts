@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
 const API_HOST = process.env.MUSIC_API_HOST ?? "localhost";
 const API_PORT = process.env.MUSIC_API_PORT ?? "3001";
@@ -17,6 +18,7 @@ function contentSecurityPolicy(): string {
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "object-src 'none'",
+    "frame-src 'self' com.cornspies.music:",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
@@ -34,7 +36,37 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=31536000" },
 ];
 
-const nextConfig: NextConfig = {
+const desktop = process.env.NEXT_PUBLIC_MUSIC_DESKTOP === "1";
+const webStatic = process.env.MUSIC_WEB_STATIC === "1";
+const DESKTOP_DEV_SERVER = process.env.MUSIC_DESKTOP_DEV_SERVER ?? "https://music.cornspies.com";
+
+const desktopConfig: NextConfig = {
+  output: "export",
+  distDir: ".next-desktop",
+  reactStrictMode: false,
+  experimental: { turbopackFileSystemCacheForBuild: false },
+};
+
+const staticWebConfig: NextConfig = {
+  output: "export",
+  reactStrictMode: false,
+  experimental: { turbopackFileSystemCacheForBuild: false },
+};
+
+const desktopDevConfig: NextConfig = {
+  distDir: ".next-desktop",
+  reactStrictMode: false,
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${DESKTOP_DEV_SERVER}/api/:path*`,
+      },
+    ];
+  },
+};
+
+const webConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: false,
   async headers() {
@@ -56,4 +88,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default function config(phase: string): NextConfig {
+  if (desktop) return phase === PHASE_DEVELOPMENT_SERVER ? desktopDevConfig : desktopConfig;
+  return webStatic && phase !== PHASE_DEVELOPMENT_SERVER ? staticWebConfig : webConfig;
+}

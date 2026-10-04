@@ -5,8 +5,13 @@ import { persist } from "zustand/middleware"
 import { toast } from "sonner"
 import type { PlaybackState, Track } from "@/lib/types"
 import { api, coverUrl, fetchPlayback, savePlayback } from "@/lib/api"
-import { AudioEngine } from "@/lib/audio-engine"
+import { invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
+import { AudioEngine, type Engine, type EngineEvents, trackGain } from "@/lib/audio-engine"
+import { isDesktop, serverUrl } from "@/lib/desktop"
+import { NativeAudioEngine, type PreviewState } from "@/lib/native-audio"
 import { useAuthStore } from "@/stores/auth"
+import { useMediaTokenStore } from "@/stores/media-token"
 
 export type RepeatMode = "off" | "all" | "one"
 
@@ -207,12 +212,25 @@ function clearSleepTimeout() {
   }
 }
 
-let engine: AudioEngine | null = null
+function armSleepTimer(endsAt: number | null) {
+  clearSleepTimeout()
+  if (endsAt === null) return
+  sleepTimeout = setTimeout(() => {
+    const e = getEngine()
+    if (e && !e.paused) {
+      e.pause()
+      toast("Sleep timer ended")
+    }
+    usePlayerStore.setState({ sleepEndsAt: null })
+  }, Math.max(0, endsAt - Date.now()))
+}
 
-function getEngine(): AudioEngine | null {
+let engine: Engine | null = null
+
+function getEngine(): Engine | null {
   if (typeof window === "undefined") return null
   if (!engine) {
-    engine = new AudioEngine({
+    const events: EngineEvents = {
       onTime: (position) => {
         noteListening(position)
         usePlayerStore.setState({ position })
@@ -304,12 +322,14 @@ function getEngine(): AudioEngine | null {
           session?.stoppedHere()
         }
       },
-    })
+    }
+    engine = isDesktop ? new NativeAudioEngine(events) : new AudioEngine(events)
     const { volume, muted, crossfadeSeconds, normalizeVolume } = usePlayerStore.getState()
     engine.setVolume(volume, muted)
     engine.crossfadeSeconds = crossfadeSeconds
     engine.normalize = normalizeVolume
-    wireMediaSession(engine)
+    if (engine instanceof NativeAudioEngine) wireNativeMedia(engine)
+    else wireMediaSession(engine)
   }
   return engine
 }
@@ -349,6 +369,16 @@ function flushListening(keepalive = false): Promise<unknown> {
 }
 
 function updateMediaSession(track: Track) {
+  if (isDesktop) {
+    invoke("media_metadata", {
+      title: track.title,
+      artist: track.artist || "Unknown artist",
+      album: track.album || null,
+      coverUrl: track.hasCover ? coverUrl(track, 512) : null,
+      duration: track.duration || null,
+    }).catch(() => {})
+    return
+  }
   if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -361,7 +391,7 @@ function updateMediaSession(track: Track) {
 }
 
 function updatePositionState() {
-  if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return
+  if (isDesktop || typeof navigator === "undefined" || !("mediaSession" in navigator)) return
   if (!engine) return
   try {
     const duration = engine.duration
@@ -375,7 +405,35 @@ function updatePositionState() {
   } catch {}
 }
 
-function wireMediaSession(e: AudioEngine) {
+function wireNativeMedia(e: NativeAudioEngine) {
+  e.onMediaAction = (action, position) => {
+    const s = usePlayerStore.getState()
+    switch (action) {
+      case "play":
+        if (session) return session.playHere(true)
+        e.play().catch(() => usePlayerStore.setState({ isPlaying: false }))
+        return
+      case "pause":
+        if (session) return session.playHere(false)
+        e.pause()
+        return
+      case "toggle":
+        return s.togglePlay()
+      case "next":
+        return s.next()
+      case "previous":
+        return s.prev()
+      case "seekBy":
+        if (position !== null) s.seek(Math.max(0, e.currentTime + position))
+        return
+      case "seekTo":
+        if (position !== null) s.seek(position)
+        return
+    }
+  }
+}
+
+function wireMediaSession(e: Engine) {
   if (!("mediaSession" in navigator)) return
   const ms = navigator.mediaSession
   const trySet = (action: MediaSessionAction, handler: ((details: MediaSessionActionDetails) => void) | null) => {
@@ -398,6 +456,23 @@ function wireMediaSession(e: AudioEngine) {
   })
   trySet("seekbackward", null)
   trySet("seekforward", null)
+}
+
+export function playNativePreview(
+  track: Track,
+  from: number,
+  until: number,
+  done: (state: PreviewState) => void
+): boolean {
+  const e = getEngine()
+  if (!(e instanceof NativeAudioEngine)) return false
+  e.preview(track, from, until, done)
+  return true
+}
+
+export function stopNativePreview() {
+  const e = getEngine()
+  if (e instanceof NativeAudioEngine) e.stopPreview()
 }
 
 let pendingNextIndex = -1
@@ -462,21 +537,21 @@ function noteUpdatedAt(stamp: string | undefined) {
   if (stamp && stamp > knownUpdatedAt) knownUpdatedAt = stamp
 }
 
-function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}) {
-  if (restoring || session) return
+function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}): Promise<unknown> {
+  if (restoring || session) return Promise.resolve()
   const s = usePlayerStore.getState()
-  if (!s.currentTrack || !useAuthStore.getState().token) return
+  if (!s.currentTrack || !useAuthStore.getState().token) return Promise.resolve()
   const key = queueKey(s.queue)
   const queueChanged = key !== lastSavedQueueKey
-  if (!positionDirty && !queueChanged) return
+  if (!positionDirty && !queueChanged) return Promise.resolve()
   const now = Date.now()
-  if (!opts.force && !queueChanged && now - lastSaveAt < SAVE_INTERVAL_MS) return
+  if (!opts.force && !queueChanged && now - lastSaveAt < SAVE_INTERVAL_MS) return Promise.resolve()
 
   lastSaveAt = now
   positionDirty = false
   lastSavedPosition = s.position
   if (queueChanged) lastSavedQueueKey = key
-  savePlayback(
+  return savePlayback(
     {
       trackId: s.currentTrack.id,
       position: s.position,
@@ -528,6 +603,7 @@ function applyServerState(state: PlaybackState) {
 }
 
 export async function restorePlayback(): Promise<void> {
+  if (isDesktop && (await reattachBackground())) return
   if (usePlayerStore.getState().currentTrack || session) return
   let state: PlaybackState | null
   try {
@@ -540,6 +616,7 @@ export async function restorePlayback(): Promise<void> {
 }
 
 async function syncPlayback(): Promise<void> {
+  if (isDesktop) await reattachBackground()
   if (syncing || restoring || session) return
   const s = usePlayerStore.getState()
   if (s.isPlaying || !useAuthStore.getState().token || !nothingUnsaved()) return
@@ -829,14 +906,7 @@ export const usePlayerStore = create<PlayerState>()(
         }
         const endsAt = Date.now() + minutes * 60_000
         set({ sleepEndsAt: endsAt, sleepAfterTrack: false })
-        sleepTimeout = setTimeout(() => {
-          const e = getEngine()
-          if (e && !e.paused) {
-            e.pause()
-            toast("Sleep timer ended")
-          }
-          usePlayerStore.setState({ sleepEndsAt: null })
-        }, minutes * 60_000)
+        armSleepTimer(endsAt)
         toast(`Sleep timer — ${minutes} min`, {
           description: `Pauses at ${new Date(endsAt).toLocaleTimeString([], {
             hour: "2-digit",
@@ -891,6 +961,127 @@ export const usePlayerStore = create<PlayerState>()(
     }
   )
 )
+
+interface BackgroundResume {
+  queue: string
+  index: number
+  currentId: number
+  nextId: number | null
+  nextIndex: number | null
+  position: number
+  duration: number
+  playing: boolean
+  sleepEndsAt: number | null
+  sleepAfterTrack: boolean
+  mediaToken: string
+  mediaExpiresAt: number
+}
+
+let reattaching: Promise<boolean> | null = null
+
+export function reattachBackground(): Promise<boolean> {
+  reattaching ??= takeBackground()
+  return reattaching
+}
+
+async function takeBackground(): Promise<boolean> {
+  const e = isDesktop ? getEngine() : null
+  if (!(e instanceof NativeAudioEngine)) return false
+  await e.ready
+  let resume: BackgroundResume | null
+  let queue: Track[]
+  try {
+    resume = await invoke<BackgroundResume | null>("background_take")
+    if (!resume) return false
+    queue = JSON.parse(resume.queue) as Track[]
+  } catch (err) {
+    console.error("background_take failed", err)
+    return false
+  }
+  const track = queue[resume.index]
+  if (!track) return false
+  if (resume.mediaToken) useMediaTokenStore.getState().adopt(resume.mediaToken, resume.mediaExpiresAt)
+  const nextTrack = resume.nextIndex !== null ? queue[resume.nextIndex] : undefined
+  const next = resume.nextId !== null && nextTrack ? { id: resume.nextId, track: nextTrack } : null
+  e.adopt({ id: resume.currentId, track }, next, resume.position, resume.duration, resume.playing)
+  pendingNextIndex = next && resume.nextIndex !== null ? resume.nextIndex : -1
+  lastSavedQueueKey = queueKey(queue)
+  lastSavedPosition = resume.position
+  positionDirty = false
+  lastSaveAt = Date.now()
+  listening = { trackId: track.id, lastPosition: null, unreported: 0 }
+  usePlayerStore.setState({
+    queue,
+    queueIndex: resume.index,
+    currentTrack: track,
+    position: resume.position,
+    duration: resume.duration || track.duration || 0,
+    isPlaying: resume.playing,
+    sleepEndsAt: resume.sleepEndsAt,
+    sleepAfterTrack: resume.sleepAfterTrack,
+  })
+  armSleepTimer(resume.sleepEndsAt)
+  updateMediaSession(track)
+  if (!next) prepareNext()
+  return true
+}
+
+async function handOff(e: NativeAudioEngine): Promise<boolean> {
+  const s = usePlayerStore.getState()
+  const authToken = useAuthStore.getState().token
+  const { current, next } = e.ids
+  if (!authToken || current === null || s.queueIndex < 0 || s.queue[s.queueIndex]?.id !== s.currentTrack?.id) return false
+  const media = useMediaTokenStore.getState()
+  try {
+    await invoke("background_start", {
+      handoff: {
+        server: serverUrl(),
+        session: authToken,
+        mediaToken: media.token ?? "",
+        mediaExpiresAt: media.expiresAt,
+        queue: JSON.stringify(s.queue),
+        gains: s.queue.map((t) => trackGain(t, s.normalizeVolume)),
+        index: s.queueIndex,
+        currentId: current,
+        nextId: next,
+        nextIndex: next !== null && pendingNextIndex >= 0 ? pendingNextIndex : null,
+        shuffle: s.shuffle,
+        repeat: s.repeat,
+        sleepEndsAt: s.sleepEndsAt,
+        sleepAfterTrack: s.sleepAfterTrack,
+        position: e.currentTime,
+        playing: !e.paused,
+      },
+    })
+    return true
+  } catch (err) {
+    console.error("background_start failed", err)
+    return false
+  }
+}
+
+async function handleCloseRequest(keepWebview: boolean) {
+  const e = engine
+  const playing = e instanceof NativeAudioEngine && !e.paused && usePlayerStore.getState().currentTrack !== null
+  if (session || (playing && keepWebview)) {
+    await invoke("window_hide").catch((err: unknown) => console.error("window_hide failed", err))
+    return
+  }
+  if (playing && e instanceof NativeAudioEngine) {
+    void flushListening(true)
+    void persistPlayback({ force: true, keepalive: true })
+    if (await handOff(e)) return
+  } else {
+    await Promise.all([flushListening(), persistPlayback({ force: true })])
+  }
+  await invoke("window_close").catch((err: unknown) => console.error("window_close failed", err))
+}
+
+if (isDesktop && typeof window !== "undefined") {
+  listen<{ keepWebview: boolean }>("close-requested", (event) => {
+    void handleCloseRequest(event.payload.keepWebview)
+  }).catch((err: unknown) => console.error("listening for close requests failed", err))
+}
 
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => {

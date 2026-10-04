@@ -18,6 +18,7 @@ type Config struct {
 	Port                   string
 	DataDir                string
 	LogDir                 string
+	WebDir                 string
 	BindAddress            string
 	JWTSecret              string
 	YouTubeAPIKey          string
@@ -32,6 +33,7 @@ func Load() (Config, error) {
 		Port:                   firstNonEmpty(os.Getenv("MUSIC_PORT"), os.Getenv("PORT"), DefaultPort),
 		DataDir:                firstNonEmpty(os.Getenv("MUSIC_DATA_DIR"), DefaultDataDir),
 		LogDir:                 Value("MUSIC_LOG_DIR"),
+		WebDir:                 Value("MUSIC_WEB_DIR"),
 		BindAddress:            Value("MUSIC_BIND"),
 		JWTSecret:              strings.TrimSpace(os.Getenv("MUSIC_JWT_SECRET")),
 		YouTubeAPIKey:          YouTubeAPIKey(),

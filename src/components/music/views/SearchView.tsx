@@ -254,7 +254,8 @@ function AlbumResult({ album }: { album: Album }) {
           trackId={album.hasCover ? album.coverTrackId : `${album.name}|${album.artist}`}
           title={album.name}
           hasCover={album.hasCover}
-          size={512}
+          size={256}
+          sizes="(min-width: 1280px) calc((100vw - 340px) / 5), (min-width: 768px) calc((100vw - 340px) / 4), (min-width: 640px) calc((100vw - 60px) / 3), calc((100vw - 48px) / 2)"
         />
       </div>
       <p className="mt-2 truncate text-sm font-medium text-zinc-200">{album.name || "Unknown album"}</p>
