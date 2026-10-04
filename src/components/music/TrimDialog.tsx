@@ -8,7 +8,8 @@ import { fetchLyrics, fetchSilence, fetchWaveform, restoreTrack, streamUrl, trim
 import { formatDuration } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
-import { usePlayerStore } from "@/stores/player"
+import { isDesktop } from "@/lib/desktop"
+import { playNativePreview, stopNativePreview, usePlayerStore } from "@/stores/player"
 import { useUIStore } from "@/stores/ui"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -55,6 +56,7 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
   }, [track.id, track.updatedAt])
 
   useEffect(() => {
+    if (isDesktop) return () => stopNativePreview()
     const el = new Audio()
     el.preload = "none"
     audioRef.current = el
@@ -65,13 +67,12 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
   }, [])
 
   const stopPreview = () => {
-    audioRef.current?.pause()
+    if (isDesktop) stopNativePreview()
+    else audioRef.current?.pause()
     setPreviewing(null)
   }
 
   const preview = (which: "start" | "end") => {
-    const el = audioRef.current
-    if (!el) return
     if (previewing === which) {
       stopPreview()
       return
@@ -80,6 +81,16 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     if (player.isPlaying) player.togglePlay()
     const from = which === "start" ? start : Math.max(start, end - PREVIEW_SECONDS)
     const until = which === "start" ? Math.min(end, start + PREVIEW_SECONDS) : end
+    const native = playNativePreview(track, from, until, (state) => {
+      setPreviewing((current) => (current === which ? null : current))
+      if (state === "error") toast.error("Couldn't play the preview")
+    })
+    if (native) {
+      setPreviewing(which)
+      return
+    }
+    const el = audioRef.current
+    if (!el) return
     if (!el.src) el.src = streamUrl(track)
     el.currentTime = from
     el.ontimeupdate = () => {

@@ -8,7 +8,7 @@ import { usePlayerStore } from "@/stores/player"
 import { useUIStore } from "@/stores/ui"
 import { canRemoveEntry, useListenStore } from "@/stores/listen"
 import { CoverArt } from "@/components/music/CoverArt"
-import { EqualizerIcon } from "@/components/music/EqualizerIcon"
+import { EqualizerButton } from "@/components/music/EqualizerIcon"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { ClearQueueConfirm } from "@/components/music/ListenTogetherDialog"
 import { Button } from "@/components/ui/button"
@@ -81,7 +81,7 @@ export function QueuePanel() {
                     {currentTrack.artist || "Unknown artist"}
                   </div>
                 </div>
-                <EqualizerIcon playing={isPlaying} className="mr-2" />
+                <EqualizerButton playing={isPlaying} className="mr-1" />
               </div>
             </section>
           ) : (

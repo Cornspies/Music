@@ -10,7 +10,7 @@ import { useLibraryStore } from "@/stores/library"
 import { useOfflineStore } from "@/stores/offline"
 import { CoverArt } from "@/components/music/CoverArt"
 import { UserAvatar } from "@/components/music/UserAvatar"
-import { EqualizerIcon } from "@/components/music/EqualizerIcon"
+import { EqualizerButton } from "@/components/music/EqualizerIcon"
 import { TrackMenu } from "@/components/music/TrackMenu"
 
 interface TrackRowProps {
@@ -56,7 +56,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
     >
       <div className="hidden w-6 shrink-0 items-center justify-center sm:flex">
         {isCurrent ? (
-          <EqualizerIcon playing={isPlaying} />
+          <EqualizerButton playing={isPlaying} />
         ) : (
           <>
             <span className="text-xs tabular-nums text-zinc-500 group-hover:hidden">

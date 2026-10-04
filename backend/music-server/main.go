@@ -26,6 +26,8 @@ func main() {
 	dataDir := flag.String("data", cfg.DataDir, "data directory for db, uploads, covers (env: MUSIC_DATA_DIR)")
 	logDir := flag.String("logs", cfg.LogDir,
 		"directory for daily log files, deleted after 14 days; empty means <data>/logs (env: MUSIC_LOG_DIR)")
+	webDir := flag.String("web", cfg.WebDir,
+		"directory with the static web app (bun run build:static); empty means the web app isn't served (env: MUSIC_WEB_DIR)")
 	flag.Parse()
 
 	abs, err := filepath.Abs(*dataDir)
@@ -47,7 +49,19 @@ func main() {
 		log.SetOutput(w)
 	}
 
-	srv, err := server.New(abs, server.Options{JWTSecret: cfg.JWTSecret})
+	web := *webDir
+	if web != "" {
+		if web, err = filepath.Abs(web); err != nil {
+			log.Fatalf("resolve web dir: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(web, "index.html")); err != nil {
+			log.Printf("music-server web app: %s has no index.html; run `bun run build:static` and point MUSIC_WEB_DIR at its out/ directory", web)
+		} else {
+			log.Printf("music-server web app: serving %s", web)
+		}
+	}
+
+	srv, err := server.New(abs, server.Options{JWTSecret: cfg.JWTSecret, WebDir: web})
 	if err != nil {
 		log.Fatalf("init server: %v", err)
 	}

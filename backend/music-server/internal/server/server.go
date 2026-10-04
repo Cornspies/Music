@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,10 +26,12 @@ type Server struct {
 	covDir  string
 	avaDir  string
 	listen  *listenHub
+	web     *webApp
 }
 
 type Options struct {
 	JWTSecret string
+	WebDir    string
 }
 
 func New(dataDir string, opts Options) (*Server, error) {
@@ -62,10 +65,14 @@ func New(dataDir string, opts Options) (*Server, error) {
 		}
 	}
 
-	return &Server{
+	srv := &Server{
 		db: db, secret: secret, dataDir: dataDir, upDir: upDir, covDir: covDir, avaDir: avaDir,
 		listen: newListenHub(),
-	}, nil
+	}
+	if opts.WebDir != "" {
+		srv.web = newWebApp(opts.WebDir)
+	}
+	return srv, nil
 }
 
 func (s *Server) Routes() http.Handler {
@@ -74,12 +81,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "music-server"})
 	})
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"service": "music-server",
-			"version": "1.0.0",
+	if s.web != nil {
+		mux.Handle("GET /", s.web)
+	} else {
+		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"service": "music-server",
+				"version": "1.0.0",
+			})
 		})
-	})
+	}
 
 	mux.HandleFunc("GET /api/auth/config", s.handleAuthConfig)
 	mux.HandleFunc("GET /api/auth/invite/{code}", s.handleCheckInvite)
@@ -211,7 +222,8 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		positionSave := r.Method == http.MethodPut && r.URL.Path == "/api/playback" && sw.code < 400
 		listenPoll := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/listen/") &&
 			strings.Count(r.URL.Path, "/") == 3 && sw.code < 400
-		if r.URL.Path != "/healthz" && !positionSave && !listenPoll {
+		webFile := !strings.HasPrefix(r.URL.Path, "/api/") && sw.code < 400
+		if r.URL.Path != "/healthz" && !positionSave && !listenPoll && !webFile {
 			log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, time.Since(start).Round(time.Millisecond))
 		}
 	})
@@ -225,6 +237,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Range, If-None-Match")
 			w.Header().Set("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length, Content-Type, ETag, X-Total-Count, "+refreshedTokenHeader)
+			w.Header().Set("Access-Control-Max-Age", "600")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -234,7 +247,12 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 	})
 }
 
+var desktopOrigins = []string{"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
+
 func corsAllows(origin string) bool {
+	if slices.Contains(desktopOrigins, strings.ToLower(origin)) {
+		return true
+	}
 	raw := config.Value("MUSIC_CORS_ORIGINS")
 	if raw == "" {
 		return false

@@ -1,6 +1,8 @@
 import type { Track } from "@/lib/types"
 import { streamUrl } from "@/lib/api"
+import { isDesktop } from "@/lib/desktop"
 
+const CONTEXT_IDLE_MS = 5000
 const TARGET_LUFS = -14
 const MAX_BOOST_DB = 3
 const MIN_GAIN = 0.1
@@ -23,11 +25,37 @@ interface Slot {
   fade: number
 }
 
-export class AudioEngine {
+export interface Engine {
+  readonly current: Track | null
+  readonly currentTime: number
+  readonly duration: number
+  readonly paused: boolean
+  readonly ended: boolean
+  crossfadeSeconds: number
+  normalize: boolean
+  load(track: Track, opts?: { autoplay: boolean; startAt?: number }): void
+  prepareNext(track: Track | null): void
+  play(): Promise<void>
+  pause(): void
+  seek(seconds: number): void
+  setVolume(volume: number, muted: boolean): void
+  refreshNormalization(): void
+  replaceTrack(track: Track): void
+  stop(): void
+}
+
+export function trackGain(track: Track, normalize: boolean): number {
+  if (!normalize || track.loudness == null) return 1
+  const db = Math.min(TARGET_LUFS - track.loudness, MAX_BOOST_DB)
+  return Math.max(MIN_GAIN, Math.pow(10, db / 20))
+}
+
+export class AudioEngine implements Engine {
   private slots: [Slot, Slot]
   private active = 0
   private ctx: AudioContext | null = null
   private ctxTried = false
+  private idleTimer: ReturnType<typeof setTimeout> | null = null
   private volume = 1
   private muted = false
   private fading = false
@@ -156,10 +184,12 @@ export class AudioEngine {
       s.el.load()
       s.track = null
     }
+    this.suspendWhenIdle()
   }
 
   private makeSlot(index: number): Slot {
     const el = new Audio()
+    if (isDesktop) el.crossOrigin = "anonymous"
     el.preload = "metadata"
     const slot: Slot = { el, gain: null, track: null, trackGain: 1, fade: 1 }
 
@@ -181,6 +211,7 @@ export class AudioEngine {
       if (this.slots[this.active] === slot) this.events.onPlay()
     })
     el.addEventListener("pause", () => {
+      this.suspendWhenIdle()
       if (this.slots[this.active] === slot && !this.fading) this.events.onPause()
     })
     el.addEventListener("ended", () => {
@@ -230,9 +261,7 @@ export class AudioEngine {
   }
 
   private gainFor(track: Track): number {
-    if (!this.normalize || track.loudness == null) return 1
-    const db = Math.min(TARGET_LUFS - track.loudness, MAX_BOOST_DB)
-    return Math.max(MIN_GAIN, Math.pow(10, db / 20))
+    return trackGain(track, this.normalize)
   }
 
   private applyGain(slot: Slot, fade: number) {
@@ -258,6 +287,7 @@ export class AudioEngine {
       } catch {
         this.ctx = null
       }
+      this.suspendWhenIdle()
     }
     if (!this.ctx) return
     try {
@@ -270,7 +300,21 @@ export class AudioEngine {
   }
 
   private resumeContext() {
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer)
+      this.idleTimer = null
+    }
     if (this.ctx && this.ctx.state === "suspended") this.ctx.resume().catch(() => {})
+  }
+
+  private suspendWhenIdle() {
+    if (!this.ctx || this.idleTimer !== null) return
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null
+      if (this.ctx?.state === "running" && this.slots.every((s) => s.el.paused)) {
+        this.ctx.suspend().catch(() => {})
+      }
+    }, CONTEXT_IDLE_MS)
   }
 
   private maybeStartCrossfade() {

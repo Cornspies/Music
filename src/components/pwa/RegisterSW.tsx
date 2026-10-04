@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect } from "react"
+import { isDesktop } from "@/lib/desktop"
 
 export function RegisterSW() {
   useEffect(() => {
-    if (typeof window === "undefined") return
+    if (typeof window === "undefined" || isDesktop) return
     if (!("serviceWorker" in navigator)) return
     if (
       window.location.protocol !== "http:" &&

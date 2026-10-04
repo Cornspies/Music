@@ -126,7 +126,7 @@ export function PlayerBar() {
 
   return (
     <div
-      className="relative z-30 border-t border-zinc-800/70 bg-zinc-950/95 shadow-[0_-8px_30px_rgba(0,0,0,0.45)] backdrop-blur supports-backdrop-filter:bg-zinc-950/80"
+      className="relative z-30 border-t border-zinc-800/70 bg-zinc-950/80 shadow-[0_-8px_30px_rgba(0,0,0,0.45)]"
       role="region"
       aria-label="Player"
     >

@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
-import { AnimatePresence, motion } from "framer-motion"
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react"
 import { AudioLines, Home, Library, Menu, Search, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -9,7 +8,7 @@ import { fetchSharedTrackForMember } from "@/lib/api"
 import { useUIStore, type View } from "@/stores/ui"
 import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
-import { restorePlayback, usePlayerStore } from "@/stores/player"
+import { reattachBackground, restorePlayback, usePlayerStore } from "@/stores/player"
 import { forgetListenInvite, pendingListenInvite, restoreListening, useListenStore } from "@/stores/listen"
 import { ListenInviteDialog, ListenTogetherDialog } from "@/components/music/ListenTogetherDialog"
 import { SidebarContent } from "@/components/music/Sidebar"
@@ -17,16 +16,7 @@ import { PlayerBar } from "@/components/music/PlayerBar"
 import { QueuePanel } from "@/components/music/QueuePanel"
 import { LyricsSidebar } from "@/components/music/LyricsSidebar"
 import { NowPlayingView } from "@/components/music/NowPlayingView"
-import { AccountDialog } from "@/components/music/AccountDialog"
-import { AndroidAppDialog } from "@/components/music/AndroidAppDialog"
-import { ShortcutsDialog } from "@/components/music/ShortcutsDialog"
-import { PasswordDialog } from "@/components/music/PasswordDialog"
-import { UploadDialog } from "@/components/music/UploadDialog"
-import { EditTrackDialog } from "@/components/music/EditTrackDialog"
 import { MetadataReviewDialog } from "@/components/music/MetadataReviewDialog"
-import { RestoreTagsDialog } from "@/components/music/RestoreTagsDialog"
-import { ShareDialog } from "@/components/music/ShareDialog"
-import { TrimDialog } from "@/components/music/TrimDialog"
 import { PlaylistDialog } from "@/components/music/PlaylistDialog"
 import { HomeView } from "@/components/music/views/HomeView"
 import { SearchView } from "@/components/music/views/SearchView"
@@ -40,16 +30,87 @@ import { PlaylistView } from "@/components/music/views/PlaylistView"
 import { FavoritesView } from "@/components/music/views/FavoritesView"
 import { OfflineView } from "@/components/music/views/OfflineView"
 import { HistoryView } from "@/components/music/views/HistoryView"
-import { DiscoverView } from "@/components/music/views/DiscoverView"
-import { DuplicatesView } from "@/components/music/views/DuplicatesView"
-import { FileTagsView } from "@/components/music/views/FileTagsView"
-import { AdminView } from "@/components/music/views/AdminView"
 import { OfflineBanner } from "@/components/music/OfflineBanner"
-import { PlaybackSettingsDialog } from "@/components/music/PlaybackSettingsDialog"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
+import { useDesktopUpdates } from "@/hooks/use-desktop-updates"
+
+function deferred<P extends object>(load: () => Promise<ComponentType<P>>) {
+  return lazy(async () => ({ default: await load() }))
+}
+
+const DiscoverView = deferred(() => import("@/components/music/views/DiscoverView").then((m) => m.DiscoverView))
+const DuplicatesView = deferred(() => import("@/components/music/views/DuplicatesView").then((m) => m.DuplicatesView))
+const FileTagsView = deferred(() => import("@/components/music/views/FileTagsView").then((m) => m.FileTagsView))
+const AdminView = deferred(() => import("@/components/music/views/AdminView").then((m) => m.AdminView))
+const ShortcutsDialog = deferred(() => import("@/components/music/ShortcutsDialog").then((m) => m.ShortcutsDialog))
+const AndroidAppDialog = deferred(() => import("@/components/music/AndroidAppDialog").then((m) => m.AndroidAppDialog))
+const AccountDialog = deferred(() => import("@/components/music/AccountDialog").then((m) => m.AccountDialog))
+const PasswordDialog = deferred(() => import("@/components/music/PasswordDialog").then((m) => m.PasswordDialog))
+const PlaybackSettingsDialog = deferred(() =>
+  import("@/components/music/PlaybackSettingsDialog").then((m) => m.PlaybackSettingsDialog)
+)
+const UploadDialog = deferred(() => import("@/components/music/UploadDialog").then((m) => m.UploadDialog))
+const EditTrackDialog = deferred(() => import("@/components/music/EditTrackDialog").then((m) => m.EditTrackDialog))
+const TrimDialog = deferred(() => import("@/components/music/TrimDialog").then((m) => m.TrimDialog))
+const RestoreTagsDialog = deferred(() => import("@/components/music/RestoreTagsDialog").then((m) => m.RestoreTagsDialog))
+const ShareDialog = deferred(() => import("@/components/music/ShareDialog").then((m) => m.ShareDialog))
+
+function WhenOpened({ open, children }: { open: boolean; children: ReactNode }) {
+  const [opened, setOpened] = useState(open)
+  if (open && !opened) setOpened(true)
+  return opened ? <Suspense fallback={null}>{children}</Suspense> : null
+}
+
+function DeferredDialogs() {
+  const shortcuts = useUIStore((s) => s.shortcutsOpen)
+  const androidApp = useUIStore((s) => s.androidAppOpen)
+  const account = useUIStore((s) => s.accountOpen)
+  const password = useUIStore((s) => s.passwordOpen)
+  const playbackSettings = useUIStore((s) => s.playbackSettingsOpen)
+  const upload = useUIStore((s) => s.uploadOpen)
+  const editTrack = useUIStore((s) => s.editTrackId !== null)
+  const trim = useUIStore((s) => s.trimTrack !== null)
+  const restoreTags = useUIStore((s) => s.restoreTagsTrack !== null)
+  const share = useUIStore((s) => s.shareTrack !== null)
+
+  return (
+    <>
+      <WhenOpened open={shortcuts}>
+        <ShortcutsDialog />
+      </WhenOpened>
+      <WhenOpened open={androidApp}>
+        <AndroidAppDialog />
+      </WhenOpened>
+      <WhenOpened open={account}>
+        <AccountDialog />
+      </WhenOpened>
+      <WhenOpened open={password}>
+        <PasswordDialog />
+      </WhenOpened>
+      <WhenOpened open={playbackSettings}>
+        <PlaybackSettingsDialog />
+      </WhenOpened>
+      <WhenOpened open={upload}>
+        <UploadDialog />
+      </WhenOpened>
+      <WhenOpened open={editTrack}>
+        <EditTrackDialog />
+      </WhenOpened>
+      <WhenOpened open={trim}>
+        <TrimDialog />
+      </WhenOpened>
+      <WhenOpened open={restoreTags}>
+        <RestoreTagsDialog />
+      </WhenOpened>
+      <WhenOpened open={share}>
+        <ShareDialog />
+      </WhenOpened>
+    </>
+  )
+}
 
 function MobileHeader() {
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
@@ -125,8 +186,8 @@ function MobileTabBar() {
 function renderView(view: View) {
   switch (view) {
     case "home":
-    case "share": // a share link: home, while the track starts in the player
-    case "listen": // an invite: home, under the join prompt
+    case "share":
+    case "listen":
       return <HomeView />
     case "search":
       return <SearchView />
@@ -190,14 +251,17 @@ export function AppShell() {
   const mainRef = useRef<HTMLElement>(null)
 
   useKeyboardShortcuts()
+  useDesktopUpdates()
   useSharedTrackLink(view, viewArg, initialized)
   useListenInviteLink(view, viewArg)
 
   useEffect(() => {
     if (initialized) return
+    const reattached = reattachBackground()
     fetchAll()
       .catch(() => {})
       .finally(async () => {
+        if (await reattached) return
         if (!(await restoreListening())) restorePlayback()
       })
   }, [initialized, fetchAll])
@@ -230,18 +294,9 @@ export function AppShell() {
           {!initialized ? (
             <LibrarySkeleton />
           ) : (
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={`${view}:${viewArg ?? ""}`}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="min-h-full"
-              >
-                {renderView(view)}
-              </motion.div>
-            </AnimatePresence>
+            <div key={`${view}:${viewArg ?? ""}`} className="fade-up min-h-full">
+              <Suspense fallback={null}>{renderView(view)}</Suspense>
+            </div>
           )}
         </main>
 
@@ -255,17 +310,8 @@ export function AppShell() {
 
       <QueuePanel />
       <NowPlayingView />
-      <ShortcutsDialog />
-      <AndroidAppDialog />
-      <AccountDialog />
-      <PasswordDialog />
-      <PlaybackSettingsDialog />
-      <UploadDialog />
-      <EditTrackDialog />
+      <DeferredDialogs />
       <GlobalMetadataReview />
-      <TrimDialog />
-      <RestoreTagsDialog />
-      <ShareDialog />
       <PlaylistDialog />
       <ListenTogetherDialog />
       <ListenInviteDialog />

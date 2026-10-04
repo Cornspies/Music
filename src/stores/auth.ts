@@ -3,6 +3,7 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { User } from "@/lib/types"
+import { SERVER_REFUSES_APP, apiUrl, isDesktop, serverAnswers, serverUrl } from "@/lib/desktop"
 
 interface AuthResponse {
   token: string
@@ -17,12 +18,13 @@ async function authPost(
 ): Promise<AuthResponse> {
   let res: Response
   try {
-    res = await fetch(path, {
+    res = await fetch(apiUrl(path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password, inviteCode }),
     })
   } catch {
+    if (isDesktop && (await serverAnswers(serverUrl()))) throw new Error(SERVER_REFUSES_APP)
     throw new Error("Network error — could not reach the server.")
   }
   let data: { token?: string; user?: User; error?: string } = {}

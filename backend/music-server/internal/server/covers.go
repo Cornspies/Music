@@ -3,14 +3,19 @@ package server
 import (
 	"bytes"
 	"image"
+	"image/color"
+	"image/jpeg"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-var coverThumbSizes = map[int]bool{128: true, 256: true, 512: true}
+const backdropSize = 32
+
+var coverThumbSizes = map[int]bool{backdropSize: true, 128: true, 256: true, 512: true}
 
 func (s *Server) coverPath(id string) string { return filepath.Join(s.covDir, id+".img") }
 
@@ -36,7 +41,12 @@ func (s *Server) coverBytes(id string, size int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	small := resizeCover(raw, size)
+	var small []byte
+	if size == backdropSize {
+		small = backdropCover(raw)
+	} else {
+		small = resizeCover(raw, size)
+	}
 	if err := writeFileAtomic(thumb, small); err != nil {
 		logErr("cache cover thumbnail", err)
 	}
@@ -108,4 +118,51 @@ func (s *Server) shrinkStoredCovers() {
 	if shrunk > 0 {
 		log.Printf("covers: scaled %d oversized covers down to %dpx", shrunk, maxCoverEdge)
 	}
+}
+
+func backdropCover(raw []byte) []byte {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	if err != nil || int64(cfg.Width)*int64(cfg.Height) > maxAvatarPixels {
+		return raw
+	}
+	src, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return raw
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, blur(downscale(src, backdropSize), 1.2), &jpeg.Options{Quality: 88}); err != nil {
+		return raw
+	}
+	return buf.Bytes()
+}
+
+func blur(src *image.RGBA, sigma float64) *image.RGBA {
+	radius := int(math.Ceil(sigma * 3))
+	kernel := make([]float64, 2*radius+1)
+	var sum float64
+	for i := range kernel {
+		d := float64(i - radius)
+		kernel[i] = math.Exp(-d * d / (2 * sigma * sigma))
+		sum += kernel[i]
+	}
+	for i := range kernel {
+		kernel[i] /= sum
+	}
+	b := src.Bounds()
+	pass := func(in *image.RGBA, dx, dy int) *image.RGBA {
+		out := image.NewRGBA(b)
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				var r, g, bl float64
+				for i, w := range kernel {
+					k := i - radius
+					c := in.RGBAAt(min(max(x+k*dx, b.Min.X), b.Max.X-1), min(max(y+k*dy, b.Min.Y), b.Max.Y-1))
+					r, g, bl = r+w*float64(c.R), g+w*float64(c.G), bl+w*float64(c.B)
+				}
+				out.SetRGBA(x, y, color.RGBA{uint8(r + 0.5), uint8(g + 0.5), uint8(bl + 0.5), 255})
+			}
+		}
+		return out
+	}
+	return pass(pass(src, 1, 0), 0, 1)
 }
