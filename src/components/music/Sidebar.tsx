@@ -18,8 +18,8 @@ import {
   Pin,
   Plus,
   Search,
+  MonitorSmartphone,
   ShieldCheck,
-  Smartphone,
   SquareLibrary,
   Users,
 } from "lucide-react"
@@ -85,7 +85,7 @@ export function SidebarContent() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-3 px-5 pb-4 pt-5">
+      <div className="flex shrink-0 items-center gap-3 px-5 pb-4 pt-5">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-emerald-400 to-teal-600 shadow-md shadow-emerald-900/40">
           <AudioLines className="size-5 text-zinc-950" aria-hidden="true" />
         </div>
@@ -94,150 +94,152 @@ export function SidebarContent() {
         </div>
       </div>
 
-      <nav aria-label="Main" className="flex flex-col gap-0.5 px-3">
-        {NAV_ITEMS.map((item) => {
-          const active = view === item.view
-          return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <nav aria-label="Main" className="flex shrink-0 flex-col gap-0.5 px-3">
+          {NAV_ITEMS.map((item) => {
+            const active = view === item.view
+            return (
+              <button
+                key={item.view}
+                type="button"
+                onClick={() => navigate(item.view)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  active
+                    ? "bg-zinc-800/80 text-emerald-400"
+                    : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
+                )}
+              >
+                <item.icon className="size-4.5 shrink-0" aria-hidden="true" />
+                {item.label}
+                {item.view === "offline" && downloadCount > 0 ? (
+                  <span className="ml-auto rounded-full bg-zinc-800 px-1.5 text-[10px] tabular-nums text-zinc-400">
+                    {downloadCount}
+                  </span>
+                ) : null}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              useUIStore.getState().setSidebarOpen(false)
+              useListenStore.getState().setDialogOpen(true)
+            }}
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              listeners ? "text-emerald-400 hover:bg-zinc-800/50" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
+            )}
+          >
+            <Users className="size-4.5 shrink-0" aria-hidden="true" />
+            Listen together
+            {listeners ? (
+              <span className="ml-auto rounded-full bg-emerald-500/15 px-1.5 text-[10px] tabular-nums text-emerald-300">
+                {listeners} live
+              </span>
+            ) : null}
+          </button>
+          {user?.role === "admin" ? (
             <button
-              key={item.view}
               type="button"
-              onClick={() => navigate(item.view)}
-              aria-current={active ? "page" : undefined}
+              onClick={() => navigate("admin")}
+              aria-current={view === "admin" ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                active
+                view === "admin"
                   ? "bg-zinc-800/80 text-emerald-400"
                   : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
               )}
             >
-              <item.icon className="size-4.5 shrink-0" aria-hidden="true" />
-              {item.label}
-              {item.view === "offline" && downloadCount > 0 ? (
-                <span className="ml-auto rounded-full bg-zinc-800 px-1.5 text-[10px] tabular-nums text-zinc-400">
-                  {downloadCount}
-                </span>
-              ) : null}
+              <ShieldCheck className="size-4.5 shrink-0" aria-hidden="true" />
+              Admin
             </button>
-          )
-        })}
-        <button
-          type="button"
-          onClick={() => {
-            useUIStore.getState().setSidebarOpen(false)
-            useListenStore.getState().setDialogOpen(true)
-          }}
-          className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-            listeners ? "text-emerald-400 hover:bg-zinc-800/50" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
-          )}
-        >
-          <Users className="size-4.5 shrink-0" aria-hidden="true" />
-          Listen together
-          {listeners ? (
-            <span className="ml-auto rounded-full bg-emerald-500/15 px-1.5 text-[10px] tabular-nums text-emerald-300">
-              {listeners} live
-            </span>
           ) : null}
-        </button>
-        {user?.role === "admin" ? (
-          <button
-            type="button"
-            onClick={() => navigate("admin")}
-            aria-current={view === "admin" ? "page" : undefined}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-              view === "admin"
-                ? "bg-zinc-800/80 text-emerald-400"
-                : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
-            )}
-          >
-            <ShieldCheck className="size-4.5 shrink-0" aria-hidden="true" />
-            Admin
-          </button>
-        ) : null}
-      </nav>
+        </nav>
 
-      <div className="mt-5 flex min-h-0 flex-1 flex-col px-3">
-        <div className="flex items-center justify-between px-2 pb-2">
-          <h3 className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
-            Playlists
-          </h3>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="New playlist"
-            title="New playlist"
-            onClick={() => openPlaylistDialog({ mode: "create" })}
-            className="size-7 text-zinc-500 hover:text-emerald-400"
-          >
-            <Plus className="size-4" />
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
-          {playlists.length === 0 ? (
-            <button
-              type="button"
+        <div className="mt-5 flex min-h-36 flex-1 flex-col px-3">
+          <div className="flex items-center justify-between px-2 pb-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">
+              Playlists
+            </h3>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="New playlist"
+              title="New playlist"
               onClick={() => openPlaylistDialog({ mode: "create" })}
-              className="flex w-full items-center gap-3 rounded-lg border border-dashed border-zinc-800 px-3 py-2.5 text-left text-xs text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-300"
+              className="size-7 text-zinc-500 hover:text-emerald-400"
             >
-              <Music4 className="size-4 shrink-0" aria-hidden="true" />
-              Create your first playlist
-            </button>
-          ) : (
-            playlists.map((p) => {
-              const active = view === "playlist" && viewArg === p.id
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => navigate("playlist", p.id)}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
-                    active
-                      ? "bg-zinc-800/80 text-zinc-100"
-                      : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
-                  )}
-                >
-                  <div className="relative shrink-0">
-                    <div
-                      aria-hidden="true"
-                      className="flex size-8 items-center justify-center rounded-md bg-linear-to-br from-zinc-700 to-zinc-800"
-                    >
-                      <Music4 className="size-3.5 text-zinc-400" />
+              <Plus className="size-4" />
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+            {playlists.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => openPlaylistDialog({ mode: "create" })}
+                className="flex w-full items-center gap-3 rounded-lg border border-dashed border-zinc-800 px-3 py-2.5 text-left text-xs text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-300"
+              >
+                <Music4 className="size-4 shrink-0" aria-hidden="true" />
+                Create your first playlist
+              </button>
+            ) : (
+              playlists.map((p) => {
+                const active = view === "playlist" && viewArg === p.id
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => navigate("playlist", p.id)}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+                      active
+                        ? "bg-zinc-800/80 text-zinc-100"
+                        : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
+                    )}
+                  >
+                    <div className="relative shrink-0">
+                      <div
+                        aria-hidden="true"
+                        className="flex size-8 items-center justify-center rounded-md bg-linear-to-br from-zinc-700 to-zinc-800"
+                      >
+                        <Music4 className="size-3.5 text-zinc-400" />
+                      </div>
+                      {!p.isMine && p.owner?.id ? (
+                        <UserAvatar
+                          userId={p.owner.id}
+                          username={p.owner.username}
+                          hasAvatar={p.owner.hasAvatar}
+                          size={14}
+                          label={`Shared by ${p.owner.username}`}
+                          className="absolute -right-1 -bottom-1 ring-2 ring-zinc-950"
+                        />
+                      ) : null}
                     </div>
-                    {!p.isMine && p.owner?.id ? (
-                      <UserAvatar
-                        userId={p.owner.id}
-                        username={p.owner.username}
-                        hasAvatar={p.owner.hasAvatar}
-                        size={14}
-                        label={`Shared by ${p.owner.username}`}
-                        className="absolute -right-1 -bottom-1 ring-2 ring-zinc-950"
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{p.name}</p>
+                      <p className="truncate text-[11px] text-zinc-600">
+                        {p.isMine ? "" : `${p.owner?.username ?? "shared"} · `}
+                        {p.trackCount} track{p.trackCount === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    {!p.isMine ? (
+                      <Pin
+                        className="size-3 shrink-0 text-emerald-400/70"
+                        aria-label="Pinned"
                       />
                     ) : null}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">{p.name}</p>
-                    <p className="truncate text-[11px] text-zinc-600">
-                      {p.isMine ? "" : `${p.owner?.username ?? "shared"} · `}
-                      {p.trackCount} track{p.trackCount === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  {!p.isMine ? (
-                    <Pin
-                      className="size-3 shrink-0 text-emerald-400/70"
-                      aria-label="Pinned"
-                    />
-                  ) : null}
-                </button>
-              )
-            })
-          )}
+                  </button>
+                )
+              })
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="border-t border-zinc-800/60 px-3 py-3">
+      <div className="shrink-0 border-t border-zinc-800/60 px-3 py-3">
         <div className="flex items-center gap-3">
           <AvatarPicker />
           <div className="min-w-0 flex-1">
@@ -286,10 +288,10 @@ export function SidebarContent() {
         </div>
         <button
           type="button"
-          onClick={() => useUIStore.getState().setAndroidAppOpen(true)}
+          onClick={() => useUIStore.getState().setAppsOpen(true)}
           className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-900/40 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
         >
-          <Smartphone className="size-3" aria-hidden="true" /> Android app
+          <MonitorSmartphone className="size-3" aria-hidden="true" /> Other platforms
         </button>
       </div>
     </div>

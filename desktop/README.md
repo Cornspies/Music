@@ -40,9 +40,8 @@ forwards them to `https://music.cornspies.com` or to the server set in
 screen has no server field in this mode.
 
 On Linux the build makes a `.deb`, an `.rpm` and an AppImage; on Windows an
-NSIS installer (`.exe`) and an `.msi`. The **Desktop** workflow in GitHub
-Actions (run by hand) builds both platforms and attaches the installers to the
-run.
+NSIS installer (`.exe`). The **Desktop** workflow in GitHub Actions (run by
+hand) builds both platforms and attaches the installers to the run.
 
 ## Server
 
@@ -109,7 +108,7 @@ and after the first time it opens the app by itself (the same banner turns
 that off again). A link to a different server than the one the app uses shows
 a notice with a button to open it in the browser.
 
-- The `.deb`, `.rpm`, `.exe` and `.msi` installers register the scheme. The
+- The `.deb`, `.rpm` and `.exe` installers register the scheme. The
   AppImage registers itself whenever it starts
   (`~/.local/share/applications/music-desktop-handler.desktop`).
 - Only one copy of the app runs: opening a link or starting the app again

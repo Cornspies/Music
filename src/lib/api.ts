@@ -298,8 +298,10 @@ export function fetchTrackChanges(since: string): Promise<TrackChanges> {
   return api<TrackChanges>(`/api/tracks/changes?since=${encodeURIComponent(since)}`)
 }
 
-export function fetchAppReleases(): Promise<AppRelease[]> {
-  return api<AppRelease[]>("/api/app/releases")
+export type ReleasePlatform = "android" | "windows" | "appimage" | "deb" | "rpm"
+
+export function fetchAppReleases(platform: ReleasePlatform): Promise<AppRelease[]> {
+  return api<AppRelease[]>(`/api/app/releases?platform=${platform}`)
 }
 
 export function fetchLatestAppRelease(

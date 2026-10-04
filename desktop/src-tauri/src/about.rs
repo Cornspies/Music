@@ -16,7 +16,6 @@ pub fn app_about(app: AppHandle) -> About {
         BundleType::Deb => "deb",
         BundleType::Rpm => "rpm",
         BundleType::Nsis => "windows",
-        BundleType::Msi => "msi",
         _ => "other",
     });
     About {

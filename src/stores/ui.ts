@@ -43,8 +43,8 @@ interface UIState {
   setNowPlayingOpen: (open: boolean) => void
   shortcutsOpen: boolean
   setShortcutsOpen: (open: boolean) => void
-  androidAppOpen: boolean
-  setAndroidAppOpen: (open: boolean) => void
+  appsOpen: boolean
+  setAppsOpen: (open: boolean) => void
   passwordOpen: boolean
   setPasswordOpen: (open: boolean) => void
   accountOpen: boolean
@@ -106,8 +106,8 @@ export const useUIStore = create<UIState>()((set) => ({
   setNowPlayingOpen: (open) => set({ nowPlayingOpen: open }),
   shortcutsOpen: false,
   setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
-  androidAppOpen: false,
-  setAndroidAppOpen: (open) => set({ androidAppOpen: open }),
+  appsOpen: false,
+  setAppsOpen: (open) => set({ appsOpen: open }),
   passwordOpen: false,
   setPasswordOpen: (open) => set({ passwordOpen: open }),
   accountOpen: false,
