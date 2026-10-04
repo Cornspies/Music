@@ -24,7 +24,6 @@ var releaseKinds = map[string]releaseKind{
 	"deb":      {regexp.MustCompile(`^Music_([0-9A-Za-z.+-]{1,40})_amd64\.deb$`), "application/vnd.debian.binary-package"},
 	"rpm":      {regexp.MustCompile(`^Music-([0-9A-Za-z.+]{1,40})-[0-9]+\.x86_64\.rpm$`), "application/x-rpm"},
 	"windows":  {regexp.MustCompile(`^Music_([0-9A-Za-z.+-]{1,40})_x64-setup\.exe$`), "application/vnd.microsoft.portable-executable"},
-	"msi":      {regexp.MustCompile(`^Music_([0-9A-Za-z.+-]{1,40})_x64_[A-Za-z-]{2,10}\.msi$`), "application/x-msi"},
 }
 
 func requestedKind(w http.ResponseWriter, r *http.Request) (releaseKind, bool) {

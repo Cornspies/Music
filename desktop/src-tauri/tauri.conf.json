@@ -49,7 +49,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["appimage", "deb", "rpm", "nsis", "app", "dmg"],
     "category": "Music",
     "shortDescription": "Music player for your Music server",
     "longDescription": "Plays your library from a Music server: favourites, playlists, history and Listen Together.",
