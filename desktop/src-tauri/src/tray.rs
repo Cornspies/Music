@@ -102,12 +102,6 @@ fn build(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-pub fn hide(app: &AppHandle) {
-    if let Some(tray) = app.tray_by_id(ID) {
-        let _ = tray.set_visible(false);
-    }
-}
-
 fn media(app: &AppHandle, action: &str) {
     let _ = app
         .state::<Audio>()

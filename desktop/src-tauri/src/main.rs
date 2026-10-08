@@ -14,6 +14,10 @@ mod window;
 use tauri::{Manager, RunEvent};
 
 fn main() {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_USE_SKIA_FOR_COMPOSITION").is_none() {
+        unsafe { std::env::set_var("WEBKIT_USE_SKIA_FOR_COMPOSITION", "0") };
+    }
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             window::open(app)
@@ -72,6 +76,7 @@ fn main() {
             let media_events = audio.sender();
             app.manage(audio);
             let minimized = settings.start_minimized && settings::launched_minimized();
+            tray::show(app.handle());
             let window = window::start(app.handle(), minimized)?;
             media::setup(app.handle(), window.as_ref(), media_events);
             discord::start(settings.discord);
