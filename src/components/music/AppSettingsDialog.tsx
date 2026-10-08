@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState, type ReactNode } from "react"
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { toast } from "sonner"
 import { FolderOpen, Loader2, Settings } from "lucide-react"
@@ -30,7 +30,7 @@ function message(err: unknown): string {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex min-w-0 flex-col gap-3">
       <h3 className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">{title}</h3>
       {children}
     </section>
@@ -131,7 +131,7 @@ export function AppSettingsDialog() {
             <Loader2 className="size-5 animate-spin text-zinc-500" />
           </div>
         ) : (
-          <div className="flex flex-col gap-6 pt-1">
+          <div className="flex min-w-0 flex-col gap-6 pt-1">
             <Section title="Startup">
               <Toggle
                 id="autostart"
@@ -139,13 +139,14 @@ export function AppSettingsDialog() {
                 checked={settings.autostart}
                 onChange={(on) => change({ autostart: on })}
               />
-              <Toggle
-                id="start-minimized"
-                label="Start in the tray"
-                checked={settings.startMinimized}
-                disabled={!settings.autostart}
-                onChange={(on) => change({ startMinimized: on })}
-              />
+              {settings.autostart ? (
+                <Toggle
+                  id="start-minimized"
+                  label="Start in the tray"
+                  checked={settings.startMinimized}
+                  onChange={(on) => change({ startMinimized: on })}
+                />
+              ) : null}
             </Section>
 
             <Section title="Window">
@@ -159,11 +160,13 @@ export function AppSettingsDialog() {
             </Section>
 
             <Section title="Downloads">
-              <p
-                className="truncate rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 font-mono text-xs text-zinc-300"
-                title={settings.downloadDir}
-              >
-                {settings.downloadDir}
+              <p className="rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-2 font-mono text-xs [overflow-wrap:anywhere] text-zinc-300">
+                {settings.downloadDir.split(/(?<=[/\\])/).map((part, i) => (
+                  <Fragment key={i}>
+                    {part}
+                    <wbr />
+                  </Fragment>
+                ))}
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button

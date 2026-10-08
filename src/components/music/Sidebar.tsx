@@ -299,10 +299,12 @@ export function SidebarContent() {
           {isDesktop ? (
             <button
               type="button"
+              aria-label="Settings"
+              title="Settings"
               onClick={() => useUIStore.getState().setAppSettingsOpen(true)}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-900/40 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+              className="flex shrink-0 items-center justify-center rounded-md border border-zinc-800/80 bg-zinc-900/40 px-2.5 text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
             >
-              <Settings className="size-3" aria-hidden="true" /> Settings
+              <Settings className="size-3.5" aria-hidden="true" />
             </button>
           ) : null}
         </div>

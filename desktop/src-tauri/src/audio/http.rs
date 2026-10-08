@@ -82,6 +82,10 @@ impl<T: Transport> Transport for Stalling<T> {
     fn is_open(&mut self) -> bool {
         self.0.is_open()
     }
+
+    fn is_tls(&self) -> bool {
+        self.0.is_tls()
+    }
 }
 
 pub fn is_expired(err: &io::Error) -> bool {
