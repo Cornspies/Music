@@ -3,17 +3,19 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use serde::Serialize;
 use tauri::http::{Request, Response, StatusCode, header};
 use tauri::ipc::Channel;
-use tauri::{App, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use ureq::Agent;
 
 const PROGRESS_STEP: u64 = 256 * 1024;
+const FOLDER_NAME: &str = "Music offline";
+const OWN_EXTENSIONS: [&str; 6] = ["json", "audio", "part", "type", "cover", "covertype"];
 
-static DIR: OnceLock<PathBuf> = OnceLock::new();
+static DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
 
 #[derive(Default)]
 pub struct Downloads(Mutex<HashMap<String, Arc<AtomicBool>>>);
@@ -24,14 +26,94 @@ pub struct Progress {
     total: u64,
 }
 
-pub fn setup(app: &App) {
-    if let Ok(dir) = app.path().app_data_dir() {
-        let _ = DIR.set(dir.join("offline"));
+pub fn setup(app: &AppHandle, configured: Option<PathBuf>) {
+    if let Ok(mut dir) = DIR.write() {
+        *dir = configured.or_else(|| default_dir(app));
     }
 }
 
-fn dir() -> Option<&'static Path> {
-    DIR.get().map(PathBuf::as_path)
+pub fn default_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("offline"))
+}
+
+pub fn dir() -> Option<PathBuf> {
+    DIR.read().ok().and_then(|dir| dir.clone())
+}
+
+pub fn folder_inside(picked: &Path) -> PathBuf {
+    if picked.file_name().is_some_and(|name| name == FOLDER_NAME) {
+        picked.to_path_buf()
+    } else {
+        picked.join(FOLDER_NAME)
+    }
+}
+
+fn own_files(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|file| {
+            file.is_file()
+                && file.file_stem().and_then(|s| s.to_str()).is_some_and(valid)
+                && file
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| OWN_EXTENSIONS.contains(&e))
+        })
+        .collect()
+}
+
+pub fn move_to(downloads: &Downloads, target: &Path) -> Result<(), String> {
+    let active = downloads.0.lock().map_err(|e| e.to_string())?;
+    if !active.is_empty() {
+        return Err("Wait until the songs that are downloading have finished.".into());
+    }
+    let Some(from) = dir() else {
+        return Err("There's no downloads folder.".into());
+    };
+    if from == target {
+        return Ok(());
+    }
+    fs::create_dir_all(target).map_err(|e| format!("Couldn't create {}: {e}", target.display()))?;
+    let files = own_files(&from);
+    let mut moved: Vec<(&PathBuf, PathBuf, bool)> = Vec::new();
+    for file in &files {
+        let Some(name) = file.file_name() else {
+            continue;
+        };
+        let to = target.join(name);
+        if fs::rename(file, &to).is_ok() {
+            moved.push((file, to, true));
+            continue;
+        }
+        if let Err(e) = fs::copy(file, &to) {
+            let _ = fs::remove_file(&to);
+            for (back, to, renamed) in moved {
+                if renamed {
+                    let _ = fs::rename(&to, back);
+                } else {
+                    let _ = fs::remove_file(&to);
+                }
+            }
+            return Err(format!("Couldn't move the downloads: {e}"));
+        }
+        moved.push((file, to, false));
+    }
+    if let Ok(mut dir) = DIR.write() {
+        *dir = Some(target.to_path_buf());
+    }
+    drop(active);
+    for file in &files {
+        let _ = fs::remove_file(file);
+    }
+    let _ = fs::remove_dir(&from);
+    Ok(())
 }
 
 fn valid(id: &str) -> bool {
@@ -123,7 +205,7 @@ fn download(
     cancel: &AtomicBool,
 ) -> Result<(), String> {
     let dir = dir().ok_or("there's no folder for downloads")?;
-    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let audio = path(id, "audio").ok_or("invalid track")?;
     let agent = crate::audio::http_agent();
     if let Some(content_type) = fetch(&agent, url, auth, &audio, cancel, Some(progress))? {
@@ -196,7 +278,7 @@ pub fn offline_list() -> Result<Vec<String>, String> {
     let Some(dir) = dir() else {
         return Ok(Vec::new());
     };
-    let Ok(entries) = fs::read_dir(dir) else {
+    let Ok(entries) = fs::read_dir(&dir) else {
         return Ok(Vec::new());
     };
     let mut metas = Vec::new();
@@ -250,7 +332,9 @@ pub fn offline_clear(downloads: State<'_, Downloads>) -> Result<(), String> {
         }
     }
     if let Some(dir) = dir() {
-        let _ = fs::remove_dir_all(dir);
+        for file in own_files(&dir) {
+            let _ = fs::remove_file(file);
+        }
     }
     Ok(())
 }

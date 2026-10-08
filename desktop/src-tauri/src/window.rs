@@ -7,7 +7,7 @@ use serde::Serialize;
 use tauri::webview::{NewWindowResponse, WebviewWindowBuilder};
 use tauri::{AppHandle, Emitter, Manager, Url, WebviewWindow, WindowEvent};
 
-use crate::{background, tray};
+use crate::{background, settings, tray};
 
 const LABEL: &str = "main";
 const OPEN: u8 = 0;
@@ -23,6 +23,7 @@ static CLOSE_REQUESTS: AtomicU64 = AtomicU64::new(0);
 #[serde(rename_all = "camelCase")]
 struct CloseRequest {
     keep_webview: bool,
+    close_to_tray: bool,
 }
 
 fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
@@ -42,7 +43,25 @@ fn open_outside(url: &Url) {
     }
 }
 
+pub fn start(app: &AppHandle, minimized: bool) -> Result<Option<WebviewWindow>, Box<dyn Error>> {
+    if minimized && !cfg!(windows) {
+        MODE.store(BACKGROUND, Ordering::SeqCst);
+        tray::show(app);
+        return Ok(None);
+    }
+    let window = build_window(app, !minimized)?;
+    if minimized {
+        MODE.store(HIDDEN, Ordering::SeqCst);
+        tray::show(app);
+    }
+    Ok(Some(window))
+}
+
 pub fn build(app: &AppHandle) -> Result<WebviewWindow, Box<dyn Error>> {
+    build_window(app, true)
+}
+
+fn build_window(app: &AppHandle, visible: bool) -> Result<WebviewWindow, Box<dyn Error>> {
     let config = app
         .config()
         .app
@@ -57,6 +76,7 @@ pub fn build(app: &AppHandle) -> Result<WebviewWindow, Box<dyn Error>> {
         None
     };
     let window = WebviewWindowBuilder::from_config(app, &config)?
+        .visible(visible)
         .on_navigation(move |url| {
             if is_app_url(url, dev_url.as_ref()) {
                 return true;
@@ -88,6 +108,7 @@ fn request_close(app: &AppHandle) {
         "close-requested",
         CloseRequest {
             keep_webview: cfg!(windows),
+            close_to_tray: settings::get(app).close_to_tray,
         },
     );
     let app = app.clone();
@@ -147,9 +168,18 @@ pub fn quit(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub fn window_close(window: WebviewWindow) {
+pub fn window_tray(app: AppHandle, window: WebviewWindow) {
+    if cfg!(windows) {
+        window_hide(app, window);
+    } else {
+        enter_background(&app);
+    }
+}
+
+#[tauri::command]
+pub fn app_quit(app: AppHandle) {
     settle_close();
-    let _ = window.destroy();
+    quit(&app);
 }
 
 #[tauri::command]

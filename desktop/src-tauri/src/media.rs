@@ -23,11 +23,11 @@ struct Metadata {
     duration: Option<f64>,
 }
 
-pub fn setup(app: &AppHandle, window: &WebviewWindow, audio: Sender<Msg>) {
+pub fn setup(app: &AppHandle, window: Option<&WebviewWindow>, audio: Sender<Msg>) {
     let config = PlatformConfig {
         display_name: "Music",
         dbus_name: "music_desktop",
-        hwnd: hwnd(window),
+        hwnd: window.and_then(hwnd),
     };
     let Ok(mut controls) = MediaControls::new(config) else {
         return;
@@ -88,6 +88,7 @@ pub fn metadata(
     duration: Option<f64>,
 ) {
     crate::tray::now_playing(app, &title, artist.as_deref());
+    crate::discord::track(&title, artist.as_deref(), album.as_deref(), duration);
     let meta = Metadata {
         title,
         artist,
@@ -108,6 +109,7 @@ pub fn metadata(
 
 pub fn playback(app: &AppHandle, state: Option<(bool, f64)>) {
     crate::tray::playing(app, matches!(state, Some((true, _))));
+    crate::discord::playback(state);
     with_controls(app, move |controls| {
         let playback = match state {
             None => MediaPlayback::Stopped,
@@ -127,6 +129,7 @@ pub fn playback(app: &AppHandle, state: Option<(bool, f64)>) {
 pub fn clear(app: &AppHandle) {
     crate::tray::now_playing(app, "Music", None);
     crate::tray::playing(app, false);
+    crate::discord::playback(None);
     with_controls(app, |controls| {
         let _ = controls.set_playback(MediaPlayback::Stopped);
         let _ = controls.set_metadata(MediaMetadata::default());

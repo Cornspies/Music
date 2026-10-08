@@ -45,6 +45,8 @@ interface UIState {
   setShortcutsOpen: (open: boolean) => void
   appsOpen: boolean
   setAppsOpen: (open: boolean) => void
+  appSettingsOpen: boolean
+  setAppSettingsOpen: (open: boolean) => void
   passwordOpen: boolean
   setPasswordOpen: (open: boolean) => void
   accountOpen: boolean
@@ -108,6 +110,8 @@ export const useUIStore = create<UIState>()((set) => ({
   setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
   appsOpen: false,
   setAppsOpen: (open) => set({ appsOpen: open }),
+  appSettingsOpen: false,
+  setAppSettingsOpen: (open) => set({ appSettingsOpen: open }),
   passwordOpen: false,
   setPasswordOpen: (open) => set({ passwordOpen: open }),
   accountOpen: false,

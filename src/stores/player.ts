@@ -1062,9 +1062,14 @@ async function handOff(e: NativeAudioEngine): Promise<boolean> {
   }
 }
 
-async function handleCloseRequest(keepWebview: boolean) {
+async function handleCloseRequest(keepWebview: boolean, closeToTray: boolean) {
   const e = engine
   const playing = e instanceof NativeAudioEngine && !e.paused && usePlayerStore.getState().currentTrack !== null
+  if (!closeToTray) {
+    await Promise.all([flushListening(), persistPlayback({ force: true })])
+    await invoke("app_quit").catch((err: unknown) => console.error("app_quit failed", err))
+    return
+  }
   if (session || (playing && keepWebview)) {
     await invoke("window_hide").catch((err: unknown) => console.error("window_hide failed", err))
     return
@@ -1073,15 +1078,16 @@ async function handleCloseRequest(keepWebview: boolean) {
     void flushListening(true)
     void persistPlayback({ force: true, keepalive: true })
     if (await handOff(e)) return
+    e.pause()
   } else {
     await Promise.all([flushListening(), persistPlayback({ force: true })])
   }
-  await invoke("window_close").catch((err: unknown) => console.error("window_close failed", err))
+  await invoke("window_tray").catch((err: unknown) => console.error("window_tray failed", err))
 }
 
 if (isDesktop && typeof window !== "undefined") {
-  listen<{ keepWebview: boolean }>("close-requested", (event) => {
-    void handleCloseRequest(event.payload.keepWebview)
+  listen<{ keepWebview: boolean; closeToTray?: boolean }>("close-requested", (event) => {
+    void handleCloseRequest(event.payload.keepWebview, event.payload.closeToTray ?? true)
   }).catch((err: unknown) => console.error("listening for close requests failed", err))
 }
 

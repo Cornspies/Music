@@ -68,6 +68,38 @@ without playback.
 
 The silence-trim preview in the track editor plays through the same engine.
 
+## Settings
+
+**Settings** at the bottom of the sidebar (desktop app only) holds:
+
+- **Start when you sign in** and **Start in the tray**: autostart through the
+  system's autostart entry (`~/.config/autostart` on Linux, the Run key on
+  Windows; an AppImage registers the `.AppImage` file itself). Started this
+  way, the app opens in the tray without its window.
+- **Minimize to tray when closed** (on by default): see below. Off, closing
+  the window quits the app.
+- **Downloads**: the folder downloaded songs live in, with **Open folder**,
+  **Change…** (moves the downloads into a `Music offline` folder inside the
+  one you pick) and **Use default**.
+- **Discord**: see below.
+
+The settings are stored in `settings.json` in the app's config folder
+(`~/.config/com.cornspies.music` on Linux, `%APPDATA%\com.cornspies.music`
+on Windows).
+
+## Discord
+
+With **Show what you're playing** on, the app sets your Discord status to
+"Listening to …" with the song, artist, album and a progress bar while music
+plays, and clears it on pause. It talks to the Discord app on the same
+computer (also Flatpak and Snap installs), and connects by itself when
+Discord starts later.
+
+It uses the Discord application whose ID is `CLIENT_ID` in
+`src-tauri/src/discord.rs`: its name is what the status reads ("Music"), and
+the image shown is its Rich Presence art asset with the key `music`. An empty
+ID greys the setting out.
+
 ## Closing the window
 
 Closing the window while music plays keeps it playing: the app drops the
@@ -75,7 +107,8 @@ window and its web view (most of its memory) and carries on from a tray icon
 and the system media controls. The queue, repeat and shuffle, the sleep timer,
 play counts and the saved position keep working. Opening the window again
 (from the tray, the media controls or by starting the app) picks up the track
-that's playing. Closing it while nothing plays quits the app.
+that's playing. Closing it while nothing plays also goes to the tray, without
+the web view; with **Minimize to tray when closed** off, closing quits instead.
 
 On Windows the window is hidden instead, because the media overlay belongs to
 it. The same happens during a Listen Together session, which needs the page
@@ -85,7 +118,8 @@ running.
 
 "Download for offline" saves the track as a file in the app's data folder
 (`~/.local/share/com.cornspies.music/offline` on Linux,
-`%APPDATA%\com.cornspies.music\offline` on Windows). Downloaded tracks always
+`%APPDATA%\com.cornspies.music\offline` on Windows) or the folder chosen in
+Settings. Downloaded tracks always
 play from that file, with or without a connection, and their covers come
 from it too.
 

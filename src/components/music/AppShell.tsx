@@ -47,6 +47,9 @@ const FileTagsView = deferred(() => import("@/components/music/views/FileTagsVie
 const AdminView = deferred(() => import("@/components/music/views/AdminView").then((m) => m.AdminView))
 const ShortcutsDialog = deferred(() => import("@/components/music/ShortcutsDialog").then((m) => m.ShortcutsDialog))
 const AppsDialog = deferred(() => import("@/components/music/AppsDialog").then((m) => m.AppsDialog))
+const AppSettingsDialog = deferred(() =>
+  import("@/components/music/AppSettingsDialog").then((m) => m.AppSettingsDialog)
+)
 const AccountDialog = deferred(() => import("@/components/music/AccountDialog").then((m) => m.AccountDialog))
 const PasswordDialog = deferred(() => import("@/components/music/PasswordDialog").then((m) => m.PasswordDialog))
 const PlaybackSettingsDialog = deferred(() =>
@@ -67,6 +70,7 @@ function WhenOpened({ open, children }: { open: boolean; children: ReactNode }) 
 function DeferredDialogs() {
   const shortcuts = useUIStore((s) => s.shortcutsOpen)
   const apps = useUIStore((s) => s.appsOpen)
+  const appSettings = useUIStore((s) => s.appSettingsOpen)
   const account = useUIStore((s) => s.accountOpen)
   const password = useUIStore((s) => s.passwordOpen)
   const playbackSettings = useUIStore((s) => s.playbackSettingsOpen)
@@ -83,6 +87,9 @@ function DeferredDialogs() {
       </WhenOpened>
       <WhenOpened open={apps}>
         <AppsDialog />
+      </WhenOpened>
+      <WhenOpened open={appSettings}>
+        <AppSettingsDialog />
       </WhenOpened>
       <WhenOpened open={account}>
         <AccountDialog />
