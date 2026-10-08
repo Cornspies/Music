@@ -130,7 +130,7 @@ same kind (AppImage, `.deb`, `.rpm` or Windows installer) and offers to
 download it. To publish a build, put it in the server's app folder next to
 the Android APKs (`MUSIC_APK_DIR`, see `.env.example`) under the name the
 build produced, for example `Music_0.2.0_amd64.AppImage`. The version is
-`version` in `src-tauri/tauri.conf.json`.
+`version` in `src-tauri/Cargo.toml`.
 
 ## Links
 
