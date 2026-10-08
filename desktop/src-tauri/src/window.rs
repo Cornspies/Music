@@ -146,16 +146,12 @@ pub fn open(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-        if MODE.swap(OPEN, Ordering::SeqCst) != OPEN {
-            tray::hide(app);
-        }
+        MODE.store(OPEN, Ordering::SeqCst);
         return;
     }
     let app = app.clone();
     thread::spawn(move || {
-        if build(&app).is_ok() {
-            tray::hide(&app);
-        }
+        let _ = build(&app);
     });
 }
 
