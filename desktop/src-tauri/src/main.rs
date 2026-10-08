@@ -3,9 +3,11 @@
 mod about;
 mod audio;
 mod background;
+mod discord;
 mod links;
 mod media;
 mod offline;
+mod settings;
 mod tray;
 mod window;
 
@@ -17,6 +19,12 @@ fn main() {
             window::open(app)
         }))
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args([settings::MINIMIZED_ARG])
+                .build(),
+        )
         .manage(links::Links::default())
         .manage(background::Background::default())
         .manage(tray::Tray::default())
@@ -40,8 +48,14 @@ fn main() {
             links::take_links,
             background::background_start,
             background::background_take,
-            window::window_close,
             window::window_hide,
+            window::window_tray,
+            window::app_quit,
+            settings::settings_get,
+            settings::settings_set,
+            settings::settings_open_downloads,
+            settings::settings_pick_downloads,
+            settings::settings_reset_downloads,
             offline::offline_download,
             offline::offline_cancel,
             offline::offline_list,
@@ -52,12 +66,15 @@ fn main() {
             about::app_about,
         ])
         .setup(|app| {
-            offline::setup(app);
+            let settings = settings::setup(app);
+            offline::setup(app.handle(), settings.download_dir.clone());
             let audio = audio::Audio::start(app.handle().clone());
             let media_events = audio.sender();
             app.manage(audio);
-            let window = window::build(app.handle())?;
-            media::setup(app.handle(), &window, media_events);
+            let minimized = settings.start_minimized && settings::launched_minimized();
+            let window = window::start(app.handle(), minimized)?;
+            media::setup(app.handle(), window.as_ref(), media_events);
+            discord::start(settings.discord);
             links::setup(app);
             Ok(())
         })

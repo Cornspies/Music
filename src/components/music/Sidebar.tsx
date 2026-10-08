@@ -18,6 +18,7 @@ import {
   Pin,
   Plus,
   Search,
+  Settings,
   MonitorSmartphone,
   ShieldCheck,
   SquareLibrary,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { logoutEverywhere } from "@/lib/api"
+import { isDesktop } from "@/lib/desktop"
 import type { View } from "@/stores/ui"
 import { useUIStore } from "@/stores/ui"
 import { useAuthStore } from "@/stores/auth"
@@ -286,13 +288,24 @@ export function SidebarContent() {
             <UserRound className="size-3" aria-hidden="true" /> Account
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => useUIStore.getState().setAppsOpen(true)}
-          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-900/40 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
-        >
-          <MonitorSmartphone className="size-3" aria-hidden="true" /> Other platforms
-        </button>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => useUIStore.getState().setAppsOpen(true)}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-900/40 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+          >
+            <MonitorSmartphone className="size-3" aria-hidden="true" /> Other platforms
+          </button>
+          {isDesktop ? (
+            <button
+              type="button"
+              onClick={() => useUIStore.getState().setAppSettingsOpen(true)}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-900/40 py-1.5 text-[11px] font-medium text-zinc-500 transition-colors hover:border-zinc-700 hover:text-zinc-200"
+            >
+              <Settings className="size-3" aria-hidden="true" /> Settings
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   )

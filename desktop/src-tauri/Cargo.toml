@@ -22,6 +22,9 @@ rtrb = "0.4.0"
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "platform-verifier"] }
 souvlaki = "0.8.3"
 crossbeam-channel = "0.5.17"
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+discord-rich-presence = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "2.0.2"

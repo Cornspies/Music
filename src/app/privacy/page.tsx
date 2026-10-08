@@ -274,6 +274,14 @@ export default function PrivacyPage() {
               privacy policies, and some are based outside the EU, for example in the United States.
             </p>
           </Group>
+          <Group title="Discord">
+            <p>
+              If you turn on Discord in the desktop app&apos;s settings (it&apos;s off unless you do), the app
+              passes the title, artist and album of the song you&apos;re playing to the Discord app on your
+              computer. Discord then shows it on your profile to the people who can see your status, under
+              Discord&apos;s own privacy policy. Nothing else is sent, and turning it off clears your status.
+            </p>
+          </Group>
           <Group title="Apple and Google">
             <p>
               If you get Music from the App Store or Google Play, Apple or Google handle that under their own
