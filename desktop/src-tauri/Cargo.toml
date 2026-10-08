@@ -1,6 +1,6 @@
 [package]
 name = "music-desktop"
-version = "0.1.0"
+version = "0.1.2"
 description = "Music desktop app"
 edition = "2024"
 publish = false
