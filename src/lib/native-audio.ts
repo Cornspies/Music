@@ -255,7 +255,7 @@ export class NativeAudioEngine implements Engine {
             })
           return
         }
-        this.events.onError()
+        this.events.onError(event.message)
         break
       }
     }

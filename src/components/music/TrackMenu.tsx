@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { toast } from "sonner"
 import {
   Check,
@@ -70,6 +70,27 @@ interface TrackMenuProps {
   triggerClassName?: string
   side?: "top" | "bottom"
   showPlay?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}
+
+export function useTrackMenu() {
+  const [open, setOpen] = useState(false)
+  const onContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    if (e.buttons === 0) {
+      setOpen(true)
+      return
+    }
+    const show = () => {
+      window.removeEventListener("pointerup", show)
+      window.removeEventListener("pointercancel", show)
+      setOpen(true)
+    }
+    window.addEventListener("pointerup", show)
+    window.addEventListener("pointercancel", show)
+  }, [])
+  return { open, onOpenChange: setOpen, onContextMenu }
 }
 
 export function TrackMenu({
@@ -80,6 +101,8 @@ export function TrackMenu({
   triggerClassName,
   side = "bottom",
   showPlay = true,
+  open,
+  onOpenChange,
 }: TrackMenuProps) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -94,8 +117,8 @@ export function TrackMenu({
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
 
   return (
-    <span className="contents" onClick={stop} onDoubleClick={stop}>
-      <DropdownMenu>
+    <span className="contents" onClick={stop} onDoubleClick={stop} onContextMenu={stop}>
+      <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"

@@ -12,6 +12,14 @@ expect class OfflineStore() {
 
     fun bytesUsed(): Long
 
+    fun saveExtra(trackId: String, kind: String, bytes: ByteArray)
+
+    fun extraPath(trackId: String, kind: String): String?
+
+    fun readExtra(trackId: String, kind: String): ByteArray?
+
+    fun deleteExtras(trackId: String)
+
     fun saveMeta(key: String, value: String?)
 
     fun loadMeta(key: String): String?

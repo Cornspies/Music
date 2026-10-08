@@ -52,6 +52,8 @@ pub struct DecodeJob {
     pub agent: Agent,
 }
 
+const UNSUPPORTED: &str = "The desktop app can't play this format. The server is making a playable copy, so try again in a minute.";
+
 enum Failure {
     Cancelled,
     Expired(String),
@@ -137,7 +139,7 @@ fn decode(job: &mut DecodeJob) -> Result<(), Failure> {
     )?;
     let track = format
         .first_track_known_codec(TrackType::Audio)
-        .ok_or_else(|| Failure::Other("the file has no playable audio".into()))?;
+        .ok_or_else(|| Failure::Other(UNSUPPORTED.into()))?;
     let track_id = track.id;
     let time_base = track.time_base;
     let num_frames = track.num_frames;
@@ -147,8 +149,12 @@ fn decode(job: &mut DecodeJob) -> Result<(), Failure> {
         .and_then(|p| p.audio())
         .cloned()
         .ok_or_else(|| Failure::Other("the file has no playable audio".into()))?;
-    let mut decoder =
-        get_codecs().make_audio_decoder(&params, &AudioDecoderOptions::default().gapless(true))?;
+    let mut decoder = get_codecs()
+        .make_audio_decoder(&params, &AudioDecoderOptions::default().gapless(true))
+        .map_err(|err| match err {
+            SymphoniaError::Unsupported(_) => Failure::Other(UNSUPPORTED.into()),
+            other => other.into(),
+        })?;
 
     let mut skip_frames = 0u64;
     if job.start > 0.0

@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
+	_ "embed"
+	"encoding/json"
 	"mime"
 	"net/http"
 	"os"
@@ -13,25 +15,32 @@ import (
 	"time"
 )
 
-const webCSP = "default-src 'self'; script-src 'self' 'unsafe-inline' blob:; " +
-	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; " +
-	"img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' blob:; worker-src 'self' blob:; " +
-	"manifest-src 'self'; object-src 'none'; frame-src 'self' com.cornspies.music:; base-uri 'self'; " +
-	"form-action 'self'; frame-ancestors 'none'"
+//go:embed web-headers.json
+var webHeadersJSON []byte
 
-var webHeaders = [][2]string{
-	{"Content-Security-Policy", webCSP},
-	{"Referrer-Policy", "same-origin"},
-	{"X-Frame-Options", "DENY"},
-	{"Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"},
-	{"Cross-Origin-Opener-Policy", "same-origin"},
-	{"Strict-Transport-Security", "max-age=31536000"},
+var webHeaders = loadWebHeaders()
+
+func loadWebHeaders() [][2]string {
+	var spec struct {
+		ContentSecurityPolicy [][]string  `json:"contentSecurityPolicy"`
+		Headers               [][2]string `json:"headers"`
+	}
+	if err := json.Unmarshal(webHeadersJSON, &spec); err != nil {
+		panic("web-headers.json: " + err.Error())
+	}
+	directives := make([]string, 0, len(spec.ContentSecurityPolicy))
+	for _, d := range spec.ContentSecurityPolicy {
+		directives = append(directives, strings.Join(d, " "))
+	}
+	return append([][2]string{{"Content-Security-Policy", strings.Join(directives, "; ")}}, spec.Headers...)
 }
 
 var webTypes = map[string]string{
 	".webmanifest": "application/manifest+json",
 	".txt":         "text/plain; charset=utf-8",
 }
+
+const gzCacheBytes = 32 << 20
 
 var compressible = map[string]bool{
 	".html": true, ".js": true, ".css": true, ".json": true, ".txt": true,
@@ -48,6 +57,7 @@ type gzEntry struct {
 	mod  time.Time
 	size int64
 	data []byte
+	used time.Time
 }
 
 func newWebApp(root string) *webApp {
@@ -131,8 +141,13 @@ func (a *webApp) file(name string) (string, os.FileInfo, bool) {
 func (a *webApp) gzipped(full string, info os.FileInfo) ([]byte, bool) {
 	a.mu.Lock()
 	cached, ok := a.gz[full]
+	fresh := ok && cached.size == info.Size() && cached.mod.Equal(info.ModTime())
+	if fresh {
+		cached.used = time.Now()
+		a.gz[full] = cached
+	}
 	a.mu.Unlock()
-	if ok && cached.size == info.Size() && cached.mod.Equal(info.ModTime()) {
+	if fresh {
 		return cached.data, true
 	}
 	raw, err := os.ReadFile(full)
@@ -148,7 +163,30 @@ func (a *webApp) gzipped(full string, info os.FileInfo) ([]byte, bool) {
 		return nil, false
 	}
 	a.mu.Lock()
-	a.gz[full] = gzEntry{mod: info.ModTime(), size: info.Size(), data: buf.Bytes()}
+	a.gz[full] = gzEntry{mod: info.ModTime(), size: info.Size(), data: buf.Bytes(), used: time.Now()}
+	a.prune()
 	a.mu.Unlock()
 	return buf.Bytes(), true
+}
+
+func (a *webApp) prune() {
+	total := 0
+	for name, e := range a.gz {
+		info, err := os.Stat(name)
+		if err != nil || info.Size() != e.size || !info.ModTime().Equal(e.mod) {
+			delete(a.gz, name)
+			continue
+		}
+		total += len(e.data)
+	}
+	for total > gzCacheBytes {
+		oldest := ""
+		for name, e := range a.gz {
+			if oldest == "" || e.used.Before(a.gz[oldest].used) {
+				oldest = name
+			}
+		}
+		total -= len(a.gz[oldest].data)
+		delete(a.gz, oldest)
+	}
 }

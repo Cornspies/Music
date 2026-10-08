@@ -316,10 +316,12 @@ function getEngine(): Engine | null {
         persistPlayback({ force: true })
         prepareNext()
       },
-      onError: () => {
-        if (usePlayerStore.getState().currentTrack) {
+      onError: (message) => {
+        const track = usePlayerStore.getState().currentTrack
+        if (track) {
           usePlayerStore.setState({ isPlaying: false })
           session?.stoppedHere()
+          if (message) toast.error(`Couldn't play “${track.title}”`, { id: "playback-error", description: message.charAt(0).toUpperCase() + message.slice(1) })
         }
       },
     }

@@ -28,7 +28,7 @@ import { useListenStore } from "@/stores/listen"
 import { CoverArt } from "@/components/music/CoverArt"
 import { AddToPlaylistButton } from "@/components/music/AddToPlaylistButton"
 import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
-import { TrackMenu } from "@/components/music/TrackMenu"
+import { TrackMenu, useTrackMenu } from "@/components/music/TrackMenu"
 import { WaveformSeek } from "@/components/music/WaveformSeek"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
@@ -116,6 +116,7 @@ export function PlayerBar() {
   const canSkip = useListenStore((s) => s.session?.canControl ?? true)
 
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
+  const menu = useTrackMenu()
 
   const effectiveDuration =
     duration > 0 ? duration : (currentTrack?.duration ?? 0)
@@ -151,6 +152,7 @@ export function PlayerBar() {
           <button
             type="button"
             onClick={() => useUIStore.getState().setNowPlayingOpen(true)}
+            onContextMenu={currentTrack ? menu.onContextMenu : undefined}
             disabled={!currentTrack}
             aria-label={currentTrack ? "Open now playing view" : "Nothing playing"}
             className="group/np flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left transition-colors enabled:hover:bg-zinc-800/60 disabled:cursor-default md:w-auto md:flex-initial md:gap-3"
@@ -209,7 +211,15 @@ export function PlayerBar() {
               <Heart className={cn("size-4", currentTrack.isFavorite && "fill-current")} />
             </button>
           )}
-          {currentTrack && <TrackMenu track={currentTrack} side="top" showPlay={false} />}
+          {currentTrack && (
+            <TrackMenu
+              track={currentTrack}
+              side="top"
+              showPlay={false}
+              open={menu.open}
+              onOpenChange={menu.onOpenChange}
+            />
+          )}
         </div>
 
         <div className="hidden flex-1 flex-col items-center gap-1.5 md:flex">

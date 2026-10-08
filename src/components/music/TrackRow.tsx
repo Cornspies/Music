@@ -11,7 +11,7 @@ import { useOfflineStore } from "@/stores/offline"
 import { CoverArt } from "@/components/music/CoverArt"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { EqualizerButton } from "@/components/music/EqualizerIcon"
-import { TrackMenu } from "@/components/music/TrackMenu"
+import { TrackMenu, useTrackMenu } from "@/components/music/TrackMenu"
 
 interface TrackRowProps {
   track: Track
@@ -29,6 +29,8 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
   const isDownloaded = useOfflineStore((s) => s.ids.has(track.id))
   const downloadJob = useOfflineStore((s) => s.jobs[track.id])
 
+  const menu = useTrackMenu()
+
   const play = () => {
     usePlayerStore.getState().playNow(track, contextQueue ?? [track])
   }
@@ -45,6 +47,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
       onClick={() => {
         if (isTouch()) play()
       }}
+      onContextMenu={menu.onContextMenu}
       onKeyDown={(e) => {
         if (e.key === "Enter" && e.target === e.currentTarget) play()
       }}
@@ -177,6 +180,8 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
         onDismissAttention={onDismissAttention}
         onRestoreAttention={onRestoreAttention}
         triggerClassName="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+        open={menu.open}
+        onOpenChange={menu.onOpenChange}
       />
     </div>
   )

@@ -34,6 +34,7 @@ import com.music.app.offline.DownloadState
 import com.music.app.offline.OfflineStore
 import com.music.app.player.NowPlayingInfo
 import com.music.app.player.PlayerController
+import io.ktor.http.encodeURLPath
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -942,7 +943,8 @@ class AppModel(
                 artist = track.artist.ifBlank { "Unknown artist" },
                 album = track.album,
                 durationSec = track.duration,
-                artworkUrl = if (track.hasCover && !offlineMode) api.coverUrl(track.id) else null,
+                artworkUrl = downloads.coverPath(track.id)?.takeIf { track.hasCover }?.let { "file://" + it.encodeURLPath() }
+                    ?: if (track.hasCover && !offlineMode) api.coverUrl(track.id) else null,
             ),
         )
         if (autoplay) startListening(fromSec = 0.0)
@@ -981,14 +983,19 @@ class AppModel(
     private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
 
     fun loadLyrics(track: Track) {
-        if (offlineMode) return
+        if (offlineMode) {
+            if (lyrics[track.id] == null) downloads.savedLyrics(track.id)?.let { lyrics[track.id] = it }
+            return
+        }
         val cached = lyrics[track.id]
         val missFresh = (lyricsMissAt[track.id] ?: 0L) > nowMs() - 5 * 60_000
         if (cached != null && (cached.found || missFresh)) return
         if (!lyricsRequests.add(track.id)) return
         scope.launch {
             try {
-                runCatching { api.lyrics(track.id) }.getOrNull()?.let {
+                val fetched = runCatching { api.lyrics(track.id) }.getOrNull()
+                fetched?.let { downloads.rememberLyrics(track.id, it) }
+                (fetched ?: downloads.savedLyrics(track.id))?.let {
                     lyrics[track.id] = it
                     if (!it.found) lyricsMissAt[track.id] = nowMs()
                 }

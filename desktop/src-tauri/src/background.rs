@@ -25,8 +25,9 @@ pub struct Background(Mutex<Option<Sender<Command>>>);
 pub enum Command {
     Take(Sender<Taken>),
     Quit(Sender<()>),
-    Token(Option<(String, f64)>),
 }
+
+type Token = Option<(String, f64)>;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,8 +95,6 @@ struct QueueTrack {
     duration: f64,
     #[serde(default)]
     has_cover: bool,
-    #[serde(default)]
-    has_compatible: bool,
 }
 
 #[derive(Deserialize)]
@@ -123,7 +122,8 @@ struct Controller {
     engine: Sender<Msg>,
     events: Receiver<Event>,
     commands: Receiver<Command>,
-    commands_tx: Sender<Command>,
+    tokens: Receiver<Token>,
+    tokens_tx: Sender<Token>,
     agent: Agent,
     server: String,
     session: String,
@@ -155,6 +155,7 @@ impl Controller {
     fn run(mut self) {
         let mut events = self.events.clone();
         let commands = self.commands.clone();
+        let tokens = self.tokens.clone();
         if self.next.is_none() {
             self.prepare_next();
         }
@@ -177,9 +178,16 @@ impl Controller {
                         let _ = reply.send(());
                         return;
                     }
-                    Ok(Command::Token(token)) => self.on_token(token),
-                    Err(_) => return,
+                    Err(_) => {
+                        self.final_flush();
+                        return;
+                    }
                 },
+                recv(tokens) -> token => {
+                    if let Ok(token) = token {
+                        self.on_token(token);
+                    }
+                }
                 default(TICK) => {}
             }
             self.tick();
@@ -447,12 +455,10 @@ impl Controller {
 
     fn stream_url(&self, index: usize) -> String {
         let track = &self.queue[index];
-        let extra: &[(&str, &str)] = if track.has_compatible {
-            &[("version", "compatible")]
-        } else {
-            &[]
-        };
-        self.url(&format!("/api/tracks/{}/stream", track.id), extra)
+        self.url(
+            &format!("/api/tracks/{}/stream", track.id),
+            &[("version", "compatible")],
+        )
     }
 
     fn show_metadata(&self) {
@@ -560,14 +566,13 @@ impl Controller {
         let agent = self.agent.clone();
         let url = format!("{}/api/auth/media-token", self.server);
         let auth = format!("Bearer {}", self.session);
-        let reply = self.commands_tx.clone();
+        let reply = self.tokens_tx.clone();
         thread::spawn(move || {
-            let token = fetch_token(&agent, &url, &auth);
-            let _ = reply.send(Command::Token(token));
+            let _ = reply.send(fetch_token(&agent, &url, &auth));
         });
     }
 
-    fn on_token(&mut self, token: Option<(String, f64)>) {
+    fn on_token(&mut self, token: Token) {
         if let Some((token, expires_at)) = token {
             self.media_token = token;
             self.media_expires_at = expires_at;
@@ -676,6 +681,7 @@ pub fn background_start(
     }
     let (events_tx, events) = unbounded();
     let (commands_tx, commands) = unbounded();
+    let (tokens_tx, tokens) = unbounded();
     let next = handoff
         .next_id
         .zip(handoff.next_index)
@@ -690,7 +696,8 @@ pub fn background_start(
         engine: audio.sender(),
         events,
         commands,
-        commands_tx: commands_tx.clone(),
+        tokens,
+        tokens_tx,
         agent: audio::http_agent(),
         server: handoff.server.trim_end_matches('/').to_string(),
         session: handoff.session,
