@@ -6,7 +6,7 @@ import { AudioLines } from "lucide-react"
 const OPERATOR = "Cornspies"
 const CONTACT = "contact@cornspies.com"
 const SERVER = "music.cornspies.com"
-const UPDATED = "1 October 2026"
+const UPDATED = "8 October 2026"
 
 export const metadata: Metadata = {
   title: "Privacy policy · Music",
@@ -61,7 +61,8 @@ export default function PrivacyPage() {
         <p className="mt-2 text-sm text-zinc-500">Last updated {UPDATED}</p>
 
         <p className="mt-6">
-          Music is a music player for iPhone, Android and the web, together with the music server at {SERVER}.
+          Music is a music player for iPhone, Android, Windows, Linux and the web, together with the music
+          server at {SERVER}.
           It&apos;s run by {OPERATOR}. This policy explains what data Music handles, why, who can see it, how
           long it&apos;s kept and what you can do about it.
         </p>
@@ -147,6 +148,10 @@ export default function PrivacyPage() {
                 only, and forgets them after 15 minutes.
               </li>
               <li>
+                The desktop app asks the server about twice a day whether a newer version is available, sending
+                its version number and package type.
+              </li>
+              <li>
                 Technical logs record which parts of the server were used, the result and how long it took,
                 to keep Music secure and fix problems. The web server in front of Music may also log IP
                 addresses and browser or app versions. Logs are deleted after at most 14 days.
@@ -166,16 +171,26 @@ export default function PrivacyPage() {
           <p>Some data stays on your phone or computer and is never sent to us:</p>
           <List>
             <li>
-              Your sign-in, kept in the iPhone Keychain, in encrypted storage on Android, or in the
-              browser&apos;s local storage on the web.
+              Your sign-in, kept in the iPhone Keychain, in encrypted storage on Android, in the
+              browser&apos;s local storage on the web, or in the desktop app&apos;s own storage on Windows and
+              Linux.
             </li>
             <li>
               Songs you download for offline listening, cached cover art and your settings. Signing out
               removes downloads from your phone, and uninstalling the app removes everything.
             </li>
             <li>
+              In the desktop app, downloaded songs and their cover art are saved as files in the app&apos;s
+              data folder (<span className="break-all">~/.local/share/com.cornspies.music/offline</span> on
+              Linux, <span className="break-all">%APPDATA%\com.cornspies.music\offline</span> on Windows).
+              They stay there when you sign out, until you remove them on the Downloads page or delete the
+              folder.
+            </li>
+            <li>
               The song that&apos;s playing, which your phone shows on its lock screen, in its media controls and,
-              on Android, in Music&apos;s home screen widget.
+              on Android, in Music&apos;s home screen widget. On a computer, the desktop app shows it in the
+              system&apos;s media controls (the media overlay on Windows, MPRIS on Linux), where other apps on
+              that computer can read it.
             </li>
             <li>
               On Android, Music asks for permission to show notifications, for its playback controls. On

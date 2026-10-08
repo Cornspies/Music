@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +28,7 @@ var needsCompatibleCopy = map[string]bool{
 const (
 	compatibleExt    = ".m4a"
 	compatibleMime   = "audio/mp4"
-	transcodeTimeout = 10 * time.Minute
+	transcodeTimeout = time.Hour
 )
 
 var (
@@ -112,4 +113,40 @@ func (s *Server) makeCompatibleCopy(trackID, originalRel string) *compatibleCopy
 	}
 
 	return &compatibleCopy{relPath: relPath, mime: compatibleMime, size: info.Size()}
+}
+
+func (s *Server) backfillCompatibleCopies() {
+	if !TranscodingAvailable() || config.Flag("MUSIC_DISABLE_TRANSCODE") {
+		return
+	}
+	rows, err := s.db.Query(`SELECT id, file_path, COALESCE(alt_path, '') FROM tracks`)
+	if err != nil {
+		logErr("find missing compatible copies", err)
+		return
+	}
+	type missing struct{ id, path string }
+	var todo []missing
+	for rows.Next() {
+		var id, path, alt string
+		if err := rows.Scan(&id, &path, &alt); err != nil {
+			continue
+		}
+		if !needsCompatibleCopy[strings.ToLower(filepath.Ext(path))] {
+			continue
+		}
+		if alt != "" {
+			if _, err := os.Stat(filepath.Join(s.dataDir, alt)); err == nil {
+				continue
+			}
+		}
+		todo = append(todo, missing{id, path})
+	}
+	rows.Close()
+	if len(todo) == 0 {
+		return
+	}
+	log.Printf("transcode: making %d missing compatible copies", len(todo))
+	for _, t := range todo {
+		s.startCompatibleCopy(t.id, t.path)
+	}
 }

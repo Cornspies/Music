@@ -101,8 +101,8 @@ export function streamUrl(track: Pick<Track, "id" | "mimeType" | "hasCompatible"
   return withToken(`/api/tracks/${track.id}/stream`) + version
 }
 
-export function nativeStreamUrl(track: Pick<Track, "id" | "hasCompatible">): string {
-  return withToken(`/api/tracks/${track.id}/stream`) + (track.hasCompatible ? "&version=compatible" : "")
+export function nativeStreamUrl(track: Pick<Track, "id">): string {
+  return withToken(`/api/tracks/${track.id}/stream`) + "&version=compatible"
 }
 
 function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boolean {

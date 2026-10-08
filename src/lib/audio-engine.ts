@@ -14,7 +14,7 @@ export interface EngineEvents {
   onPause: () => void
   onEnded: () => void
   onAdvanced: (track: Track) => void
-  onError: () => void
+  onError: (message?: string) => void
 }
 
 interface Slot {

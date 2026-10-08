@@ -53,6 +53,7 @@ func (s *Server) StartBackgroundWork() {
 	go s.backfillFileHashes()
 	go s.repairMissingCovers()
 	go s.shrinkStoredCovers()
+	go s.backfillCompatibleCopies()
 	if config.Flag("MUSIC_DISABLE_ANALYSIS") {
 		log.Printf("music-server analysis: disabled")
 		return

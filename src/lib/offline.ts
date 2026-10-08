@@ -43,7 +43,7 @@ async function downloadToDisk(track: Track, onProgress?: DownloadProgress, signa
   try {
     await invoke("offline_download", {
       id: track.id,
-      url: apiUrl(`/api/tracks/${track.id}/stream${track.hasCompatible ? "?version=compatible" : ""}`),
+      url: apiUrl(`/api/tracks/${track.id}/stream?version=compatible`),
       coverUrl: track.hasCover ? apiUrl(`/api/tracks/${track.id}/cover`) : null,
       auth: `Bearer ${token}`,
       meta: JSON.stringify({ ...track, updatedAt: new Date().toISOString() }),

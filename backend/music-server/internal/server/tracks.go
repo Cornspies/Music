@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"music-server/internal/config"
@@ -515,13 +516,20 @@ func humanBytes(n int64) string {
 	}
 }
 
-var transcodeSlots = make(chan struct{}, 2)
+var (
+	transcodeSlots = make(chan struct{}, 2)
+	copying        sync.Map
+)
 
 func (s *Server) startCompatibleCopy(trackID, originalRel string) {
 	if !needsCompatibleCopy[strings.ToLower(filepath.Ext(originalRel))] {
 		return
 	}
+	if _, busy := copying.LoadOrStore(trackID, struct{}{}); busy {
+		return
+	}
 	go func() {
+		defer copying.Delete(trackID)
 		transcodeSlots <- struct{}{}
 		defer func() { <-transcodeSlots }()
 		defer logPanic("compatible copy of track " + trackID)
@@ -777,11 +785,17 @@ func (s *Server) serveTrackFile(w http.ResponseWriter, r *http.Request, download
 		return
 	}
 
-	if wantsCompatible(r) && t.HasCompatible {
-		if alt := s.altPathFor(id); alt != "" {
+	if wantsCompatible(r) {
+		alt := ""
+		if t.HasCompatible {
+			alt = s.altPathFor(id)
+		}
+		if _, err := os.Stat(filepath.Join(s.dataDir, alt)); alt != "" && err == nil {
 			filePath = alt
 			t.MimeType = t.CompatibleMime
 			fileName = swapExtension(fileName, compatibleExt)
+		} else if TranscodingAvailable() && !config.Flag("MUSIC_DISABLE_TRANSCODE") {
+			s.startCompatibleCopy(id, filePath)
 		}
 	}
 

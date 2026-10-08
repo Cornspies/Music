@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.music.app.api.ApiClient
+import com.music.app.api.Lyrics
 import com.music.app.api.Playlist
 import com.music.app.api.PlaylistDetail
 import com.music.app.api.Track
@@ -107,6 +108,55 @@ class DownloadManager(
     fun localPathFor(trackId: String): String? =
         if (index.containsKey(trackId)) store.pathFor(trackId) else null
 
+    fun coverPath(trackId: String): String? =
+        if (index.containsKey(trackId)) store.extraPath(trackId, EXTRA_COVER) else null
+
+    fun savedLyrics(trackId: String): Lyrics? {
+        if (!index.containsKey(trackId)) return null
+        val bytes = store.readExtra(trackId, EXTRA_LYRICS) ?: return null
+        return runCatching { json.decodeFromString(Lyrics.serializer(), bytes.decodeToString()) }.getOrNull()
+    }
+
+    fun rememberLyrics(trackId: String, lyrics: Lyrics) {
+        if (index.containsKey(trackId)) saveLyrics(trackId, lyrics)
+    }
+
+    private fun saveLyrics(trackId: String, lyrics: Lyrics) {
+        val text = runCatching { json.encodeToString(Lyrics.serializer(), lyrics) }.getOrNull() ?: return
+        store.saveExtra(trackId, EXTRA_LYRICS, text.encodeToByteArray())
+    }
+
+    private suspend fun saveExtras(track: Track) {
+        if (track.hasCover && store.extraPath(track.id, EXTRA_COVER) == null) {
+            orNull { api.coverBytes(track.id, COVER_SIZE) }
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { store.saveExtra(track.id, EXTRA_COVER, it) }
+        }
+        if (store.extraPath(track.id, EXTRA_LYRICS) == null) {
+            orNull { api.lyrics(track.id) }?.let { saveLyrics(track.id, it) }
+        }
+    }
+
+    private suspend fun fillMissingExtras() {
+        if (waitingForWifi) return
+        for (track in index.values.toList()) saveExtras(track)
+        bytesUsed = store.bytesUsed()
+    }
+
+    private suspend fun <T> orNull(block: suspend () -> T): T? =
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun replaceTrack(track: Track) {
+        if (index[track.id]?.updatedAt != track.updatedAt) store.deleteExtras(track.id)
+        index[track.id] = track
+    }
+
     suspend fun download(track: Track, useCompatible: Boolean? = null) {
         if (index.containsKey(track.id)) return
         if (transient[track.id] == DownloadState.DOWNLOADING) return
@@ -124,6 +174,7 @@ class DownloadManager(
                 api.downloadTrack(track, compatible, path)
             }
             index[track.id] = track
+            saveExtras(track)
             transient.remove(track.id)
             persist()
         } catch (e: CancellationException) {
@@ -167,7 +218,7 @@ class DownloadManager(
 
     fun refreshMetadata(track: Track) {
         if (index.containsKey(track.id) && index[track.id] != track) {
-            index[track.id] = track
+            replaceTrack(track)
             persist()
         }
     }
@@ -176,7 +227,7 @@ class DownloadManager(
         var changed = false
         for (track in tracks) {
             if (index.containsKey(track.id) && index[track.id] != track) {
-                index[track.id] = track
+                replaceTrack(track)
                 changed = true
             }
         }
@@ -189,7 +240,7 @@ class DownloadManager(
         var changed = false
         for (track in changes.tracks) {
             if (index.containsKey(track.id) && index[track.id] != track) {
-                index[track.id] = track
+                replaceTrack(track)
                 changed = true
             }
         }
@@ -252,6 +303,7 @@ class DownloadManager(
             persistPlaylists()
 
             syncChanges()
+            fillMissingExtras()
         } catch (e: Exception) {
             lastError = friendlyError(e)
         } finally {
@@ -439,6 +491,9 @@ class DownloadManager(
         const val KEY_KEPT = "downloads.keptPlaylists"
         const val KEY_SYNC_SINCE = "downloads.syncSince"
         const val KEY_SYNC_AT = "downloads.syncAt"
+        const val EXTRA_COVER = "cover"
+        const val EXTRA_LYRICS = "lyrics"
+        const val COVER_SIZE = 512
     }
 }
 

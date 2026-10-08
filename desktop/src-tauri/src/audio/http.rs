@@ -8,9 +8,15 @@ use symphonia::core::io::MediaSource;
 use ureq::Agent;
 use ureq::http::Response;
 use ureq::tls::{RootCerts, TlsConfig};
+use ureq::unversioned::resolver::DefaultResolver;
+use ureq::unversioned::transport::{
+    Buffers, ConnectProxyConnector, ConnectionDetails, Connector, NextTimeout, RustlsConnector,
+    TcpConnector, Transport, time,
+};
 
 const SKIP_FORWARD_LIMIT: u64 = 256 * 1024;
 const MAX_ATTEMPTS: u32 = 4;
+const STALL_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub fn agent() -> Agent {
     let config = Agent::config_builder()
@@ -23,7 +29,59 @@ pub fn agent() -> Agent {
                 .build(),
         )
         .build();
-    Agent::new_with_config(config)
+    let connector =
+        ().chain(ConnectProxyConnector::default())
+            .chain(TcpConnector::default())
+            .chain(RustlsConnector::default())
+            .chain(StallTimeout);
+    Agent::with_parts(config, connector, DefaultResolver::default())
+}
+
+#[derive(Debug)]
+struct StallTimeout;
+
+impl<In: Transport> Connector<In> for StallTimeout {
+    type Out = Stalling<In>;
+
+    fn connect(
+        &self,
+        _: &ConnectionDetails,
+        chained: Option<In>,
+    ) -> Result<Option<Self::Out>, ureq::Error> {
+        Ok(chained.map(Stalling))
+    }
+}
+
+#[derive(Debug)]
+struct Stalling<T>(T);
+
+fn capped(timeout: NextTimeout) -> NextTimeout {
+    if timeout.after.is_not_happening() || *timeout.after > STALL_TIMEOUT {
+        NextTimeout {
+            after: time::Duration::Exact(STALL_TIMEOUT),
+            reason: timeout.reason,
+        }
+    } else {
+        timeout
+    }
+}
+
+impl<T: Transport> Transport for Stalling<T> {
+    fn buffers(&mut self) -> &mut dyn Buffers {
+        self.0.buffers()
+    }
+
+    fn transmit_output(&mut self, amount: usize, timeout: NextTimeout) -> Result<(), ureq::Error> {
+        self.0.transmit_output(amount, capped(timeout))
+    }
+
+    fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+        self.0.await_input(capped(timeout))
+    }
+
+    fn is_open(&mut self) -> bool {
+        self.0.is_open()
+    }
 }
 
 pub fn is_expired(err: &io::Error) -> bool {

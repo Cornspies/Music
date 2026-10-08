@@ -22,6 +22,7 @@ import io.ktor.client.request.prepareGet
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Headers
@@ -327,6 +328,16 @@ class ApiClient(private val store: TokenStore) {
                 throw IllegalStateException("The server returned an empty file.")
             }
         }
+    }
+
+    suspend fun coverBytes(trackId: String, size: Int): ByteArray {
+        val response = client.get(url("/api/tracks/$trackId/cover")) {
+            auth()
+            parameter("size", size)
+        }
+        noteRefreshedToken(response)
+        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        return response.readRawBytes()
     }
 
     suspend fun metadataCandidates(trackId: String): MetadataCandidatesResponse =

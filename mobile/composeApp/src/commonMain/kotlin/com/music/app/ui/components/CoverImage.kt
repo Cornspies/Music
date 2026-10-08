@@ -25,6 +25,7 @@ import com.music.app.api.Track
 import com.music.app.ui.theme.EmeraldDark
 import com.music.app.ui.theme.Zinc500
 import com.music.app.ui.theme.Zinc800
+import okio.Path.Companion.toPath
 
 private val coverThumbSizes = listOf(128, 256, 512)
 
@@ -50,10 +51,11 @@ fun CoverImage(
                 val px = with(density) { size.toPx() }
                 coverThumbSizes.firstOrNull { it >= px }
             }
-            val cacheKey = "cover:${track.id}:${track.updatedAt}:${thumb ?: "full"}"
+            val saved = model.downloads.coverPath(track.id)?.takeIf { thumb != null || model.offlineMode }
+            val cacheKey = "cover:${track.id}:${track.updatedAt}:${thumb ?: "full"}${if (saved != null) ":saved" else ""}"
             AsyncImage(
                 model = ImageRequest.Builder(LocalPlatformContext.current)
-                    .data(model.api.coverUrl(track.id, thumb))
+                    .data(saved?.toPath() ?: model.api.coverUrl(track.id, thumb))
                     .memoryCacheKey(cacheKey)
                     .diskCacheKey(cacheKey)
                     .build(),

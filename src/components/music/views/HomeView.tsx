@@ -20,7 +20,7 @@ import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackList } from "@/components/music/TrackList"
-import { TrackMenu } from "@/components/music/TrackMenu"
+import { TrackMenu, useTrackMenu } from "@/components/music/TrackMenu"
 import { Button } from "@/components/ui/button"
 
 function StatChip({
@@ -48,12 +48,14 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
 }
 
 function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
+  const menu = useTrackMenu()
   return (
     <div
       role="button"
       tabIndex={0}
       aria-label={`Play ${track.title}`}
       onClick={() => usePlayerStore.getState().playNow(track, queue)}
+      onContextMenu={menu.onContextMenu}
       onKeyDown={(e) => {
         if (e.key === "Enter" && e.target === e.currentTarget) {
           usePlayerStore.getState().playNow(track, queue)
@@ -93,6 +95,8 @@ function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
         <TrackMenu
           track={track}
           triggerClassName="-mr-1 size-7 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
+          open={menu.open}
+          onOpenChange={menu.onOpenChange}
         />
       </div>
     </div>
