@@ -189,6 +189,13 @@ fn fetch(
     if let Some(progress) = progress {
         let _ = progress.send(Progress { loaded, total });
     }
+    if total > 0 && loaded != total {
+        drop(out);
+        let _ = fs::remove_file(&part);
+        return Err(format!(
+            "The download stopped early ({loaded} of {total} bytes)."
+        ));
+    }
     out.sync_all().map_err(|e| e.to_string())?;
     drop(out);
     fs::rename(&part, to).map_err(|e| e.to_string())?;
