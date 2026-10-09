@@ -142,6 +142,7 @@ export interface DiscoverResult {
   id: string
   title: string
   artist: string
+  album?: string
   genre?: string
   year?: number
   duration?: number
@@ -150,6 +151,32 @@ export interface DiscoverResult {
   previewUrl?: string
   license?: string
   trackId?: string
+}
+
+export interface AudioQuality {
+  codec: string
+  kbps: number
+}
+
+export interface UpgradeCandidate {
+  track: Track
+  current: AudioQuality
+  found: DiscoverResult
+  quality: AudioQuality
+  source: string
+}
+
+export interface UpgradeStatus {
+  running: boolean
+  source: string
+  total: number
+  done: number
+  skipped: number
+  startedAt?: string
+  finishedAt?: string
+  error?: string
+  candidates: UpgradeCandidate[]
+  sources: Pick<DiscoverSource, "key" | "name">[]
 }
 
 export interface DiscoverSearch {

@@ -35,6 +35,7 @@ type discoverResult struct {
 	ID         string  `json:"id"`
 	Title      string  `json:"title"`
 	Artist     string  `json:"artist"`
+	Album      string  `json:"album,omitempty"`
 	Genre      string  `json:"genre,omitempty"`
 	Year       int     `json:"year,omitempty"`
 	Duration   float64 `json:"duration,omitempty"`
@@ -50,10 +51,11 @@ type sourceDownload struct {
 	FileName                    string
 	Size                        int64
 	Title, Artist, Album, Genre string
-	Year                        int
+	Year, TrackNo               int
 	Duration                    float64
 	CoverURL                    string
 	SquareCover                 bool
+	CatalogueCover              bool
 	LookupMetadata              bool
 }
 
@@ -91,6 +93,9 @@ func (s *Server) initDiscoverSources() {
 	case yt != nil:
 		list = append(list, yt)
 		log.Printf("discover: %s", yt.describe())
+		if !config.Flag("MUSIC_DISABLE_DEEZER") {
+			list = append(list, deezerSource{yt: yt})
+		}
 	}
 	list = append(list, ncsSource{})
 	if !config.Flag("MUSIC_DISABLE_SOUNDCLOUD") {
@@ -319,35 +324,45 @@ type statusError struct {
 
 func (e *statusError) Error() string { return e.msg }
 
-func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceID string, dl *sourceDownload) (string, error) {
+func (s *Server) saveDownload(dl *sourceDownload) (id, rel, mimeType string, n int64, err error) {
 	ext := strings.ToLower(filepath.Ext(dl.FileName))
 	mimeType, ok := extMime[ext]
 	if !ok {
-		return "", &statusError{http.StatusBadGateway, "the catalogue sent a file format this server doesn't accept (" + ext + ")"}
+		return "", "", "", 0, &statusError{http.StatusBadGateway, "the catalogue sent a file format this server doesn't accept (" + ext + ")"}
 	}
-	id := uuid.NewString()
-	rel := filepath.Join("uploads", id+ext)
+	id = uuid.NewString()
+	rel = filepath.Join("uploads", id+ext)
 	absPath := filepath.Join(s.dataDir, rel)
 	dst, err := os.Create(absPath)
 	if err != nil {
-		return "", err
+		return "", "", "", 0, err
 	}
 	n, copyErr := io.Copy(dst, io.LimitReader(dl.Body, maxDiscoverBytes+1))
 	closeErr := dst.Close()
 	switch {
 	case copyErr != nil:
-		os.Remove(absPath)
-		return "", fmt.Errorf("download: %w", copyErr)
+		err = fmt.Errorf("download: %w", copyErr)
 	case closeErr != nil:
-		os.Remove(absPath)
-		return "", closeErr
+		err = closeErr
 	case n == 0:
-		os.Remove(absPath)
-		return "", &statusError{http.StatusBadGateway, "the catalogue sent an empty file"}
+		err = &statusError{http.StatusBadGateway, "the catalogue sent an empty file"}
 	case n > maxDiscoverBytes:
-		os.Remove(absPath)
-		return "", &statusError{http.StatusBadGateway, "the file is larger than this server accepts"}
+		err = &statusError{http.StatusBadGateway, "the file is larger than this server accepts"}
 	}
+	if err != nil {
+		os.Remove(absPath)
+		return "", "", "", 0, err
+	}
+	return id, rel, mimeType, n, nil
+}
+
+func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceID string, dl *sourceDownload) (string, error) {
+	id, rel, mimeType, n, err := s.saveDownload(dl)
+	if err != nil {
+		return "", err
+	}
+	ext := strings.ToLower(filepath.Ext(rel))
+	absPath := filepath.Join(s.dataDir, rel)
 	if quota := userQuotaBytes(); quota > 0 {
 		used, _ := s.bytesUsedBy(u.ID)
 		if used+n > quota {
@@ -378,6 +393,9 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	hasCover := false
 	cover := shrinkCover(meta.picture)
 	coverSource := coverFromFile
+	if dl.CatalogueCover {
+		cover = nil
+	}
 	if len(cover) == 0 && dl.CoverURL != "" {
 		if b, err := fetchArtwork(ctx, dl.CoverURL); err == nil {
 			if dl.SquareCover {
@@ -400,6 +418,10 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	case sourceKey == "youtube":
 		coverSource = coverFromThumbnail
 	}
+	trackNo := meta.trackNo
+	if dl.TrackNo > 0 {
+		trackNo = dl.TrackNo
+	}
 
 	createdAt := nowRFC3339()
 	_, err = s.db.Exec(`INSERT INTO tracks
@@ -407,7 +429,7 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 		 file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
 		 alt_path, alt_mime, alt_size, updated_at, source, source_id, file_hash, cover_source)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)`,
-		id, u.ID, title, artist, album, genre, year, meta.trackNo, duration,
+		id, u.ID, title, artist, album, genre, year, trackNo, duration,
 		sanitizeFilename(dl.FileName), rel, mimeType, n, hasCover, createdAt,
 		"", "", 0, createdAt, sourceKey, sourceID, hash, coverSource)
 	if err != nil {

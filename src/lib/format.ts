@@ -1,4 +1,4 @@
-import type { TagChange } from "@/lib/types"
+import type { TagChange, Track } from "@/lib/types"
 
 export function formatDuration(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return "0:00"
@@ -103,4 +103,33 @@ export const TAG_FIELD_LABELS: Record<TagChange["field"], string> = {
   album: "Album",
   genre: "Genre",
   year: "Year",
+}
+
+const SOURCE_NAMES: Record<string, string> = {
+  youtube: "YouTube",
+  ncs: "NCS",
+  soundcloud: "SoundCloud",
+  deezer: "Deezer",
+}
+
+export function describeCopy(t: Track): string {
+  const parts: string[] = []
+  parts.push(formatAudioLabel(t.mimeType))
+  if (t.fileSize) parts.push(formatFileSize(t.fileSize))
+  parts.push(SOURCE_NAMES[t.source] ? `from ${SOURCE_NAMES[t.source]}` : "uploaded")
+  if (t.uploadedBy?.username) parts.push(`by ${t.uploadedBy.username}`)
+  if (t.createdAt) parts.push(formatRelativeDate(t.createdAt))
+  parts.push(`${t.plays} ${t.plays === 1 ? "play" : "plays"}`)
+  return parts.join(" · ")
+}
+
+export function formatAudioLabel(mime: string): string {
+  const m = (mime || "").toLowerCase()
+  if (m.includes("mpeg")) return "MP3"
+  if (m.includes("flac")) return "FLAC"
+  if (m.includes("wav")) return "WAV"
+  if (m.includes("ogg")) return "OGG"
+  if (m.includes("mp4") || m.includes("m4a")) return "M4A"
+  if (m.includes("aac")) return "AAC"
+  return m || "audio"
 }

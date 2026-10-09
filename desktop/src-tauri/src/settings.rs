@@ -23,7 +23,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            close_to_tray: true,
+            close_to_tray: false,
             start_minimized: true,
             discord: false,
             download_dir: None,

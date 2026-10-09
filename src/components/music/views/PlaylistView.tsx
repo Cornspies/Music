@@ -2,23 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import {
-  Globe,
-  Link as LinkIcon,
-  ListMusic,
-  Lock,
-  Music2,
-  Music4,
-  Pencil,
-  Pin,
-  PinOff,
-  Trash2,
-} from "lucide-react"
+import { Link as LinkIcon, ListMusic, Music2, Music4, Pin, PinOff } from "lucide-react"
 import { api } from "@/lib/api"
 import { formatTotal, hashGradient } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { copyText } from "@/lib/clipboard"
-import { publicUrl } from "@/lib/desktop"
 import type { PlaylistDetail } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
@@ -26,39 +13,17 @@ import { CollectionHeader, HeaderMenuTrigger } from "@/components/music/Collecti
 import { EmptyState } from "@/components/music/EmptyState"
 import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-
-async function copyPlaylistLink(playlistId: string): Promise<void> {
-  const url = publicUrl(`/playlists/${encodeURIComponent(playlistId)}`)
-  if (await copyText(url)) toast.success("Link copied")
-  else toast.error(`Couldn't copy automatically. The link is: ${url}`)
-}
+import { copyPlaylistLink, DeletePlaylistDialog, PlaylistManageItems } from "@/components/music/PlaylistMenu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 export function PlaylistView() {
   const viewArg = useUIStore((s) => s.viewArg)
   const playlistVersion = useLibraryStore((s) => s.playlistVersion)
   const navigate = useUIStore((s) => s.navigate)
-  const openPlaylistDialog = useUIStore((s) => s.openPlaylistDialog)
 
   const [detail, setDetail] = useState<PlaylistDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!viewArg) return
@@ -123,17 +88,6 @@ export function PlaylistView() {
 
   const totalDuration = detail.tracks.reduce((sum, t) => sum + t.duration, 0)
 
-  const confirmDelete = async () => {
-    if (!viewArg) return
-    setDeleting(true)
-    const ok = await useLibraryStore.getState().deletePlaylist(viewArg)
-    setDeleting(false)
-    if (ok) {
-      toast.success(`Deleted playlist “${detail.name}”`)
-      navigate("playlists")
-    }
-  }
-
   return (
     <div>
       <CollectionHeader
@@ -164,46 +118,11 @@ export function PlaylistView() {
                 <HeaderMenuTrigger />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuItem
-                  onClick={() => openPlaylistDialog({ mode: "rename", id: detail.id, name: detail.name })}
-                >
-                  <Pencil className="size-4" /> Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={async () => {
-                    const next = !detail.isPublic
-                    const ok = await useLibraryStore.getState().setPlaylistPublic(detail.id, next)
-                    if (ok) {
-                      setDetail((prev) => (prev ? { ...prev, isPublic: next } : prev))
-                      toast.success(
-                        next
-                          ? "Playlist is public — anyone signed in can find it"
-                          : "Playlist is private again"
-                      )
-                    }
-                  }}
-                >
-                  {detail.isPublic ? (
-                    <>
-                      <Lock className="size-4" /> Make private
-                    </>
-                  ) : (
-                    <>
-                      <Globe className="size-4" /> Make public
-                    </>
-                  )}
-                </DropdownMenuItem>
-                {detail.isPublic && (
-                  <DropdownMenuItem onClick={() => copyPlaylistLink(detail.id)}>
-                    <LinkIcon className="size-4" /> Copy link
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={() => setDeleteOpen(true)}
-                  className="text-red-400"
-                >
-                  <Trash2 className="size-4" /> Delete playlist
-                </DropdownMenuItem>
+                <PlaylistManageItems
+                  playlist={detail}
+                  onDelete={() => setDeleteOpen(true)}
+                  onChange={(patch) => setDetail((prev) => (prev ? { ...prev, ...patch } : prev))}
+                />
               </DropdownMenuContent>
             </DropdownMenu>
           ) : detail.isPublic ? (
@@ -261,26 +180,12 @@ export function PlaylistView() {
         )}
       </div>
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this playlist?</AlertDialogTitle>
-            <AlertDialogDescription>
-              “{detail.name}” will be permanently deleted. The tracks stay in your library.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deleting}
-              className="bg-red-600 text-white hover:bg-red-500"
-              onClick={confirmDelete}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeletePlaylistDialog
+        playlist={detail}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={() => navigate("playlists")}
+      />
     </div>
   )
 }

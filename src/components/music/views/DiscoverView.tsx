@@ -510,6 +510,7 @@ function ResultRow({ result, onAdded }: { result: DiscoverResult; onAdded: (t: T
         </p>
         <p className="truncate text-xs text-zinc-500">
           {result.artist}
+          {result.album && result.album !== result.title ? ` · ${result.album}` : ""}
           {result.genre ? ` · ${result.genre}` : ""}
           {result.year ? ` · ${result.year}` : ""}
           {result.duration ? ` · ${formatDuration(result.duration)}` : ""}

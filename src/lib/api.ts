@@ -30,6 +30,7 @@ import type {
   BulkApplyStatus,
   FileTagDiff,
   TagChange,
+  UpgradeStatus,
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
@@ -365,6 +366,10 @@ export function fetchDuplicates(): Promise<DuplicateGroup[]> {
   return api<DuplicateGroup[]>("/api/library/duplicates")
 }
 
+export function fetchTrackCopies(trackId: string): Promise<Track[]> {
+  return api<Track[]>(`/api/tracks/${encodeURIComponent(trackId)}/copies`)
+}
+
 export function fetchFileTagChanges(trackId: string): Promise<{ changes: TagChange[] }> {
   return api(`/api/tracks/${trackId}/metadata/file-tags`)
 }
@@ -532,6 +537,14 @@ export const admin = {
     api<Invite>(`/api/admin/invites/${encodeURIComponent(code)}/revoke`, { method: "POST" }),
   deleteInvite: (code: string) =>
     api<void>(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" }),
+  upgrades: () => api<UpgradeStatus>("/api/admin/upgrades"),
+  scanUpgrades: (source: string) =>
+    api<UpgradeStatus>("/api/admin/upgrades/scan", { method: "POST", ...jsonBody({ source }) }),
+  cancelUpgrades: () => api<void>("/api/admin/upgrades/cancel", { method: "POST" }),
+  applyUpgrade: (trackId: string) =>
+    api<Track>("/api/admin/upgrades/apply", { method: "POST", ...jsonBody({ trackId }) }),
+  dismissUpgrade: (trackId: string) =>
+    api<void>("/api/admin/upgrades/dismiss", { method: "POST", ...jsonBody({ trackId }) }),
 }
 
 function jsonBody(body: unknown): RequestInit {

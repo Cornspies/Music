@@ -48,6 +48,7 @@ import com.music.app.api.Track
 import com.music.app.api.friendlyError
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import com.music.app.ui.components.DeleteTrackDialog
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.ErrorState
 import com.music.app.ui.components.RefreshableContent
@@ -199,28 +200,18 @@ private fun SwipeToDeleteTrack(track: Track, row: @Composable () -> Unit) {
     }
 
     if (confirming) {
-        AlertDialog(
-            onDismissRequest = { confirming = false },
-            title = { Text("Delete this track?") },
-            text = {
-                Text("“${track.title}” will be removed for everyone. This cannot be undone.")
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirming = false
-                    scope.launch {
-                        try {
-                            model.deleteTrack(track)
-                        } catch (e: Exception) {
-                            error = friendlyError(e)
-                        }
+        DeleteTrackDialog(
+            track = track,
+            onDismiss = { confirming = false },
+            onConfirm = { keep ->
+                confirming = false
+                scope.launch {
+                    try {
+                        model.deleteTrack(track, keep)
+                    } catch (e: Exception) {
+                        error = friendlyError(e)
                     }
-                }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirming = false }) { Text("Cancel") }
             },
         )
     }

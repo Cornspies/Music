@@ -18,12 +18,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,12 +38,13 @@ import com.music.app.LocalAppModel
 import com.music.app.api.DuplicateGroup
 import com.music.app.api.Track
 import com.music.app.api.friendlyError
+import com.music.app.ui.components.DeleteTrackDialog
 import com.music.app.ui.components.EmptyState
+import com.music.app.ui.components.describeCopy
 import com.music.app.ui.components.ErrorState
 import com.music.app.ui.components.LoadingBox
 import com.music.app.ui.components.RefreshableContent
 import com.music.app.ui.components.TrackRow
-import com.music.app.ui.formatBytes
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc800
 import kotlinx.coroutines.launch
@@ -155,7 +154,7 @@ private fun DuplicateGroupCard(group: DuplicateGroup) {
                     }
                 }
                 Text(
-                    describe(track),
+                    describeCopy(track),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -169,51 +168,19 @@ private fun DuplicateGroupCard(group: DuplicateGroup) {
     }
 
     confirming?.let { track ->
-        AlertDialog(
-            onDismissRequest = { confirming = null },
-            title = { Text("Delete this copy?") },
-            text = { Text("“${track.title}” (${describe(track)}) will be removed for everyone. This cannot be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirming = null
-                    scope.launch {
-                        try {
-                            model.deleteTrack(track)
-                        } catch (e: Exception) {
-                            error = friendlyError(e)
-                        }
+        DeleteTrackDialog(
+            track = track,
+            onDismiss = { confirming = null },
+            onConfirm = { keep ->
+                confirming = null
+                scope.launch {
+                    try {
+                        model.deleteTrack(track, keep)
+                    } catch (e: Exception) {
+                        error = friendlyError(e)
                     }
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }
             },
-            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } },
         )
-    }
-}
-
-private fun describe(t: Track): String = buildList {
-    add(formatLabel(t.mimeType))
-    if (t.fileSize > 0) add(formatBytes(t.fileSize))
-    add(
-        when (t.source) {
-            "youtube" -> "from YouTube"
-            "ncs" -> "from NCS"
-            else -> "uploaded"
-        },
-    )
-    if (t.uploadedBy.username.isNotBlank()) add("by ${t.uploadedBy.username}")
-    add("${t.plays} ${if (t.plays == 1) "play" else "plays"}")
-}.joinToString(" • ")
-
-private fun formatLabel(mime: String): String {
-    val m = mime.lowercase()
-    return when {
-        "mpeg" in m -> "MP3"
-        "flac" in m -> "FLAC"
-        "wav" in m -> "WAV"
-        "ogg" in m -> "OGG"
-        "mp4" in m || "m4a" in m -> "M4A"
-        "aac" in m -> "AAC"
-        m.isBlank() -> "audio"
-        else -> m
     }
 }

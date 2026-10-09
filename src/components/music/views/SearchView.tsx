@@ -7,6 +7,7 @@ import { api } from "@/lib/api"
 import { formatTotal } from "@/lib/format"
 import type { Album, Artist, Playlist, SearchResults } from "@/lib/types"
 import { useUIStore } from "@/stores/ui"
+import { ArtistImage } from "@/components/music/ArtistImage"
 import { CoverArt } from "@/components/music/CoverArt"
 import { TrackList } from "@/components/music/TrackList"
 import { VirtualTrackList } from "@/components/music/VirtualTrackList"
@@ -149,6 +150,16 @@ export function SearchView() {
           </div>
         ) : (
           <>
+            {results!.artists.length > 0 && (
+              <Section title="Artists">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                  {results!.artists.map((artist: Artist) => (
+                    <ArtistResult key={artist.name} artist={artist} />
+                  ))}
+                </div>
+              </Section>
+            )}
+
             {results!.tracks.length > 0 && (
               <Section title="Tracks">
                 {expanded === q ? (
@@ -178,29 +189,6 @@ export function SearchView() {
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
                   {results!.albums.map((album: Album) => (
                     <AlbumResult key={`${album.name}|${album.artist}`} album={album} />
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {results!.artists.length > 0 && (
-              <Section title="Artists">
-                <div className="flex flex-wrap gap-2">
-                  {results!.artists.map((artist: Artist) => (
-                    <button
-                      key={artist.name}
-                      type="button"
-                      onClick={() => navigate("artist", artist.name)}
-                      className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/70 py-1.5 pr-4 pl-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800/70 hover:text-zinc-100"
-                    >
-                      <span className="flex size-8 items-center justify-center rounded-full bg-linear-to-br from-zinc-700 to-zinc-800 text-xs font-semibold text-emerald-400">
-                        {artist.name.slice(0, 1).toUpperCase()}
-                      </span>
-                      {artist.name}
-                      <span className="text-[11px] text-zinc-500">
-                        {artist.trackCount} track{artist.trackCount === 1 ? "" : "s"}
-                      </span>
-                    </button>
                   ))}
                 </div>
               </Section>
@@ -237,6 +225,27 @@ export function SearchView() {
         )}
       </div>
     </div>
+  )
+}
+
+function ArtistResult({ artist }: { artist: Artist }) {
+  const navigate = useUIStore((s) => s.navigate)
+  return (
+    <button
+      type="button"
+      onClick={() => navigate("artist", artist.name)}
+      className="group rounded-xl p-2 text-left transition-colors hover:bg-zinc-800/60"
+    >
+      <ArtistImage
+        name={artist.name}
+        sizes="(min-width: 1280px) calc((100vw - 340px) / 5), (min-width: 768px) calc((100vw - 340px) / 4), (min-width: 640px) calc((100vw - 60px) / 3), calc((100vw - 48px) / 2)"
+        initialsClassName="text-3xl md:text-4xl"
+      />
+      <p className="mt-2 truncate text-sm font-medium text-zinc-200">{artist.name || "Unknown artist"}</p>
+      <p className="truncate text-xs text-zinc-500">
+        Artist · {artist.trackCount} track{artist.trackCount === 1 ? "" : "s"}
+      </p>
+    </button>
   )
 }
 

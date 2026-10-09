@@ -25,10 +25,6 @@ export function routeToPath(view: View, arg: string | null): string {
       return "/search"
     case "library":
       return "/library"
-    case "albums":
-      return "/albums"
-    case "artists":
-      return "/artists"
     case "favorites":
       return "/favorites"
     case "playlists":
@@ -36,10 +32,10 @@ export function routeToPath(view: View, arg: string | null): string {
     case "playlist":
       return arg ? `/playlists/${encodeURIComponent(arg)}` : "/playlists"
     case "artist":
-      return arg ? `/artists/${encodeURIComponent(arg)}` : "/artists"
+      return arg ? `/artists/${encodeURIComponent(arg)}` : "/library"
     case "album": {
       const segments = encodeAlbumArg(arg)
-      return segments.length === 2 ? `/albums/${segments[0]}/${segments[1]}` : "/albums"
+      return segments.length === 2 ? `/albums/${segments[0]}/${segments[1]}` : "/library"
     }
     case "offline":
       return "/offline"
@@ -77,12 +73,12 @@ export function pathToRoute(pathname: string): Route {
     case "playlists":
       return parts[1] ? { view: "playlist", arg: parts[1] } : { view: "playlists", arg: null }
     case "artists":
-      return parts[1] ? { view: "artist", arg: parts[1] } : { view: "artists", arg: null }
+      return parts[1] ? { view: "artist", arg: parts[1] } : { view: "library", arg: null }
     case "albums":
       if (parts[1] && parts[2]) {
         return { view: "album", arg: JSON.stringify({ name: parts[2], artist: parts[1] }) }
       }
-      return { view: "albums", arg: null }
+      return { view: "library", arg: null }
     case "offline":
       return { view: "offline", arg: null }
     case "history":

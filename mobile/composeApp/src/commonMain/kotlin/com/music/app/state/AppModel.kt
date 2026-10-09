@@ -39,7 +39,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -664,8 +663,10 @@ class AppModel(
         downloads.downloadPlaylist(detail.toPlaylist(), detail.tracks, progress)
     }
 
-    suspend fun deleteTrack(track: Track) {
-        api.deleteTrack(track.id)
+    suspend fun trackCopies(track: Track): List<Track> = api.trackCopies(track.id)
+
+    suspend fun deleteTrack(track: Track, into: Track? = null) {
+        api.deleteTrack(track.id, into?.id)
         tracks = tracks?.filterNot { it.id == track.id }
         favorites = favorites?.filterNot { it.id == track.id }
         playlistDetail = playlistDetail?.let { d ->
@@ -675,7 +676,9 @@ class AppModel(
             r.copy(tracks = r.tracks.filterNot { it.id == track.id })
         }
         downloads.remove(track.id)
-        loadStats()
+        if (into == null) return loadStats()
+        refreshAll()
+        playlistDetail?.id?.let(::loadPlaylist)
     }
 
     suspend fun shareLinkFor(track: Track): Pair<String, String?> {
@@ -1353,10 +1356,5 @@ class AppModel(
             ?: currentTrack?.takeIf { it.id == trackId }
             ?: return
         replaceTrack(source.copy(plays = source.plays + 1))
-    }
-
-    fun destroy() {
-        scope.cancel()
-        player.release()
     }
 }

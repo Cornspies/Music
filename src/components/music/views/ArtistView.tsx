@@ -2,9 +2,10 @@
 
 import { useMemo } from "react"
 import { Mic2, Music2 } from "lucide-react"
-import { formatTotal, hashGradient, initialsOf } from "@/lib/format"
+import { formatTotal, hashGradient } from "@/lib/format"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
+import { ArtistImage } from "@/components/music/ArtistImage"
 import { CollectionHeader } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackList } from "@/components/music/TrackList"
@@ -35,12 +36,12 @@ export function ArtistView() {
         }${formatTotal(totalDuration)}`}
         tracks={artistTracks}
         cover={
-          <div
-            aria-hidden="true"
-            className={`flex aspect-square w-full items-center justify-center rounded-full bg-linear-to-br text-6xl font-black text-zinc-300/85 shadow-2xl md:text-7xl ${hashGradient(name)}`}
-          >
-            {initialsOf(name) || <Mic2 className="size-16 text-zinc-400/70" />}
-          </div>
+          <ArtistImage
+            name={artistName}
+            sizes="(min-width: 1024px) 224px, (min-width: 768px) 192px, 160px"
+            className="shadow-2xl"
+            initialsClassName="text-6xl md:text-7xl"
+          />
         }
       />
 
