@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"music-server/internal/config"
@@ -185,14 +184,6 @@ func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 	}
 
 	abs := filepath.Join(s.dataDir, filePath)
-	backup := abs + ".orig"
-	if _, err := os.Stat(backup); err != nil {
-		if err := copyFile(abs, backup); err != nil {
-			s.internalErr(w, "back up original", err)
-			return
-		}
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), trimTimeout)
 	defer cancel()
 	if err := cutAudio(ctx, bin, abs, body.Start, body.End, t.Duration); err != nil {
@@ -200,43 +191,11 @@ func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "ffmpeg couldn't cut this file")
 		return
 	}
-	setTrimmed(id, true)
 	lyricsShift := body.Start
 	if body.ShiftLyrics != nil && !*body.ShiftLyrics {
 		lyricsShift = 0
 	}
 	s.afterAudioChanged(id, filePath, lyricsShift)
-	out, _, _, ok := s.getTrack(w, r, u.ID, id)
-	if !ok {
-		return
-	}
-	writeJSON(w, http.StatusOK, out)
-}
-
-func (s *Server) handleTrackRestore(w http.ResponseWriter, r *http.Request) {
-	u := userFrom(r)
-	id := r.PathValue("id")
-	t, filePath, _, ok := s.getTrack(w, r, u.ID, id)
-	if !ok {
-		return
-	}
-	if t.UploadedBy.ID != u.ID && !u.IsAdmin() {
-		writeErr(w, http.StatusForbidden, "only the person who uploaded this track can edit it")
-		return
-	}
-	abs := filepath.Join(s.dataDir, filePath)
-	backup := abs + ".orig"
-	if _, err := os.Stat(backup); err != nil {
-		writeErr(w, http.StatusNotFound, "this track hasn't been cut")
-		return
-	}
-	if err := os.Rename(backup, abs); err != nil {
-		s.internalErr(w, "restore audio", err)
-		return
-	}
-	setTrimmed(id, false)
-	s.afterAudioChanged(id, filePath, 0)
-	_, _ = s.db.Exec(`DELETE FROM lyrics WHERE track_id = ? AND source <> ?`, id, lyricsSourceManual)
 	out, _, _, ok := s.getTrack(w, r, u.ID, id)
 	if !ok {
 		return
@@ -349,49 +308,30 @@ func formatSeconds(v float64) string {
 	return strconv.FormatFloat(v, 'f', 3, 64)
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, in, 0o644)
-}
-
-type trimmedSet struct {
-	sync.RWMutex
-	ids map[string]bool
-}
-
-func (t *trimmedSet) has(id string) bool {
-	t.RLock()
-	defer t.RUnlock()
-	return t.ids[id]
-}
-
-var trimmedTracks = &trimmedSet{ids: map[string]bool{}}
-
-func (s *Server) loadTrimmedTracks() {
-	entries, err := os.ReadDir(filepath.Join(s.dataDir, "uploads"))
+func (s *Server) removeTrimBackups() {
+	dir := filepath.Join(s.dataDir, "uploads")
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
-	trimmedTracks.Lock()
-	defer trimmedTracks.Unlock()
+	var removed int
+	var freed int64
 	for _, e := range entries {
-		name := e.Name()
-		if strings.HasSuffix(name, ".orig") {
-			base := strings.TrimSuffix(name, ".orig")
-			trimmedTracks.ids[strings.TrimSuffix(base, filepath.Ext(base))] = true
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".orig") {
+			continue
 		}
+		var size int64
+		if info, err := e.Info(); err == nil {
+			size = info.Size()
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			logErr("remove trim backup", err)
+			continue
+		}
+		removed++
+		freed += size
 	}
-}
-
-func setTrimmed(id string, v bool) {
-	trimmedTracks.Lock()
-	defer trimmedTracks.Unlock()
-	if v {
-		trimmedTracks.ids[id] = true
-	} else {
-		delete(trimmedTracks.ids, id)
+	if removed > 0 {
+		log.Printf("trim: removed %d untrimmed backups (%.1f MB)", removed, float64(freed)/(1<<20))
 	}
 }

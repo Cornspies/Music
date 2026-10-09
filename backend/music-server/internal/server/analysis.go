@@ -48,7 +48,7 @@ func (s *Server) StartBackgroundWork() {
 	s.purgeStaleLyricsMisses()
 	go s.backfillCoverColors()
 	s.startMetadataWorker()
-	s.loadTrimmedTracks()
+	s.removeTrimBackups()
 	s.startPendingUploadSweeper()
 	go s.backfillFileHashes()
 	go s.repairMissingCovers()

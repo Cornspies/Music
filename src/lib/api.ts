@@ -207,13 +207,6 @@ export function trimTrack(trackId: string, start: number, end: number, shiftLyri
   })
 }
 
-export function restoreTrack(trackId: string): Promise<Track> {
-  return api<Track>(`/api/tracks/${trackId}/trim/restore`, { method: "POST" }).then((t) => {
-    forgetAudioDerived(trackId)
-    return t
-  })
-}
-
 function forgetAudioDerived(trackId: string) {
   for (const key of waveformCache.keys()) {
     if (key.startsWith(`${trackId}:`)) waveformCache.delete(key)

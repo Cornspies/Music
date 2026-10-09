@@ -25,7 +25,6 @@ export interface Track {
   sourceId: string
   coverColor: string
   metadataStatus: string
-  trimmed: boolean
 }
 
 export interface SilenceInfo {

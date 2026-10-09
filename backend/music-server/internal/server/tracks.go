@@ -63,7 +63,6 @@ type Track struct {
 	Source         string   `json:"source"`
 	SourceID       string   `json:"sourceId"`
 	CoverColor     string   `json:"coverColor"`
-	Trimmed        bool     `json:"trimmed"`
 	MetadataStatus string   `json:"metadataStatus"`
 	HasWaveform    bool     `json:"hasWaveform"`
 }
@@ -168,7 +167,6 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
 	if lastPlayedAt.Valid && lastPlayedAt.String != "" {
 		t.LastPlayedAt = &lastPlayedAt.String
 	}
-	t.Trimmed = trimmedTracks.has(t.ID)
 	return &t, filePath, fileName, nil
 }
 
@@ -710,7 +708,6 @@ func (s *Server) removeTrack(id string) error {
 		logErr("tombstone", err)
 	}
 	os.Remove(filepath.Join(s.dataDir, filePath))
-	os.Remove(filepath.Join(s.dataDir, filePath) + ".orig")
 	if altPath != "" {
 		os.Remove(filepath.Join(s.dataDir, altPath))
 	}
