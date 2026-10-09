@@ -151,10 +151,10 @@ func (s *Server) backfillAnalysis() {
 }
 
 func (s *Server) analyzeTrack(trackID string) {
-	var rel, analyzedAt string
+	var rel, analyzedAt, hash string
 	var edgesChecked int
-	if err := s.db.QueryRow(`SELECT file_path, COALESCE(analyzed_at, ''), edges_checked FROM tracks WHERE id = ?`, trackID).
-		Scan(&rel, &analyzedAt, &edgesChecked); err != nil {
+	if err := s.db.QueryRow(`SELECT file_path, COALESCE(analyzed_at, ''), edges_checked, file_hash FROM tracks WHERE id = ?`, trackID).
+		Scan(&rel, &analyzedAt, &edgesChecked, &hash); err != nil {
 		return
 	}
 	abs := filepath.Join(s.dataDir, rel)
@@ -194,8 +194,8 @@ func (s *Server) analyzeTrack(trackID string) {
 	if loudness != nil {
 		loud = *loudness
 	}
-	res, err := s.db.Exec(`UPDATE tracks SET loudness = ?, waveform_json = ?, analyzed_at = ?, updated_at = ? WHERE id = ?`,
-		loud, peaksJSON, now, now, trackID)
+	res, err := s.db.Exec(`UPDATE tracks SET loudness = ?, waveform_json = ?, analyzed_at = ?, updated_at = ? WHERE id = ? AND file_path = ? AND file_hash = ?`,
+		loud, peaksJSON, now, now, trackID, rel, hash)
 	if err != nil {
 		logErr("analysis record", err)
 		return

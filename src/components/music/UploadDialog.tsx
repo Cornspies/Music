@@ -13,9 +13,16 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { isDesktop } from "@/lib/desktop"
-import { confirmPendingUpload, currentToken, discardPendingUpload, uploadUrl } from "@/lib/api"
+import {
+  confirmPendingUpload,
+  currentToken,
+  discardPendingUpload,
+  replaceWithPendingUpload,
+  uploadUrl,
+} from "@/lib/api"
 import { formatFileSize } from "@/lib/format"
-import type { DuplicateResponse, Track } from "@/lib/types"
+import type { DuplicateMatch, DuplicateResponse, Track } from "@/lib/types"
+import { useAuthStore } from "@/stores/auth"
 import { useUIStore } from "@/stores/ui"
 import { useLibraryStore } from "@/stores/library"
 import { Button } from "@/components/ui/button"
@@ -54,6 +61,41 @@ const AUDIO_EXT = /\.(mp3|wav|flac|ogg|oga|m4a|aac|opus|weba|webm)$/i
 
 function isAudioFile(file: File): boolean {
   return file.type.startsWith("audio/") || AUDIO_EXT.test(file.name)
+}
+
+const FORMATS: Record<string, string> = {
+  "audio/mpeg": "MP3",
+  "audio/mp4": "AAC",
+  "audio/aac": "AAC",
+  "audio/flac": "FLAC",
+  "audio/wav": "WAV",
+  "audio/ogg": "OGG",
+  "audio/webm": "WebM",
+}
+
+const LOSSLESS = new Set(["audio/flac", "audio/wav"])
+
+interface Quality {
+  mimeType: string
+  fileSize: number
+  duration: number
+}
+
+function kbps(q: Quality): number {
+  return q.duration > 0 && q.fileSize > 0 ? Math.round((q.fileSize * 8) / q.duration / 1000) : 0
+}
+
+function qualityLabel(q: Quality): string {
+  const rate = kbps(q)
+  return [FORMATS[q.mimeType] ?? q.mimeType.replace(/^audio\//, "").toUpperCase(), rate ? `${rate} kbps` : ""]
+    .filter(Boolean)
+    .join(" · ")
+}
+
+function betterThan(a: Quality, b: Quality): boolean {
+  const lossless = LOSSLESS.has(a.mimeType)
+  if (lossless !== LOSSLESS.has(b.mimeType)) return lossless
+  return kbps(a) > kbps(b) * 1.15
 }
 
 function measureDuration(file: File): Promise<number | undefined> {
@@ -131,6 +173,9 @@ export function UploadDialog() {
   const [uploadedTracks, setUploadedTracks] = useState<Track[]>([])
   const [reviewOpen, setReviewOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const me = useAuthStore((s) => s.user)
+  const canReplace = (m: DuplicateMatch) => me?.id === m.track.uploadedBy.id || me?.role === "admin"
+  const replaceable = (task: UploadTask) => task.duplicate?.matches.filter(canReplace) ?? []
 
   const patchTask = (key: string, patch: Partial<UploadTask>) => {
     setTasks((prev) => prev.map((t) => (t.key === key ? { ...t, ...patch } : t)))
@@ -204,6 +249,18 @@ export function UploadDialog() {
     }
   }
 
+  const replace = async (task: UploadTask, trackId: string) => {
+    if (!task.duplicate) return
+    patchTask(task.key, { status: "uploading", progress: 100 })
+    try {
+      await replaceWithPendingUpload(task.duplicate.pendingId, trackId)
+      patchTask(task.key, { status: "done", message: "replaced", duplicate: undefined })
+      useLibraryStore.getState().fetchAll().catch(() => {})
+    } catch (e) {
+      patchTask(task.key, { status: "error", message: (e as Error).message, duplicate: undefined })
+    }
+  }
+
   const skip = (task: UploadTask) => {
     if (task.duplicate) discardPendingUpload(task.duplicate.pendingId).catch(() => {})
     patchTask(task.key, { status: "skipped", duplicate: undefined })
@@ -212,6 +269,7 @@ export function UploadDialog() {
   const doneCount = tasks.filter((t) => t.status === "done").length
   const errorCount = tasks.filter((t) => t.status === "error").length
   const duplicateCount = tasks.filter((t) => t.status === "duplicate").length
+  const singleReplace = tasks.filter((t) => t.status === "duplicate" && replaceable(t).length === 1)
 
   return (
     <>
@@ -322,7 +380,7 @@ export function UploadDialog() {
                         {formatFileSize(task.size)}
                         {task.status === "measuring" && " · reading duration…"}
                         {task.status === "uploading" && ` · uploading… ${task.progress}%`}
-                        {task.status === "done" && " · done"}
+                        {task.status === "done" && ` · ${task.message ?? "done"}`}
                         {task.status === "duplicate" && " · already in the library?"}
                         {task.status === "skipped" && " · skipped"}
                         {task.status === "error" && task.message ? ` · ${task.message}` : ""}
@@ -357,6 +415,7 @@ export function UploadDialog() {
                       <p className="text-[11px] text-amber-200/90">
                         Looks like {task.duplicate.matches.length === 1 ? "a track" : `${task.duplicate.matches.length} tracks`} already in the library:
                       </p>
+                      <p className="mt-0.5 text-[11px] text-zinc-400">This file · {qualityLabel(task.duplicate.upload)}</p>
                       <ul className="mt-1.5 flex flex-col gap-1.5">
                         {task.duplicate.matches.map((m) => (
                           <li key={m.track.id} className="flex items-center gap-2">
@@ -372,7 +431,23 @@ export function UploadDialog() {
                                 {` · uploaded by ${m.track.uploadedBy.username || "someone"}`}
                                 {` · ${m.reason}`}
                               </span>
+                              <span className="block truncate text-[11px] text-zinc-400">{qualityLabel(m.track)}</span>
                             </span>
+                            {canReplace(m) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={cn(
+                                  "h-7 shrink-0 px-2.5 text-xs",
+                                  betterThan(task.duplicate!.upload, m.track)
+                                    ? "border-emerald-700/60 bg-emerald-600/10 text-emerald-300 hover:bg-emerald-600/20 hover:text-emerald-200"
+                                    : "border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-800"
+                                )}
+                                onClick={() => replace(task, m.track.id)}
+                              >
+                                Replace
+                              </Button>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -416,6 +491,11 @@ export function UploadDialog() {
                   <button type="button" className="text-emerald-400 hover:text-emerald-300" onClick={() => tasks.filter((t) => t.status === "duplicate").forEach((t) => void addAnyway(t))}>
                     Add all anyway
                   </button>
+                  {singleReplace.length > 0 && (
+                    <button type="button" className="text-emerald-400 hover:text-emerald-300" onClick={() => singleReplace.forEach((t) => void replace(t, replaceable(t)[0].track.id))}>
+                      Replace all
+                    </button>
+                  )}
                 </span>
               )}
               {!busy && (

@@ -174,11 +174,22 @@ data class ListenedRequest(val seconds: Double)
 data class DuplicateMatch(val track: Track, val reason: String = "")
 
 @Serializable
+data class DuplicateUpload(
+    val duration: Double = 0.0,
+    val fileSize: Long = 0L,
+    val mimeType: String = "",
+)
+
+@Serializable
 data class DuplicateResponse(
     val error: String = "",
     val pendingId: String = "",
     val matches: List<DuplicateMatch> = emptyList(),
+    val upload: DuplicateUpload = DuplicateUpload(),
 )
+
+@Serializable
+data class ReplaceTrackRequest(val trackId: String)
 
 @Serializable
 data class Playlist(

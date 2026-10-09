@@ -348,7 +348,15 @@ export interface DuplicateResponse {
   error: string
   pendingId: string
   matches: DuplicateMatch[]
-  upload: { title: string; artist: string; album: string; duration: number; fileName: string }
+  upload: {
+    title: string
+    artist: string
+    album: string
+    duration: number
+    fileName: string
+    fileSize: number
+    mimeType: string
+  }
 }
 
 export interface MetadataQueueStatus {

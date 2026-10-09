@@ -278,6 +278,15 @@ class ApiClient(private val store: TokenStore) {
     suspend fun confirmPendingUpload(pendingId: String): Track =
         bodyOrError(client.post(url("/api/uploads/pending/$pendingId")) { auth() })
 
+    suspend fun replaceWithPendingUpload(pendingId: String, trackId: String): Track =
+        bodyOrError(
+            client.post(url("/api/uploads/pending/$pendingId/replace")) {
+                auth()
+                headers.append(HttpHeaders.ContentType, "application/json")
+                setBody(ReplaceTrackRequest(trackId))
+            },
+        )
+
     suspend fun discardPendingUpload(pendingId: String) {
         expectNoContent(client.delete(url("/api/uploads/pending/$pendingId")) { auth() })
     }

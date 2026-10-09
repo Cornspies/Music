@@ -1,6 +1,7 @@
 package com.music.app.ui.screens
 
 import androidx.compose.foundation.layout.Column
+import kotlin.math.roundToInt
 import com.music.app.ui.components.CoverImage
 import com.music.app.api.friendlyError
 import com.music.app.api.DuplicateResponse
@@ -53,7 +54,7 @@ import com.music.app.ui.formatDuration
 import com.music.app.ui.theme.Emerald
 import kotlinx.coroutines.launch
 
-private enum class UploadStatus { PENDING, UPLOADING, DONE, FAILED, DUPLICATE, SKIPPED }
+private enum class UploadStatus { PENDING, UPLOADING, DONE, REPLACED, FAILED, DUPLICATE, SKIPPED }
 
 private data class UploadEntry(
     val file: PickedAudio,
@@ -113,6 +114,24 @@ fun UploadScreen() {
                 entries.forEachIndexed { index, entry ->
                     UploadRow(
                         entry,
+                        canReplace = { track -> model.user?.let { it.id == track.uploadedBy.id || it.isAdmin } == true },
+                        onReplace = { trackId ->
+                            val pending = entry.duplicate?.pendingId ?: return@UploadRow
+                            entries = entries.toMutableList().also { it[index] = entry.copy(status = UploadStatus.UPLOADING) }
+                            scope.launch {
+                                try {
+                                    model.api.replaceWithPendingUpload(pending, trackId)
+                                    entries = entries.toMutableList().also {
+                                        it[index] = entry.copy(status = UploadStatus.REPLACED, duplicate = null)
+                                    }
+                                    model.loadLibrary()
+                                } catch (e: Exception) {
+                                    entries = entries.toMutableList().also {
+                                        it[index] = entry.copy(status = UploadStatus.FAILED, error = friendlyError(e), duplicate = null)
+                                    }
+                                }
+                            }
+                        },
                         onAddAnyway = {
                             val pending = entry.duplicate?.pendingId ?: return@UploadRow
                             entries = entries.toMutableList().also { it[index] = entry.copy(status = UploadStatus.UPLOADING) }
@@ -224,7 +243,13 @@ fun UploadScreen() {
 }
 
 @Composable
-private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: () -> Unit = {}) {
+private fun UploadRow(
+    entry: UploadEntry,
+    canReplace: (Track) -> Boolean = { false },
+    onReplace: (String) -> Unit = {},
+    onAddAnyway: () -> Unit = {},
+    onSkip: () -> Unit = {},
+) {
     Column(Modifier.fillMaxWidth()) {
     Row(
         Modifier
@@ -240,6 +265,7 @@ private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: 
                 when (entry.status) {
                     UploadStatus.UPLOADING -> append(" • uploading…")
                     UploadStatus.DONE -> append(" • done")
+                    UploadStatus.REPLACED -> append(" • replaced")
                     UploadStatus.FAILED -> append(" • failed")
                     UploadStatus.DUPLICATE -> append(" • already in the library?")
                     UploadStatus.SKIPPED -> append(" • skipped")
@@ -250,7 +276,7 @@ private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: 
                 meta,
                 style = MaterialTheme.typography.bodySmall,
                 color = when (entry.status) {
-                    UploadStatus.DONE -> Emerald
+                    UploadStatus.DONE, UploadStatus.REPLACED -> Emerald
                     UploadStatus.FAILED -> MaterialTheme.colorScheme.error
                     UploadStatus.DUPLICATE -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -272,7 +298,7 @@ private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: 
                 modifier = Modifier.height(20.dp),
                 strokeWidth = 2.dp,
             )
-            UploadStatus.DONE -> Icon(
+            UploadStatus.DONE, UploadStatus.REPLACED -> Icon(
                 Icons.Filled.Check,
                 contentDescription = null,
                 tint = Emerald,
@@ -286,6 +312,11 @@ private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: 
                 .fillMaxWidth()
                 .padding(start = 8.dp, bottom = 4.dp),
         ) {
+            Text(
+                "This file • ${qualityLabel(dup.upload.mimeType, dup.upload.fileSize, dup.upload.duration)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             dup.matches.forEach { m ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                     CoverImage(m.track, 36.dp)
@@ -305,6 +336,15 @@ private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: 
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        Text(
+                            qualityLabel(m.track.mimeType, m.track.fileSize, m.track.duration),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                    if (canReplace(m.track)) {
+                        TextButton(onClick = { onReplace(m.track.id) }) { Text("Replace") }
                     }
                 }
             }
@@ -315,4 +355,20 @@ private fun UploadRow(entry: UploadEntry, onAddAnyway: () -> Unit = {}, onSkip: 
         }
     }
     }
+}
+
+private val formatNames = mapOf(
+    "audio/mpeg" to "MP3",
+    "audio/mp4" to "AAC",
+    "audio/aac" to "AAC",
+    "audio/flac" to "FLAC",
+    "audio/wav" to "WAV",
+    "audio/ogg" to "OGG",
+    "audio/webm" to "WebM",
+)
+
+private fun qualityLabel(mimeType: String, fileSize: Long, duration: Double): String {
+    val format = formatNames[mimeType] ?: mimeType.removePrefix("audio/").uppercase()
+    val kbps = if (duration > 0 && fileSize > 0) (fileSize * 8 / duration / 1000).roundToInt() else 0
+    return if (kbps > 0) "$format • $kbps kbps" else format
 }

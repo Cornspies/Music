@@ -84,6 +84,8 @@ class DownloadManager(
 
     private val keptPlaylists = mutableStateMapOf<String, Boolean>()
 
+    private val staleAudio = mutableSetOf<String>()
+
     init {
         reconcile()
         reconcilePlaylists()
@@ -93,6 +95,7 @@ class DownloadManager(
         wifiOnly = store.loadMeta(KEY_WIFI_ONLY) == "1"
         lastSyncedAt = store.loadMeta(KEY_SYNC_AT)
         store.loadMeta(KEY_KEPT)?.split(',')?.filter { it.isNotBlank() }?.forEach { keptPlaylists[it] = true }
+        store.loadMeta(KEY_STALE)?.split(',')?.filter { it.isNotBlank() }?.let { staleAudio.addAll(it) }
     }
 
     val tracks: List<Track>
@@ -153,12 +156,37 @@ class DownloadManager(
         }
 
     private fun replaceTrack(track: Track) {
-        if (index[track.id]?.updatedAt != track.updatedAt) store.deleteExtras(track.id)
+        val old = index[track.id]
+        if (old?.updatedAt != track.updatedAt) store.deleteExtras(track.id)
+        if (old != null && audioChanged(old, track) && staleAudio.add(track.id)) persistStale()
         index[track.id] = track
     }
 
-    suspend fun download(track: Track, useCompatible: Boolean? = null) {
-        if (index.containsKey(track.id)) return
+    private fun audioChanged(old: Track, new: Track): Boolean {
+        if (old.fileSize != new.fileSize || old.mimeType != new.mimeType) return true
+        if (!useCompatibleFor(old) && !useCompatibleFor(new)) return false
+        return old.compatibleFileSize != new.compatibleFileSize
+    }
+
+    private fun persistStale() {
+        store.saveMeta(KEY_STALE, staleAudio.joinToString(","))
+    }
+
+    private suspend fun refreshStaleAudio() {
+        for (id in staleAudio.toList()) {
+            if (waitingForWifi) return
+            val track = index[id]
+            if (track == null) {
+                staleAudio.remove(id)
+                persistStale()
+                continue
+            }
+            download(track, refresh = true)
+        }
+    }
+
+    suspend fun download(track: Track, useCompatible: Boolean? = null, refresh: Boolean = false) {
+        if (index.containsKey(track.id) && !refresh) return
         if (transient[track.id] == DownloadState.DOWNLOADING) return
         if (waitingForWifi) {
             transient[track.id] = DownloadState.FAILED
@@ -174,6 +202,7 @@ class DownloadManager(
                 api.downloadTrack(track, compatible, path)
             }
             index[track.id] = track
+            if (staleAudio.remove(track.id)) persistStale()
             saveExtras(track)
             transient.remove(track.id)
             persist()
@@ -255,6 +284,7 @@ class DownloadManager(
         store.saveMeta(KEY_SYNC_SINCE, changes.now)
         lastSyncedAt = changes.now
         store.saveMeta(KEY_SYNC_AT, changes.now)
+        refreshStaleAudio()
         return changes.tracks
     }
 
@@ -491,6 +521,7 @@ class DownloadManager(
         const val KEY_KEPT = "downloads.keptPlaylists"
         const val KEY_SYNC_SINCE = "downloads.syncSince"
         const val KEY_SYNC_AT = "downloads.syncAt"
+        const val KEY_STALE = "downloads.staleAudio"
         const val EXTRA_COVER = "cover"
         const val EXTRA_LYRICS = "lyrics"
         const val COVER_SIZE = 512
