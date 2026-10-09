@@ -11,6 +11,7 @@ import (
 
 	"music-server/internal/config"
 	"music-server/internal/logfile"
+	"music-server/internal/redact"
 	"music-server/internal/server"
 )
 
@@ -19,6 +20,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	redact.Register(config.Value("MUSIC_DEEZER_ARL"), cfg.JWTSecret, cfg.YouTubeAPIKey)
+	log.SetOutput(redact.Writer(os.Stderr))
 
 	port := flag.String("port", cfg.Port, "HTTP listen port (env: MUSIC_PORT)")
 	bind := flag.String("bind", cfg.BindAddress,
@@ -46,7 +49,7 @@ func main() {
 		log.Printf("music-server logs: %v; logging to stderr only", err)
 	} else {
 		log.Printf("music-server logs: writing to %s, kept for %d days", logs, logfile.KeepDays)
-		log.SetOutput(w)
+		log.SetOutput(redact.Writer(w))
 	}
 
 	web := *webDir
@@ -68,6 +71,11 @@ func main() {
 
 	if len(cfg.LoadedFiles) > 0 {
 		log.Printf("music-server config: loaded %s", strings.Join(cfg.LoadedFiles, ", "))
+		for _, f := range cfg.LoadedFiles {
+			if fi, err := os.Stat(f); err == nil && fi.Mode().Perm()&0o077 != 0 {
+				log.Printf("music-server config: WARNING %s can be read by other users on this machine and may hold secrets; run chmod 600 on it", f)
+			}
+		}
 	} else {
 		log.Printf("music-server config: no .env file found, using environment and defaults")
 	}

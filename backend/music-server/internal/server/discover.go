@@ -93,9 +93,11 @@ func (s *Server) initDiscoverSources() {
 	case yt != nil:
 		list = append(list, yt)
 		log.Printf("discover: %s", yt.describe())
-		if !config.Flag("MUSIC_DISABLE_DEEZER") {
-			list = append(list, deezerSource{yt: yt})
-		}
+	}
+	if !config.Flag("MUSIC_DISABLE_DEEZER") {
+		dz := newDeezerSource(s.dataDir, yt)
+		list = append(list, dz)
+		log.Printf("discover: %s", dz.describe())
 	}
 	list = append(list, ncsSource{})
 	if !config.Flag("MUSIC_DISABLE_SOUNDCLOUD") {

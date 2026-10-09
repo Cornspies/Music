@@ -1,10 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Loader2, Play, RotateCcw, Scissors, Square, Wand2 } from "lucide-react"
+import { Loader2, Play, Scissors, Square, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { fetchLyrics, fetchSilence, fetchWaveform, restoreTrack, streamUrl, trimTrack } from "@/lib/api"
+import { fetchLyrics, fetchSilence, fetchWaveform, streamUrl, trimTrack } from "@/lib/api"
 import { formatDuration } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
@@ -134,20 +134,6 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
     }
   }
 
-  const restore = async () => {
-    stopPreview()
-    setBusy(true)
-    try {
-      const updated = await restoreTrack(track.id)
-      toast.success(`Original restored (${formatDuration(updated.duration)})`)
-      useLibraryStore.getState().followAnalysis(updated.id)
-      onClose()
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const removed = start + (duration - end)
   const unchanged = start < 0.05 && end > duration - 0.05
@@ -161,7 +147,7 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
           Trim “{track.title}”
         </DialogTitle>
         <DialogDescription className="text-xs text-zinc-500">
-          This changes the file for everyone.
+          This changes the file for everyone and can't be undone.
         </DialogDescription>
       </DialogHeader>
 
@@ -240,12 +226,6 @@ function TrimEditor({ track, onClose }: { track: Track; onClose: () => void }) {
             {detecting ? <Loader2 className="size-3.5 animate-spin" /> : <Wand2 className="size-3.5" />}
             Detect silence
           </Button>
-          {track.trimmed && (
-            <Button variant="ghost" size="sm" disabled={busy} onClick={restore} className="text-zinc-400 hover:text-zinc-100">
-              <RotateCcw className="size-3.5" />
-              Restore original
-            </Button>
-          )}
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" disabled={busy} onClick={onClose} className="text-zinc-300">

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"music-server/internal/config"
+	"music-server/internal/redact"
 )
 
 type Server struct {
@@ -41,9 +43,15 @@ func New(dataDir string, opts Options) (*Server, error) {
 	upDir := filepath.Join(dataDir, "uploads")
 	covDir := filepath.Join(dataDir, "covers")
 	avaDir := filepath.Join(dataDir, "avatars")
-	for _, d := range []string{upDir, covDir, avaDir} {
+	tmpDir := filepath.Join(dataDir, "tmp")
+	for _, d := range []string{upDir, covDir, avaDir, tmpDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return nil, err
+		}
+	}
+	if entries, err := os.ReadDir(tmpDir); err == nil {
+		for _, e := range entries {
+			_ = os.RemoveAll(filepath.Join(tmpDir, e.Name()))
 		}
 	}
 
@@ -156,7 +164,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/tracks/{id}/metadata/lookup", s.requireAuth(s.handleTrackMetadataLookup))
 	mux.HandleFunc("GET /api/tracks/{id}/silence", s.requireAuth(s.handleTrackSilence))
 	mux.HandleFunc("POST /api/tracks/{id}/trim", s.requireAuth(s.handleTrackTrim))
-	mux.HandleFunc("POST /api/tracks/{id}/trim/restore", s.requireAuth(s.handleTrackRestore))
 	mux.HandleFunc("POST /api/tracks/{id}/metadata/youtube", s.requireAuth(s.handleTrackMetadataFromYouTube))
 	mux.HandleFunc("GET /api/metadata/queue", s.requireAuth(s.handleMetadataQueue))
 	mux.HandleFunc("GET /api/tracks/{id}/metadata/candidates/{candidateId}/artwork", s.requireMediaAuth(s.handleCandidateArtwork))
@@ -287,7 +294,9 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if v != nil {
-		_ = json.NewEncoder(w).Encode(v)
+		var buf bytes.Buffer
+		_ = json.NewEncoder(&buf).Encode(v)
+		_, _ = w.Write(redact.Bytes(buf.Bytes()))
 	}
 }
 
