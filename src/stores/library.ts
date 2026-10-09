@@ -37,7 +37,7 @@ interface LibraryState {
   setPlaylistPinned: (id: string, pinned: boolean) => Promise<boolean>
   addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<boolean>
   removePlaylistTrack: (playlistId: string, trackId: string) => Promise<void>
-  deleteTrack: (id: string) => Promise<void>
+  deleteTrack: (id: string, into?: string) => Promise<boolean>
   updateTrack: (id: string, patch: TrackPatch) => Promise<boolean>
   replaceTrack: (track: Track) => void
   followAnalysis: (trackId: string) => void
@@ -252,12 +252,13 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     }
   },
 
-  deleteTrack: async (id) => {
+  deleteTrack: async (id, into) => {
     try {
-      await api(`/api/tracks/${id}`, { method: "DELETE" })
+      const query = into ? `?into=${encodeURIComponent(into)}` : ""
+      await api(`/api/tracks/${id}${query}`, { method: "DELETE" })
     } catch (e) {
       toast.error((e as Error).message)
-      return
+      return false
     }
     const { tracks, favorites } = get()
     const removed = tracks.find((t) => t.id === id)
@@ -267,9 +268,13 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     })
     usePlayerStore.getState().handleTrackDeleted(id)
     useOfflineStore.getState().remove(id).catch(() => {})
-    if (removed) {
+    if (into) {
+      set({ playlistVersion: get().playlistVersion + 1 })
+      await Promise.allSettled([get().fetchTracks(), get().fetchFavorites(), get().fetchStats(), get().fetchPlaylists()])
+    } else if (removed) {
       await Promise.allSettled([get().fetchStats(), get().fetchPlaylists()])
     }
+    return true
   },
 
   replaceTrack: (updated) => {

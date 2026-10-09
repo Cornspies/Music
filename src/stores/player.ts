@@ -1087,7 +1087,7 @@ async function handleCloseRequest(keepWebview: boolean, closeToTray: boolean) {
 
 if (isDesktop && typeof window !== "undefined") {
   listen<{ keepWebview: boolean; closeToTray?: boolean }>("close-requested", (event) => {
-    void handleCloseRequest(event.payload.keepWebview, event.payload.closeToTray ?? true)
+    void handleCloseRequest(event.payload.keepWebview, event.payload.closeToTray ?? false)
   }).catch((err: unknown) => console.error("listening for close requests failed", err))
 }
 

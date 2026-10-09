@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 import {
   Check,
@@ -30,17 +30,9 @@ import { useOfflineStore } from "@/stores/offline"
 import { useAuthStore } from "@/stores/auth"
 import { useUIStore } from "@/stores/ui"
 import { inListenSession } from "@/stores/listen"
+import { MenuAtPoint, type MenuPoint } from "@/components/music/MenuAtPoint"
+import { DeleteTrackDialog } from "@/components/music/DeleteTrackDialog"
 import { Button } from "@/components/ui/button"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,25 +64,7 @@ interface TrackMenuProps {
   showPlay?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
-}
-
-export function useTrackMenu() {
-  const [open, setOpen] = useState(false)
-  const onContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    if (e.buttons === 0) {
-      setOpen(true)
-      return
-    }
-    const show = () => {
-      window.removeEventListener("pointerup", show)
-      window.removeEventListener("pointercancel", show)
-      setOpen(true)
-    }
-    window.addEventListener("pointerup", show)
-    window.addEventListener("pointercancel", show)
-  }, [])
-  return { open, onOpenChange: setOpen, onContextMenu }
+  point?: MenuPoint | null
 }
 
 export function TrackMenu({
@@ -103,9 +77,9 @@ export function TrackMenu({
   showPlay = true,
   open,
   onOpenChange,
+  point,
 }: TrackMenuProps) {
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
 
   const offlineSupported = useOfflineStore((s) => s.supported)
   const isDownloaded = useOfflineStore((s) => s.ids.has(track.id))
@@ -116,9 +90,28 @@ export function TrackMenu({
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
 
+  const content = (align: "start" | "end", at: "top" | "bottom") => (
+    <TrackMenuContent
+      track={track}
+      side={at}
+      align={align}
+      showPlay={showPlay}
+      onRemoveFromPlaylist={onRemoveFromPlaylist}
+      onDismissAttention={onDismissAttention}
+      onRestoreAttention={onRestoreAttention}
+      onDelete={() => setDeleteOpen(true)}
+      canManage={canManage}
+      offline={{
+        supported: offlineSupported,
+        downloaded: isDownloaded,
+        downloading,
+      }}
+    />
+  )
+
   return (
     <span className="contents" onClick={stop} onDoubleClick={stop} onContextMenu={stop}>
-      <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenu open={Boolean(open) && !point} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
@@ -129,52 +122,16 @@ export function TrackMenu({
             <MoreHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <TrackMenuContent
-          track={track}
-          side={side}
-          showPlay={showPlay}
-          onRemoveFromPlaylist={onRemoveFromPlaylist}
-          onDismissAttention={onDismissAttention}
-          onRestoreAttention={onRestoreAttention}
-          onDelete={() => setDeleteOpen(true)}
-          canManage={canManage}
-          offline={{
-            supported: offlineSupported,
-            downloaded: isDownloaded,
-            downloading,
-          }}
-        />
+        {content("end", side)}
       </DropdownMenu>
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this track?</AlertDialogTitle>
-            <AlertDialogDescription>
-              “{track.title}” will be permanently removed from your library, playlists and
-              favorites. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deleting}
-              className="bg-red-600 text-white hover:bg-red-500"
-              onClick={async () => {
-                setDeleting(true)
-                try {
-                  await useLibraryStore.getState().deleteTrack(track.id)
-                  toast.success(`Deleted “${track.title}”`)
-                } finally {
-                  setDeleting(false)
-                }
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {open && point && onOpenChange ? (
+        <MenuAtPoint point={point} onOpenChange={onOpenChange}>
+          {content("start", "bottom")}
+        </MenuAtPoint>
+      ) : null}
+
+      <DeleteTrackDialog track={track} open={deleteOpen} onOpenChange={setDeleteOpen} />
     </span>
   )
 }
@@ -182,6 +139,7 @@ export function TrackMenu({
 function TrackMenuContent({
   track,
   side,
+  align,
   showPlay,
   onRemoveFromPlaylist,
   onDismissAttention,
@@ -192,6 +150,7 @@ function TrackMenuContent({
 }: {
   track: Track
   side: "top" | "bottom"
+  align: "start" | "end"
   showPlay: boolean
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
@@ -201,7 +160,7 @@ function TrackMenuContent({
   offline: { supported: boolean; downloaded: boolean; downloading: boolean }
 }) {
   return (
-    <DropdownMenuContent align="end" side={side} className="w-52">
+    <DropdownMenuContent align={align} side={side} className="w-52">
       {showPlay ? (
         <DropdownMenuItem onClick={() => usePlayerStore.getState().playNow(track)}>
           <Play className="size-4" /> Play

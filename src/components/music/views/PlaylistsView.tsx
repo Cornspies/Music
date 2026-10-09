@@ -1,11 +1,14 @@
 "use client"
 
+import { useState } from "react"
 import { Globe, ListMusic, Music4, Plus } from "lucide-react"
 import { formatTotal, hashGradient } from "@/lib/format"
 import type { Playlist } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { EmptyState } from "@/components/music/EmptyState"
+import { MenuAtPoint, useContextMenu } from "@/components/music/MenuAtPoint"
+import { DeletePlaylistDialog, PlaylistMenuContent } from "@/components/music/PlaylistMenu"
 import { UserAvatar } from "@/components/music/UserAvatar"
 
 export function PlaylistsView() {
@@ -68,52 +71,77 @@ function PlaylistGrid({
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
       {playlists.map((playlist) => (
-        <button
-          key={playlist.id}
-          type="button"
-          onClick={() => onOpen(playlist.id)}
-          className="group rounded-xl p-2 text-left transition-colors hover:bg-zinc-800/60"
-          aria-label={`Open playlist ${playlist.name}`}
-        >
-          <div
-            aria-hidden="true"
-            className={`relative flex aspect-square w-full items-center justify-center rounded-lg bg-linear-to-br shadow-lg ${hashGradient(playlist.name)}`}
-          >
-            <Music4 className="size-8 text-zinc-400/70" />
-            <span className="absolute bottom-2 left-2 rounded-full bg-zinc-950/60 px-2 py-0.5 text-[10px] font-medium text-zinc-300">
-              {playlist.trackCount}
-            </span>
-            {playlist.isMine && playlist.isPublic && (
-              <span
-                title="Public — anyone signed in can see this"
-                className="absolute top-2 right-2 rounded-full bg-zinc-950/60 p-1 text-emerald-400"
-              >
-                <Globe className="size-3" />
-              </span>
-            )}
-          </div>
-          <p className="mt-2 truncate text-sm font-medium text-zinc-200">{playlist.name}</p>
-          <p className="flex items-center gap-1.5 truncate text-xs text-zinc-500">
-            {showOwner && playlist.owner?.id ? (
-              <>
-                <UserAvatar
-                  userId={playlist.owner.id}
-                  username={playlist.owner.username}
-                  hasAvatar={playlist.owner.hasAvatar}
-                  size={14}
-                  label={`Shared by ${playlist.owner.username}`}
-                />
-                <span className="truncate">{playlist.owner.username}</span>
-                <span aria-hidden="true">·</span>
-              </>
-            ) : null}
-            <span className="truncate">
-              {playlist.trackCount} track{playlist.trackCount === 1 ? "" : "s"} ·{" "}
-              {formatTotal(playlist.totalDuration)}
-            </span>
-          </p>
-        </button>
+        <PlaylistCard key={playlist.id} playlist={playlist} onOpen={onOpen} showOwner={showOwner} />
       ))}
     </div>
+  )
+}
+
+function PlaylistCard({
+  playlist,
+  onOpen,
+  showOwner,
+}: {
+  playlist: Playlist
+  onOpen: (id: string) => void
+  showOwner: boolean
+}) {
+  const menu = useContextMenu()
+  const [deleteOpen, setDeleteOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => onOpen(playlist.id)}
+        onContextMenu={menu.onContextMenu}
+        className="group rounded-xl p-2 text-left transition-colors hover:bg-zinc-800/60"
+        aria-label={`Open playlist ${playlist.name}`}
+      >
+        <div
+          aria-hidden="true"
+          className={`relative flex aspect-square w-full items-center justify-center rounded-lg bg-linear-to-br shadow-lg ${hashGradient(playlist.name)}`}
+        >
+          <Music4 className="size-8 text-zinc-400/70" />
+          <span className="absolute bottom-2 left-2 rounded-full bg-zinc-950/60 px-2 py-0.5 text-[10px] font-medium text-zinc-300">
+            {playlist.trackCount}
+          </span>
+          {playlist.isMine && playlist.isPublic && (
+            <span
+              title="Public — anyone signed in can see this"
+              className="absolute top-2 right-2 rounded-full bg-zinc-950/60 p-1 text-emerald-400"
+            >
+              <Globe className="size-3" />
+            </span>
+          )}
+        </div>
+        <p className="mt-2 truncate text-sm font-medium text-zinc-200">{playlist.name}</p>
+        <p className="flex items-center gap-1.5 truncate text-xs text-zinc-500">
+          {showOwner && playlist.owner?.id ? (
+            <>
+              <UserAvatar
+                userId={playlist.owner.id}
+                username={playlist.owner.username}
+                hasAvatar={playlist.owner.hasAvatar}
+                size={14}
+                label={`Shared by ${playlist.owner.username}`}
+              />
+              <span className="truncate">{playlist.owner.username}</span>
+              <span aria-hidden="true">·</span>
+            </>
+          ) : null}
+          <span className="truncate">
+            {playlist.trackCount} track{playlist.trackCount === 1 ? "" : "s"} ·{" "}
+            {formatTotal(playlist.totalDuration)}
+          </span>
+        </p>
+      </button>
+      {menu.open && menu.point ? (
+        <MenuAtPoint point={menu.point} onOpenChange={menu.onOpenChange}>
+          <PlaylistMenuContent playlist={playlist} onDelete={() => setDeleteOpen(true)} />
+        </MenuAtPoint>
+      ) : null}
+      <DeletePlaylistDialog playlist={playlist} open={deleteOpen} onOpenChange={setDeleteOpen} />
+    </>
   )
 }

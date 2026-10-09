@@ -219,9 +219,12 @@ class ApiClient(private val store: TokenStore) {
             if (!query.isNullOrBlank()) parameter("q", query)
         }
 
-    suspend fun deleteTrack(id: String) {
-        expectNoContent(client.delete(url("/api/tracks/$id")) { auth() })
+    suspend fun deleteTrack(id: String, into: String? = null) {
+        val query = into?.let { "?into=" + it.encodeURLParameter() }.orEmpty()
+        expectNoContent(client.delete(url("/api/tracks/$id") + query) { auth() })
     }
+
+    suspend fun trackCopies(id: String): List<Track> = getJson("/api/tracks/$id/copies")
 
     suspend fun reportPlay(id: String) {
         expectNoContent(client.post(url("/api/tracks/$id/play")) { auth() })

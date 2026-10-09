@@ -4,7 +4,6 @@ import { toast } from "sonner"
 import {
   AudioLines,
   CloudDownload,
-  Disc3,
   Heart,
   Compass,
   History,
@@ -13,7 +12,6 @@ import {
   UserRound,
   ListMusic,
   LogOut,
-  Mic2,
   Music4,
   Pin,
   Plus,
@@ -22,6 +20,7 @@ import {
   MonitorSmartphone,
   ShieldCheck,
   SquareLibrary,
+  Upload,
   Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -54,8 +53,6 @@ const NAV_ITEMS: NavItem[] = [
   { view: "home", label: "Home", icon: Home },
   { view: "search", label: "Search", icon: Search },
   { view: "library", label: "Your library", icon: SquareLibrary },
-  { view: "albums", label: "Albums", icon: Disc3 },
-  { view: "artists", label: "Artists", icon: Mic2 },
   { view: "playlists", label: "Playlists", icon: ListMusic },
   { view: "favorites", label: "Favorites", icon: Heart },
   { view: "history", label: "History", icon: History },
@@ -87,13 +84,19 @@ export function SidebarContent() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-3 px-5 pb-4 pt-5">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-emerald-400 to-teal-600 shadow-md shadow-emerald-900/40">
-          <AudioLines className="size-5 text-zinc-950" aria-hidden="true" />
-        </div>
-        <div>
-          <p className="text-lg font-bold leading-tight tracking-tight">Music</p>
-        </div>
+      <div className="flex shrink-0 items-center justify-between px-5 pb-2 pt-4">
+        <AudioLines className="size-5 text-emerald-400" aria-label="Music" />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            useUIStore.getState().setSidebarOpen(false)
+            useUIStore.getState().setUploadOpen(true)
+          }}
+          className="h-8 gap-1.5 px-2.5 text-xs text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
+        >
+          <Upload className="size-3.5" aria-hidden="true" /> Upload
+        </Button>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">

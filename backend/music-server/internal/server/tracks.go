@@ -683,6 +683,9 @@ func (s *Server) handleDeleteTrack(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusForbidden, "only the person who uploaded this track can delete it")
 		return
 	}
+	if into := r.URL.Query().Get("into"); into != "" && !s.deleteTrackInto(w, u, t, into) {
+		return
+	}
 	if err := s.removeTrack(id); err != nil {
 		s.internalErr(w, "delete track", err)
 		return

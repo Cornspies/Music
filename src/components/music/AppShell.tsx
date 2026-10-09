@@ -21,8 +21,6 @@ import { PlaylistDialog } from "@/components/music/PlaylistDialog"
 import { HomeView } from "@/components/music/views/HomeView"
 import { SearchView } from "@/components/music/views/SearchView"
 import { LibraryView } from "@/components/music/views/LibraryView"
-import { AlbumsView } from "@/components/music/views/AlbumsView"
-import { ArtistsView } from "@/components/music/views/ArtistsView"
 import { AlbumView } from "@/components/music/views/AlbumView"
 import { ArtistView } from "@/components/music/views/ArtistView"
 import { PlaylistsView } from "@/components/music/views/PlaylistsView"
@@ -200,10 +198,6 @@ function renderView(view: View) {
       return <SearchView />
     case "library":
       return <LibraryView />
-    case "albums":
-      return <AlbumsView />
-    case "artists":
-      return <ArtistsView />
     case "favorites":
       return <FavoritesView />
     case "playlists":

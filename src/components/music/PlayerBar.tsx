@@ -28,7 +28,8 @@ import { useListenStore } from "@/stores/listen"
 import { CoverArt } from "@/components/music/CoverArt"
 import { AddToPlaylistButton } from "@/components/music/AddToPlaylistButton"
 import { SleepTimerMenu } from "@/components/music/SleepTimerMenu"
-import { TrackMenu, useTrackMenu } from "@/components/music/TrackMenu"
+import { TrackMenu } from "@/components/music/TrackMenu"
+import { useContextMenu } from "@/components/music/MenuAtPoint"
 import { WaveformSeek } from "@/components/music/WaveformSeek"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
@@ -116,7 +117,7 @@ export function PlayerBar() {
   const canSkip = useListenStore((s) => s.session?.canControl ?? true)
 
   const [seekPreview, setSeekPreview] = useState<number | null>(null)
-  const menu = useTrackMenu()
+  const menu = useContextMenu()
 
   const effectiveDuration =
     duration > 0 ? duration : (currentTrack?.duration ?? 0)
@@ -218,6 +219,7 @@ export function PlayerBar() {
               showPlay={false}
               open={menu.open}
               onOpenChange={menu.onOpenChange}
+              point={menu.point}
             />
           )}
         </div>

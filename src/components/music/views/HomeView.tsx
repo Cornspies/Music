@@ -6,11 +6,9 @@ import {
   Disc3,
   Heart,
   History,
-  ListMusic,
   Mic2,
   Music2,
   Play,
-  Upload,
 } from "lucide-react"
 import { formatTotal } from "@/lib/format"
 import type { Track } from "@/lib/types"
@@ -20,7 +18,8 @@ import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackList } from "@/components/music/TrackList"
-import { TrackMenu, useTrackMenu } from "@/components/music/TrackMenu"
+import { TrackMenu } from "@/components/music/TrackMenu"
+import { useContextMenu } from "@/components/music/MenuAtPoint"
 import { Button } from "@/components/ui/button"
 
 function StatChip({
@@ -48,7 +47,7 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
 }
 
 function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
-  const menu = useTrackMenu()
+  const menu = useContextMenu()
   return (
     <div
       role="button"
@@ -97,32 +96,10 @@ function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
           triggerClassName="-mr-1 size-7 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
           open={menu.open}
           onOpenChange={menu.onOpenChange}
+          point={menu.point}
         />
       </div>
     </div>
-  )
-}
-
-function ShortcutCard({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: typeof Heart
-  label: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group flex items-center gap-3 rounded-xl border border-zinc-800/80 bg-linear-to-br from-zinc-900/90 to-zinc-950/40 p-2 text-left shadow-sm transition-all hover:border-zinc-700 hover:from-zinc-800/90 hover:shadow-md hover:shadow-black/30 active:scale-[0.98]"
-    >
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-emerald-400 transition-all group-hover:bg-emerald-500 group-hover:text-zinc-950 group-hover:shadow-lg group-hover:shadow-emerald-950/60">
-        <Icon className="size-4" aria-hidden="true" />
-      </div>
-      <p className="min-w-0 truncate text-sm font-semibold text-zinc-100">{label}</p>
-    </button>
   )
 }
 
@@ -198,25 +175,6 @@ export function HomeView() {
         </div>
       )}
 
-      <SectionHeader title="Jump back in" />
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <ShortcutCard
-          icon={Heart}
-          label="Favorites"
-          onClick={() => navigate("favorites")}
-        />
-        <ShortcutCard
-          icon={ListMusic}
-          label="Playlists"
-          onClick={() => navigate("playlists")}
-        />
-        <ShortcutCard
-          icon={Upload}
-          label="Upload"
-          onClick={() => useUIStore.getState().setUploadOpen(true)}
-        />
-      </div>
-
       {recentlyPlayed.length > 0 && (
         <>
           <SectionHeader
@@ -270,14 +228,6 @@ export function HomeView() {
         </>
       )}
 
-      <footer className="mt-8 flex items-center justify-center gap-2 border-t border-zinc-800/60 pt-4 text-[11px] text-zinc-600">
-        <History className="size-3" aria-hidden="true" />
-        Music · self-hosted · press
-        <kbd className="rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5 font-mono text-[10px] text-zinc-400">
-          ?
-        </kbd>
-        for shortcuts
-      </footer>
     </div>
   )
 }

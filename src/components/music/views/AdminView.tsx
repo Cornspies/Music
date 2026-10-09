@@ -28,6 +28,7 @@ import { useLibraryStore } from "@/stores/library"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { EmptyState } from "@/components/music/EmptyState"
 import { ActivityPanel } from "@/components/music/ActivityPanel"
+import { UpgradesSection } from "@/components/music/UpgradesSection"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -508,6 +509,7 @@ export function AdminView() {
         </section>
       ) : null}
 
+      <UpgradesSection />
       <InvitesSection />
       <SharesSection />
 

@@ -54,6 +54,7 @@ actual class PlayerController actual constructor() {
     actual fun currentPositionSec(): Double = readPosition() ?: _positionSec.value
 
     private var playRequested = false
+    private var loadedItem: MediaItem? = null
 
     actual fun wantsToPlay(): Boolean = controller?.playWhenReady ?: playRequested
 
@@ -70,27 +71,58 @@ actual class PlayerController actual constructor() {
         }
     }
 
+    private val connectionListener = object : MediaController.Listener {
+        override fun onDisconnected(controller: MediaController) {
+            if (this@PlayerController.controller !== controller) return
+            controller.removeListener(listener)
+            this@PlayerController.controller = null
+            controllerFuture = null
+            _isPlaying.value = false
+        }
+    }
+
     init {
+        connect()
+        scope.tickPosition(_positionSec, _isPlaying, ::readPosition)
+    }
+
+    private fun connect() {
+        if (released || controllerFuture != null) return
         val token = SessionToken(appContext, ComponentName(appContext, PlaybackService::class.java))
-        val future = MediaController.Builder(appContext, token).buildAsync()
+        val future = MediaController.Builder(appContext, token).setListener(connectionListener).buildAsync()
         controllerFuture = future
         future.addListener({
             if (released) {
                 runCatching { future.get().release() }
                 return@addListener
             }
-            val c = runCatching { future.get() }.getOrNull() ?: return@addListener
+            val c = runCatching { future.get() }.getOrNull()
+            if (c == null) {
+                if (controllerFuture === future) controllerFuture = null
+                return@addListener
+            }
             controller = c
             c.addListener(listener)
             _isPlaying.value = c.isPlaying
+            val item = loadedItem
+            if (item != null && c.mediaItemCount == 0) {
+                c.setMediaItem(item, (_positionSec.value * 1000).toLong())
+                c.prepare()
+            }
             while (pending.isNotEmpty()) pending.removeFirst()(c)
         }, MoreExecutors.directExecutor())
-        scope.tickPosition(_positionSec, _isPlaying, ::readPosition)
     }
 
     private fun withController(block: (MediaController) -> Unit) {
         val c = controller
-        if (c != null) block(c) else pending.addLast(block)
+        if (c != null && c.isConnected) return block(c)
+        if (c != null) {
+            c.removeListener(listener)
+            controller = null
+            controllerFuture = null
+        }
+        pending.addLast(block)
+        connect()
     }
 
     actual fun load(url: String, autoplay: Boolean, info: NowPlayingInfo?) {
@@ -106,6 +138,7 @@ actual class PlayerController actual constructor() {
             }
         }.build()
         val item = MediaItem.Builder().setUri(uri).setMediaId(url).setMediaMetadata(metadata).build()
+        loadedItem = item
         playRequested = autoplay
         withController { c ->
             c.setMediaItem(item)

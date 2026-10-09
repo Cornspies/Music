@@ -9,8 +9,6 @@ export type View =
   | "home"
   | "search"
   | "library"
-  | "albums"
-  | "artists"
   | "favorites"
   | "playlists"
   | "playlist"

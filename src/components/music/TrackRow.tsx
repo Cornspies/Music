@@ -8,10 +8,28 @@ import type { Track } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useOfflineStore } from "@/stores/offline"
+import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { EqualizerButton } from "@/components/music/EqualizerIcon"
-import { TrackMenu, useTrackMenu } from "@/components/music/TrackMenu"
+import { TrackMenu } from "@/components/music/TrackMenu"
+import { useContextMenu } from "@/components/music/MenuAtPoint"
+
+function JumpLink({ label, onOpen }: { label: string; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onOpen()
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      className="max-w-full truncate text-left hover:text-zinc-200 hover:underline focus-visible:underline focus-visible:outline-none"
+    >
+      {label}
+    </button>
+  )
+}
 
 interface TrackRowProps {
   track: Track
@@ -29,7 +47,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
   const isDownloaded = useOfflineStore((s) => s.ids.has(track.id))
   const downloadJob = useOfflineStore((s) => s.jobs[track.id])
 
-  const menu = useTrackMenu()
+  const menu = useContextMenu()
 
   const play = () => {
     usePlayerStore.getState().playNow(track, contextQueue ?? [track])
@@ -110,14 +128,27 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
             />
           )}
           <span className="truncate">
-            {track.artist || "Unknown artist"}
+            {track.artist ? (
+              <JumpLink label={track.artist} onOpen={() => useUIStore.getState().navigate("artist", track.artist)} />
+            ) : (
+              "Unknown artist"
+            )}
             {track.year ? ` · ${track.year}` : ""}
           </span>
         </div>
       </div>
 
       <div className="hidden w-40 shrink-0 truncate text-xs text-zinc-500 lg:block xl:w-52">
-        {track.album || "—"}
+        {track.album ? (
+          <JumpLink
+            label={track.album}
+            onOpen={() =>
+              useUIStore.getState().navigate("album", JSON.stringify({ name: track.album, artist: track.artist }))
+            }
+          />
+        ) : (
+          "—"
+        )}
       </div>
 
       <div className="hidden w-12 shrink-0 text-right text-xs tabular-nums text-zinc-600 md:block">
@@ -182,6 +213,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
         triggerClassName="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
         open={menu.open}
         onOpenChange={menu.onOpenChange}
+        point={menu.point}
       />
     </div>
   )
