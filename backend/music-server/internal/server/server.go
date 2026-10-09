@@ -145,6 +145,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/tracks/changes", s.requireAuth(s.handleTrackChanges))
 	mux.HandleFunc("POST /api/uploads/pending/{id}", s.requireAuth(s.handleConfirmUpload))
 	mux.HandleFunc("DELETE /api/uploads/pending/{id}", s.requireAuth(s.handleDiscardUpload))
+	mux.HandleFunc("POST /api/uploads/pending/{id}/replace", s.requireAuth(s.handleReplaceWithUpload))
 	mux.HandleFunc("POST /api/tracks/{id}/play", s.requireAuth(s.handleTrackPlay))
 	mux.HandleFunc("POST /api/tracks/{id}/listened", s.requireAuth(s.handleTrackListened))
 	mux.HandleFunc("POST /api/auth/avatar", s.requireAuth(s.handleUploadAvatar))

@@ -9,6 +9,7 @@ import {
   listOfflineTracks,
   offlineBytesUsed,
   offlineSupported,
+  offlineAudioChanged,
   removeTrackOffline,
   requestPersistentStorage,
   updateOfflineTrack,
@@ -29,7 +30,7 @@ interface OfflineState {
   offline: boolean
   initialized: boolean
   init: () => Promise<void>
-  download: (track: Track) => Promise<void>
+  download: (track: Track, refresh?: boolean) => Promise<void>
   cancel: (id: string) => void
   remove: (id: string) => Promise<void>
   removeAll: () => Promise<void>
@@ -61,9 +62,9 @@ export const useOfflineStore = create<OfflineState>()((set, get) => ({
     set({ tracks, ids: new Set(tracks.map((t) => t.id)), bytesUsed, initialized: true })
   },
 
-  download: async (track) => {
+  download: async (track, refresh = false) => {
     const { jobs, ids } = get()
-    if (jobs[track.id] || ids.has(track.id)) return
+    if (jobs[track.id] || (ids.has(track.id) && !refresh)) return
     const controller = new AbortController()
     set({ jobs: { ...get().jobs, [track.id]: { loaded: 0, total: 0, controller } } })
     if (Object.keys(get().jobs).length === 1) requestPersistentStorage().catch(() => {})
@@ -78,12 +79,16 @@ export const useOfflineStore = create<OfflineState>()((set, get) => ({
       )
       const [tracks, bytesUsed] = await Promise.all([listOfflineTracks(), offlineBytesUsed()])
       set({ tracks, ids: new Set(tracks.map((t) => t.id)), bytesUsed })
-      toast.success(`“${track.title}” is available offline`)
+      if (!refresh) toast.success(`“${track.title}” is available offline`)
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
         toast.error((e as Error).message || "Download failed")
       }
       await removeTrackOffline(track.id).catch(() => {})
+      if (refresh) {
+        const tracks = get().tracks.filter((t) => t.id !== track.id)
+        set({ tracks, ids: new Set(tracks.map((t) => t.id)), bytesUsed: await offlineBytesUsed() })
+      }
     } finally {
       const rest = { ...get().jobs }
       delete rest[track.id]
@@ -120,16 +125,22 @@ export const useOfflineStore = create<OfflineState>()((set, get) => ({
     if (get().tracks.length === 0) return
     const byId = new Map(fresh.map((t) => [t.id, t]))
     const changed: Track[] = []
+    const stale: Track[] = []
     const tracks = get().tracks.map((old) => {
       const track = byId.get(old.id)
       if (!track || sameTrack(old, track)) return old
+      if (offlineAudioChanged(old, track)) stale.push(track)
       const next = { ...track, updatedAt: old.updatedAt }
       changed.push(next)
       return next
     })
     if (changed.length === 0) return
     set({ tracks })
-    for (const track of changed) updateOfflineTrack(track).catch(() => {})
+    const staleIds = new Set(stale.map((t) => t.id))
+    for (const track of changed) {
+      if (!staleIds.has(track.id)) updateOfflineTrack(track).catch(() => {})
+    }
+    for (const track of stale) void get().download(track, true)
   },
 }))
 

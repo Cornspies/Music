@@ -60,7 +60,7 @@ type compatibleCopy struct {
 	size    int64
 }
 
-func (s *Server) makeCompatibleCopy(trackID, originalRel string) *compatibleCopy {
+func (s *Server) makeCompatibleCopy(parent context.Context, trackID, originalRel string) *compatibleCopy {
 	ext := strings.ToLower(filepath.Ext(originalRel))
 	if !needsCompatibleCopy[ext] {
 		return nil
@@ -80,7 +80,7 @@ func (s *Server) makeCompatibleCopy(trackID, originalRel string) *compatibleCopy
 	outPath := filepath.Join(s.dataDir, relPath)
 	tmpPath := outPath + ".part"
 
-	ctx, cancel := context.WithTimeout(context.Background(), transcodeTimeout)
+	ctx, cancel := context.WithTimeout(parent, transcodeTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin,

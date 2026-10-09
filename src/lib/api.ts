@@ -96,9 +96,10 @@ function withToken(path: string): string {
   return `${apiUrl(path)}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(currentMediaToken())}`
 }
 
-export function streamUrl(track: Pick<Track, "id" | "mimeType" | "hasCompatible">): string {
+export function streamUrl(track: Pick<Track, "id" | "mimeType" | "hasCompatible"> & { updatedAt?: string }): string {
   const version = browserCanPlay(track) ? "" : "&version=compatible"
-  return withToken(`/api/tracks/${track.id}/stream`) + version
+  const stamp = track.updatedAt ? `&v=${encodeURIComponent(track.updatedAt)}` : ""
+  return withToken(`/api/tracks/${track.id}/stream`) + version + stamp
 }
 
 export function nativeStreamUrl(track: Pick<Track, "id">): string {
@@ -136,6 +137,14 @@ export function uploadUrl(): string {
 
 export function confirmPendingUpload(pendingId: string): Promise<Track> {
   return api<Track>(`/api/uploads/pending/${pendingId}`, { method: "POST" })
+}
+
+export function replaceWithPendingUpload(pendingId: string, trackId: string): Promise<Track> {
+  return api<Track>(`/api/uploads/pending/${pendingId}/replace`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trackId }),
+  })
 }
 
 export function discardPendingUpload(pendingId: string): Promise<void> {

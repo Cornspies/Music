@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -521,26 +522,44 @@ var (
 	copying        sync.Map
 )
 
+type copyJob struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
 func (s *Server) startCompatibleCopy(trackID, originalRel string) {
 	if !needsCompatibleCopy[strings.ToLower(filepath.Ext(originalRel))] {
 		return
 	}
-	if _, busy := copying.LoadOrStore(trackID, struct{}{}); busy {
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &copyJob{cancel: cancel, done: make(chan struct{})}
+	if _, busy := copying.LoadOrStore(trackID, job); busy {
+		cancel()
 		return
 	}
 	go func() {
+		defer close(job.done)
 		defer copying.Delete(trackID)
-		transcodeSlots <- struct{}{}
+		defer cancel()
+		select {
+		case transcodeSlots <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
 		defer func() { <-transcodeSlots }()
 		defer logPanic("compatible copy of track " + trackID)
 
-		alt := s.makeCompatibleCopy(trackID, originalRel)
+		alt := s.makeCompatibleCopy(ctx, trackID, originalRel)
 		if alt == nil {
 			return
 		}
+		if ctx.Err() != nil {
+			os.Remove(filepath.Join(s.dataDir, alt.relPath))
+			return
+		}
 		res, err := s.db.Exec(
-			`UPDATE tracks SET alt_path = ?, alt_mime = ?, alt_size = ?, updated_at = ? WHERE id = ?`,
-			alt.relPath, alt.mime, alt.size, nowRFC3339(), trackID)
+			`UPDATE tracks SET alt_path = ?, alt_mime = ?, alt_size = ?, updated_at = ? WHERE id = ? AND file_path = ?`,
+			alt.relPath, alt.mime, alt.size, nowRFC3339(), trackID, originalRel)
 		if err != nil {
 			logErr("record compatible copy", err)
 			return
@@ -551,6 +570,14 @@ func (s *Server) startCompatibleCopy(trackID, originalRel string) {
 		}
 		log.Printf("transcode: compatible copy ready for track %s (%d bytes)", trackID, alt.size)
 	}()
+}
+
+func stopCompatibleCopy(trackID string) {
+	if v, ok := copying.Load(trackID); ok {
+		job := v.(*copyJob)
+		job.cancel()
+		<-job.done
+	}
 }
 
 func sanitizeFilename(name string) string {

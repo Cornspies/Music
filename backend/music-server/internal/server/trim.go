@@ -261,6 +261,7 @@ func (s *Server) recordNewAudio(id, filePath string) {
 	}
 	_, _ = s.db.Exec(`UPDATE tracks SET duration = ?, file_size = ?, updated_at = ? WHERE id = ?`,
 		probeDuration(abs), size, nowRFC3339(), id)
+	stopCompatibleCopy(id)
 	if alt := s.altPathFor(id); alt != "" {
 		os.Remove(filepath.Join(s.dataDir, alt))
 		_, _ = s.db.Exec(`UPDATE tracks SET alt_path = '', alt_mime = '', alt_size = 0 WHERE id = ?`, id)

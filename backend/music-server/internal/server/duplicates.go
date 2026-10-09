@@ -32,6 +32,8 @@ type DuplicateResponse struct {
 		Album    string  `json:"album"`
 		Duration float64 `json:"duration"`
 		FileName string  `json:"fileName"`
+		FileSize int64   `json:"fileSize"`
+		MimeType string  `json:"mimeType"`
 	} `json:"upload"`
 }
 
@@ -56,7 +58,10 @@ func (s *Server) findDuplicates(userID string, up *pendingUpload) DuplicateRespo
 		duration = up.clientDur
 	}
 	out.Upload.Title, out.Upload.Artist, out.Upload.Album = title, up.meta.artist, up.meta.album
-	out.Upload.Duration, out.Upload.FileName = duration, up.fileName
+	out.Upload.Duration, out.Upload.FileName, out.Upload.MimeType = duration, up.fileName, up.mimeType
+	if fi, err := os.Stat(filepath.Join(s.dataDir, up.savedPath)); err == nil {
+		out.Upload.FileSize = fi.Size()
+	}
 
 	seen := map[string]bool{}
 	add := func(t *Track, reason string) {
@@ -268,6 +273,12 @@ func (s *Server) holdUpload(up *pendingUpload) string {
 	return id
 }
 
+func (s *Server) returnPendingUpload(id string, up *pendingUpload) {
+	pendingUploads.Lock()
+	pendingUploads.byID[id] = up
+	pendingUploads.Unlock()
+}
+
 func (s *Server) takePendingUpload(id, userID string) *pendingUpload {
 	pendingUploads.Lock()
 	defer pendingUploads.Unlock()
@@ -315,6 +326,116 @@ func (s *Server) handleConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.finalizeUpload(w, r, up)
+}
+
+func (s *Server) handleReplaceWithUpload(w http.ResponseWriter, r *http.Request) {
+	u := userFrom(r)
+	var body struct {
+		TrackID string `json:"trackId"`
+	}
+	if err := jsonDecodeStrict(r, w, &body); err != nil {
+		return
+	}
+	if body.TrackID == "" {
+		writeErr(w, http.StatusBadRequest, "missing trackId")
+		return
+	}
+	pendingID := r.PathValue("id")
+	up := s.takePendingUpload(pendingID, u.ID)
+	if up == nil {
+		writeErr(w, http.StatusNotFound, "that upload is no longer waiting — please upload the file again")
+		return
+	}
+	if _, err := os.Stat(filepath.Join(s.dataDir, up.savedPath)); err != nil {
+		writeErr(w, http.StatusNotFound, "that upload is no longer waiting — please upload the file again")
+		return
+	}
+	t, oldRel, _, ok := s.getTrack(w, r, u.ID, body.TrackID)
+	if !ok {
+		s.returnPendingUpload(pendingID, up)
+		return
+	}
+	if t.UploadedBy.ID != u.ID && !u.IsAdmin() {
+		s.returnPendingUpload(pendingID, up)
+		writeErr(w, http.StatusForbidden, "only the person who uploaded this track can replace it")
+		return
+	}
+	if err := s.replaceTrackAudio(t, oldRel, up); err != nil {
+		s.internalErr(w, "replace track audio", err)
+		return
+	}
+	out, _, _, ok := s.getTrack(w, r, u.ID, t.ID)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) replaceTrackAudio(t *Track, oldRel string, up *pendingUpload) error {
+	id := t.ID
+	stopCompatibleCopy(id)
+	altRel := s.altPathFor(id)
+	pendingAbs := filepath.Join(s.dataDir, up.savedPath)
+	newRel := filepath.Join("uploads", id+strings.ToLower(filepath.Ext(up.savedPath)))
+	newAbs := filepath.Join(s.dataDir, newRel)
+	oldAbs := filepath.Join(s.dataDir, oldRel)
+
+	var size int64
+	if fi, err := os.Stat(pendingAbs); err == nil {
+		size = fi.Size()
+	}
+	duration := up.meta.duration
+	if duration <= 0 {
+		duration = up.clientDur
+	}
+	if duration <= 0 {
+		duration = probeDuration(pendingAbs)
+	}
+	if duration <= 0 {
+		duration = t.Duration
+	}
+
+	if err := os.Rename(pendingAbs, newAbs); err != nil {
+		os.Remove(pendingAbs)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE tracks SET file_name = ?, file_path = ?, mime_type = ?, file_size = ?, file_hash = ?, duration = ?,
+                alt_path = '', alt_mime = '', alt_size = 0, loudness = NULL, waveform_json = '', analyzed_at = '',
+                edges_checked = 0, updated_at = ? WHERE id = ?`,
+		up.fileName, newRel, up.mimeType, size, up.hash, duration, nowRFC3339(), id)
+	if err != nil {
+		if newRel != oldRel {
+			os.Remove(newAbs)
+		}
+		return err
+	}
+
+	if oldRel != newRel {
+		os.Remove(oldAbs)
+		os.Remove(oldAbs + ".orig")
+	}
+	os.Remove(newAbs + ".orig")
+	if altRel != "" && altRel != newRel {
+		os.Remove(filepath.Join(s.dataDir, altRel))
+	}
+	if trimmedTracks.has(id) {
+		setTrimmed(id, false)
+		_, _ = s.db.Exec(`DELETE FROM lyrics WHERE track_id = ? AND source <> ?`, id, lyricsSourceManual)
+	}
+
+	if !t.HasCover && len(up.meta.picture) > 0 && safeCoverBytes(up.meta.picture) {
+		if err := os.WriteFile(s.coverPath(id), shrinkCover(up.meta.picture), 0o644); err == nil {
+			s.removeThumbnails(id)
+			_, _ = s.db.Exec(`UPDATE tracks SET has_cover = 1, cover_source = ? WHERE id = ?`, coverFromFile, id)
+			go s.updateCoverColor(id)
+		} else {
+			logErr("save cover", err)
+		}
+	}
+
+	s.startCompatibleCopy(id, newRel)
+	s.queueAnalysis(id)
+	return nil
 }
 
 func (s *Server) handleDiscardUpload(w http.ResponseWriter, r *http.Request) {

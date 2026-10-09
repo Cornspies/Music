@@ -58,6 +58,18 @@ async function downloadToDisk(track: Track, onProgress?: DownloadProgress, signa
   if (track.hasCover) setLocalCover(track.id, true)
 }
 
+function storesCompatibleCopy(track: Track): boolean {
+  if (isDesktop) return true
+  if (!track.hasCompatible || typeof document === "undefined") return false
+  return document.createElement("audio").canPlayType(track.mimeType) === ""
+}
+
+export function offlineAudioChanged(saved: Track, fresh: Track): boolean {
+  if (saved.fileSize !== fresh.fileSize || saved.mimeType !== fresh.mimeType) return true
+  if (!storesCompatibleCopy(saved) && !storesCompatibleCopy(fresh)) return false
+  return saved.compatibleFileSize !== fresh.compatibleFileSize
+}
+
 async function openCache(): Promise<Cache | null> {
   if (!offlineSupported()) return null
   try {
