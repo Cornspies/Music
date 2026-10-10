@@ -163,6 +163,7 @@ export interface UpgradeCandidate {
   found: DiscoverResult
   quality: AudioQuality
   source: string
+  estimatedBytes: number
 }
 
 export interface UpgradeStatus {
@@ -382,6 +383,7 @@ export interface DuplicateResponse {
     fileName: string
     fileSize: number
     mimeType: string
+    storageBytes: number
   }
 }
 

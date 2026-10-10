@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,13 +28,14 @@ type DuplicateResponse struct {
 	PendingID string           `json:"pendingId"`
 	Matches   []DuplicateMatch `json:"matches"`
 	Upload    struct {
-		Title    string  `json:"title"`
-		Artist   string  `json:"artist"`
-		Album    string  `json:"album"`
-		Duration float64 `json:"duration"`
-		FileName string  `json:"fileName"`
-		FileSize int64   `json:"fileSize"`
-		MimeType string  `json:"mimeType"`
+		Title        string  `json:"title"`
+		Artist       string  `json:"artist"`
+		Album        string  `json:"album"`
+		Duration     float64 `json:"duration"`
+		FileName     string  `json:"fileName"`
+		FileSize     int64   `json:"fileSize"`
+		MimeType     string  `json:"mimeType"`
+		StorageBytes int64   `json:"storageBytes"`
 	} `json:"upload"`
 }
 
@@ -57,11 +59,15 @@ func (s *Server) findDuplicates(userID string, up *pendingUpload) DuplicateRespo
 	if duration <= 0 {
 		duration = up.clientDur
 	}
+	if duration <= 0 {
+		duration = probeDuration(filepath.Join(s.dataDir, up.savedPath))
+	}
 	out.Upload.Title, out.Upload.Artist, out.Upload.Album = title, up.meta.artist, up.meta.album
 	out.Upload.Duration, out.Upload.FileName, out.Upload.MimeType = duration, up.fileName, up.mimeType
 	if fi, err := os.Stat(filepath.Join(s.dataDir, up.savedPath)); err == nil {
 		out.Upload.FileSize = fi.Size()
 	}
+	out.Upload.StorageBytes = out.Upload.FileSize + compatibleCopyBytes(filepath.Ext(up.savedPath), duration)
 
 	seen := map[string]bool{}
 	add := func(t *Track, reason string) {
@@ -100,6 +106,47 @@ func coreTitle(s string) string {
 	return normalizeForMatch(featRe.ReplaceAllString(bracketRe.ReplaceAllString(s, ""), ""))
 }
 
+var packagingTagPrefixes = []string{"feat", "ft", "featuring", "prod", "produced by", "from", "with", "official"}
+
+var packagingTagWords = map[string]bool{
+	"official": true, "music": true, "video": true, "audio": true, "lyric": true, "lyrics": true,
+	"visualizer": true, "visualiser": true, "hd": true, "hq": true, "4k": true, "1080p": true, "720p": true,
+	"explicit": true, "clean": true, "original": true, "mix": true, "version": true, "mv": true,
+	"remaster": true, "remastered": true, "full": true, "song": true, "ost": true, "soundtrack": true,
+	"score": true, "theme": true, "album": true, "single": true, "release": true, "ncs": true,
+	"monstercat": true, "no": true, "copyright": true, "free": true, "download": true,
+}
+
+func isPackagingTag(tag string) bool {
+	for _, p := range packagingTagPrefixes {
+		if tag == p || strings.HasPrefix(tag, p+" ") {
+			return true
+		}
+	}
+	for _, w := range strings.Fields(tag) {
+		if !packagingTagWords[w] && !(len(w) == 4 && strings.Trim(w, "0123456789") == "") {
+			return false
+		}
+	}
+	return true
+}
+
+func titleTags(s string) string {
+	var tags []string
+	for _, m := range bracketRe.FindAllString(s, -1) {
+		if tag := normalizeForMatch(m); tag != "" && !isPackagingTag(tag) {
+			tags = append(tags, tag)
+		}
+	}
+	slices.Sort(tags)
+	return strings.Join(tags, "|")
+}
+
+func sameCoreTitle(a, b string) bool {
+	core := coreTitle(a)
+	return core != "" && core == coreTitle(b) && titleTags(a) == titleTags(b)
+}
+
 func (s *Server) findSameSong(userID, title, artist string, duration float64, loose, artistVeto bool) []DuplicateMatch {
 	wantTitle := normalizeForMatch(title)
 	wantCore := coreTitle(title)
@@ -123,7 +170,7 @@ func (s *Server) findSameSong(userID, title, artist string, duration float64, lo
 			continue
 		}
 		exact := normalizeForMatch(t.Title) == wantTitle
-		core := loose && wantCore != "" && coreTitle(t.Title) == wantCore
+		core := loose && wantCore != "" && sameCoreTitle(t.Title, title)
 		if !exact && !core {
 			continue
 		}
@@ -149,7 +196,7 @@ func sameSongPair(a, b *Track) (bool, string) {
 		return false, ""
 	}
 	exact := titleA == titleB
-	core := coreTitle(a.Title) != "" && coreTitle(a.Title) == coreTitle(b.Title)
+	core := sameCoreTitle(a.Title, b.Title)
 	if !exact && !core {
 		return false, ""
 	}

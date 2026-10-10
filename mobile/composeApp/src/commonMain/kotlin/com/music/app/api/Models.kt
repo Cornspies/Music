@@ -178,6 +178,7 @@ data class DuplicateUpload(
     val duration: Double = 0.0,
     val fileSize: Long = 0L,
     val mimeType: String = "",
+    val storageBytes: Long = 0L,
 )
 
 @Serializable

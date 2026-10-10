@@ -2,6 +2,7 @@
 
 package com.music.app.ui
 
+import kotlin.math.abs
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -53,4 +54,10 @@ fun formatTimeUntil(iso: String): String {
         minutes < 60 * 24 -> (minutes / 60).let { "in $it hour${if (it == 1L) "" else "s"}" }
         else -> (minutes / (60 * 24)).let { "in $it day${if (it == 1L) "" else "s"}" }
     }
+}
+
+fun formatSizeChange(bytes: Long): String = when {
+    abs(bytes) < 1_000L -> "same size"
+    bytes > 0 -> "+${formatBytes(bytes)}"
+    else -> "−${formatBytes(-bytes)}"
 }

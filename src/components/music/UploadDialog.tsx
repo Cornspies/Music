@@ -20,7 +20,7 @@ import {
   replaceWithPendingUpload,
   uploadUrl,
 } from "@/lib/api"
-import { formatFileSize } from "@/lib/format"
+import { formatFileSize, formatSizeChange, storedBytes } from "@/lib/format"
 import type { DuplicateMatch, DuplicateResponse, Track } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { useUIStore } from "@/stores/ui"
@@ -431,7 +431,16 @@ export function UploadDialog() {
                                 {` · uploaded by ${m.track.uploadedBy.username || "someone"}`}
                                 {` · ${m.reason}`}
                               </span>
-                              <span className="block truncate text-[11px] text-zinc-400">{qualityLabel(m.track)}</span>
+                              <span className="block truncate text-[11px] text-zinc-400">
+                                {qualityLabel(m.track)}
+                                {canReplace(m) ? (
+                                  <span
+                                    title={`Storage now ${formatFileSize(storedBytes(m.track))}, ${formatFileSize(task.duplicate!.upload.storageBytes)} after, iOS copy included`}
+                                  >
+                                    {` · ${formatSizeChange(task.duplicate!.upload.storageBytes - storedBytes(m.track))} if replaced`}
+                                  </span>
+                                ) : null}
+                              </span>
                             </span>
                             {canReplace(m) && (
                               <Button

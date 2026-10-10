@@ -32,6 +32,15 @@ export function formatFileSize(bytes: number): string {
   return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`
 }
 
+export function storedBytes(t: Pick<Track, "fileSize" | "compatibleFileSize">): number {
+  return (t.fileSize || 0) + (t.compatibleFileSize || 0)
+}
+
+export function formatSizeChange(bytes: number): string {
+  if (Math.abs(bytes) < 1024) return "same size"
+  return `${bytes > 0 ? "+" : "−"}${formatFileSize(Math.abs(bytes))}`
+}
+
 export function formatRelativeDate(iso: string): string {
   const then = new Date(iso).getTime()
   if (!Number.isFinite(then)) return ""
