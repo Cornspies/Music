@@ -19,6 +19,7 @@ import { CoverArt } from "@/components/music/CoverArt"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackList } from "@/components/music/TrackList"
 import { TrackMenu } from "@/components/music/TrackMenu"
+import { JumpLink } from "@/components/music/TrackRow"
 import { useContextMenu } from "@/components/music/MenuAtPoint"
 import { Button } from "@/components/ui/button"
 
@@ -89,7 +90,13 @@ function RecentCard({ track, queue }: { track: Track; queue: Track[] }) {
       <div className="mt-2 flex items-start gap-1">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-zinc-100">{track.title}</p>
-          <p className="mt-0.5 truncate text-xs text-zinc-400">{track.artist || "Unknown artist"}</p>
+          <p className="mt-0.5 truncate text-xs text-zinc-400">
+            {track.artist ? (
+              <JumpLink label={track.artist} onOpen={() => useUIStore.getState().navigate("artist", track.artist)} />
+            ) : (
+              "Unknown artist"
+            )}
+          </p>
         </div>
         <TrackMenu
           track={track}

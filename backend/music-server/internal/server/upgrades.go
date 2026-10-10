@@ -23,6 +23,7 @@ const (
 	upgradeMaxErrors  = 5
 	upgradeSearchHits = 6
 	upgradeFetchLimit = 5 * time.Minute
+	flacSizeRatio     = 0.6
 )
 
 type audioQuality struct {
@@ -38,6 +39,23 @@ var codecWeight = map[string]float64{
 }
 
 func (q audioQuality) lossless() bool { return q.Codec == "flac" || q.Codec == "wav" }
+
+var codecExt = map[string]string{
+	"mp3":    ".mp3",
+	"aac":    ".m4a",
+	"vorbis": ".ogg",
+	"opus":   ".opus",
+	"flac":   ".flac",
+	"wav":    ".wav",
+}
+
+func (q audioQuality) storageBytes(duration float64) int64 {
+	kbps := float64(q.Kbps)
+	if q.Codec == "flac" {
+		kbps *= flacSizeRatio
+	}
+	return int64(duration*kbps*1000/8) + compatibleCopyBytes(codecExt[q.Codec], duration)
+}
 
 func (q audioQuality) effective() float64 {
 	if q.lossless() {
@@ -147,11 +165,12 @@ func fileQuality(mimeType, path string, size int64, duration float64) audioQuali
 }
 
 type UpgradeCandidate struct {
-	Track     Track          `json:"track"`
-	Current   audioQuality   `json:"current"`
-	Found     discoverResult `json:"found"`
-	Quality   audioQuality   `json:"quality"`
-	SourceKey string         `json:"source"`
+	Track          Track          `json:"track"`
+	Current        audioQuality   `json:"current"`
+	Found          discoverResult `json:"found"`
+	Quality        audioQuality   `json:"quality"`
+	SourceKey      string         `json:"source"`
+	EstimatedBytes int64          `json:"estimatedBytes"`
 }
 
 type UpgradeStatus struct {
@@ -346,7 +365,14 @@ func (s *Server) findUpgrade(ctx context.Context, viewerID string, src source, p
 		if err != nil {
 			return nil, err
 		}
-		return &UpgradeCandidate{Track: *track, Current: current, Found: *match, Quality: q, SourceKey: src.key()}, nil
+		duration := t.duration
+		if duration <= 0 {
+			duration = match.Duration
+		}
+		return &UpgradeCandidate{
+			Track: *track, Current: current, Found: *match, Quality: q, SourceKey: src.key(),
+			EstimatedBytes: q.storageBytes(duration),
+		}, nil
 	}
 	return nil, nil
 }
@@ -419,8 +445,12 @@ func sameRecording(t upgradeTrack, r discoverResult) bool {
 	if want == "" {
 		return false
 	}
-	got := coreTitle(stripArtistPrefix(r.Title, r.Artist, t.artist))
+	theirs := stripArtistPrefix(r.Title, r.Artist, t.artist)
+	got := coreTitle(theirs)
 	if got != want && !(len(want) >= 4 && hasWord(got, want)) {
+		return false
+	}
+	if titleTags(t.title) != titleTags(theirs) {
 		return false
 	}
 	ownTitle := normalizeForMatch(t.title)

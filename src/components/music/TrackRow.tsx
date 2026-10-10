@@ -15,7 +15,7 @@ import { EqualizerButton } from "@/components/music/EqualizerIcon"
 import { TrackMenu } from "@/components/music/TrackMenu"
 import { useContextMenu } from "@/components/music/MenuAtPoint"
 
-function JumpLink({ label, onOpen }: { label: string; onOpen: () => void }) {
+export function JumpLink({ label, onOpen }: { label: string; onOpen: () => void }) {
   return (
     <button
       type="button"

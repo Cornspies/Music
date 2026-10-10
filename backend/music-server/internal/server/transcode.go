@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ var needsCompatibleCopy = map[string]bool{
 const (
 	compatibleExt    = ".m4a"
 	compatibleMime   = "audio/mp4"
+	compatibleKbps   = 256
 	transcodeTimeout = time.Hour
 )
 
@@ -53,6 +55,14 @@ func ffmpegBinary() string {
 }
 
 func TranscodingAvailable() bool { return ffmpegBinary() != "" }
+
+func compatibleCopyBytes(ext string, duration float64) int64 {
+	if !needsCompatibleCopy[strings.ToLower(ext)] || duration <= 0 ||
+		config.Flag("MUSIC_DISABLE_TRANSCODE") || !TranscodingAvailable() {
+		return 0
+	}
+	return int64(duration * compatibleKbps * 1000 / 8)
+}
 
 type compatibleCopy struct {
 	relPath string
@@ -87,7 +97,7 @@ func (s *Server) makeCompatibleCopy(parent context.Context, trackID, originalRel
 		"-nostdin", "-loglevel", "error",
 		"-i", filepath.Join(s.dataDir, originalRel),
 		"-vn",
-		"-c:a", "aac", "-b:a", "256k",
+		"-c:a", "aac", "-b:a", strconv.Itoa(compatibleKbps)+"k",
 		"-map_metadata", "0",
 		"-map_metadata", "0:s:0",
 		"-f", "mp4", "-movflags", "+faststart",

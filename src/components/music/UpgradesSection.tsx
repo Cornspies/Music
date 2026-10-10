@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { ArrowRight, ExternalLink, Loader2, Sparkles, X } from "lucide-react"
 import { admin } from "@/lib/api"
-import { formatRelativeDate } from "@/lib/format"
+import { formatFileSize, formatRelativeDate, formatSizeChange, storedBytes } from "@/lib/format"
 import type { AudioQuality, UpgradeCandidate, UpgradeStatus } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { CoverArt } from "@/components/music/CoverArt"
@@ -18,6 +18,10 @@ const CODECS: Record<string, string> = {
   vorbis: "Vorbis",
   flac: "FLAC",
   wav: "WAV",
+}
+
+function sizeChange(c: UpgradeCandidate): number {
+  return c.estimatedBytes - storedBytes(c.track)
 }
 
 function quality(q: AudioQuality): string {
@@ -104,6 +108,7 @@ export function UpgradesSection() {
 
   const sourceName = (key: string) => status.sources.find((s) => s.key === key)?.name ?? key
   const found = status.candidates.length
+  const totalChange = status.candidates.reduce((sum, c) => sum + sizeChange(c), 0)
 
   return (
     <section className="mt-8">
@@ -167,7 +172,7 @@ export function UpgradesSection() {
                 disabled={busy.size > 0}
                 className="h-8 text-xs text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
               >
-                Replace all {found}
+                Replace all {found} · ≈ {formatSizeChange(totalChange)}
               </Button>
             </div>
           ) : null}
@@ -190,6 +195,12 @@ export function UpgradesSection() {
                     <span className="shrink-0">{quality(c.current)}</span>
                     <ArrowRight className="size-3 shrink-0" aria-hidden="true" />
                     <span className="shrink-0 text-emerald-400">{quality(c.quality)}</span>
+                    <span
+                      className="shrink-0"
+                      title={`Storage now ${formatFileSize(storedBytes(c.track))}, about ${formatFileSize(c.estimatedBytes)} after, iOS copy included`}
+                    >
+                      · ≈ {formatSizeChange(sizeChange(c))}
+                    </span>
                     {c.found.pageUrl ? (
                       <a
                         href={c.found.pageUrl}

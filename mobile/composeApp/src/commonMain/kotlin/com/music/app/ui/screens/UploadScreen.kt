@@ -51,6 +51,7 @@ import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.MetadataReviewDialog
 import com.music.app.ui.formatBytes
 import com.music.app.ui.formatDuration
+import com.music.app.ui.formatSizeChange
 import com.music.app.ui.theme.Emerald
 import kotlinx.coroutines.launch
 
@@ -337,7 +338,14 @@ private fun UploadRow(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            qualityLabel(m.track.mimeType, m.track.fileSize, m.track.duration),
+                            listOfNotNull(
+                                qualityLabel(m.track.mimeType, m.track.fileSize, m.track.duration),
+                                if (canReplace(m.track)) {
+                                    "${formatSizeChange(dup.upload.storageBytes - m.track.fileSize - m.track.compatibleFileSize)} if replaced"
+                                } else {
+                                    null
+                                },
+                            ).joinToString(" • "),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
