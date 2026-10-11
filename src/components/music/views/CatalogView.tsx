@@ -10,6 +10,7 @@ import { routeToPath } from "@/lib/routes"
 import type {
   CatalogArtist,
   CatalogArtistPage,
+  CatalogArtistSongs,
   CatalogRelease,
   CatalogReleasePage,
   CatalogTrack,
@@ -74,12 +75,17 @@ interface FindTools {
   sourceKey: string
   setSourceKey: (k: string) => void
   states: Record<number, FindState>
+  stateOf: (t: CatalogTrack) => FindState | undefined
   finding: boolean
   job: PlaylistImport | null
   find: (tracks: CatalogTrack[]) => Promise<void>
   addOne: (track: CatalogTrack, result: DiscoverResult) => Promise<void>
   addAll: (title: string, tracks: CatalogTrack[]) => Promise<void>
+  addRelease: (key: string, title: string, tracks: () => Promise<CatalogTrack[]>) => Promise<void>
+  releaseStatus: (key: string) => ReleaseStatus | null
 }
+
+type ReleaseStatus = { state: "finding"; done: number; total: number } | { state: "adding"; job: PlaylistImport }
 
 const FindToolsContext = createContext<FindTools | null>(null)
 
@@ -94,7 +100,8 @@ function FindToolsProvider({ onImported, children }: { onImported: () => void; c
   const [sourceKey, setSourceKeyRaw] = useState("")
   const [states, setStates] = useState<Record<number, FindState>>({})
   const [finding, setFinding] = useState(false)
-  const [job, setJob] = useState<PlaylistImport | null>(null)
+  const [jobs, setJobs] = useState<Record<string, PlaylistImport>>({})
+  const [progress, setProgress] = useState<Record<string, { done: number; total: number }>>({})
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -120,6 +127,16 @@ function FindToolsProvider({ onImported, children }: { onImported: () => void; c
   }, [])
 
   const setOne = (id: number, s: FindState) => setStates((prev) => ({ ...prev, [id]: s }))
+
+  const stateOf = useCallback(
+    (t: CatalogTrack): FindState | undefined => {
+      const s = states[t.id]
+      if (s) return s
+      const hit = t.found?.find((f) => f.source === sourceKey)
+      return hit ? { state: "found", result: hit } : undefined
+    },
+    [states, sourceKey]
+  )
 
   const find = useCallback(
     async (tracks: CatalogTrack[]) => {
@@ -170,7 +187,7 @@ function FindToolsProvider({ onImported, children }: { onImported: () => void; c
       const seen = new Set<string>()
       const entries: DiscoverResult[] = []
       for (const t of tracks) {
-        const s = states[t.id]
+        const s = stateOf(t)
         if (s?.state === "found" && !seen.has(s.result.id)) {
           seen.add(s.result.id)
           entries.push(s.result)
@@ -178,37 +195,125 @@ function FindToolsProvider({ onImported, children }: { onImported: () => void; c
       }
       if (entries.length === 0) return
       try {
-        setJob(await catalog.add(sourceKey, title, entries))
+        const started = await catalog.add(sourceKey, title, entries)
+        setJobs((prev) => ({ ...prev, toolbar: started }))
       } catch (e) {
         toast.error((e as Error).message)
       }
     },
-    [states, sourceKey]
+    [stateOf, sourceKey]
+  )
+
+  const addRelease = useCallback(
+    async (key: string, title: string, load: () => Promise<CatalogTrack[]>) => {
+      if (!sourceKey) return
+      const sourceName = sources.find((x) => x.key === sourceKey)?.name ?? "the source"
+      setProgress((prev) => ({ ...prev, [key]: { done: 0, total: 0 } }))
+      const results = new Map<number, DiscoverResult>()
+      try {
+        const tracks = await load()
+        const missing = tracks.filter((t) => !t.trackId && stateOf(t)?.state !== "added")
+        if (missing.length === 0) {
+          toast("You already have all of these")
+          return
+        }
+        setProgress((prev) => ({ ...prev, [key]: { done: 0, total: missing.length } }))
+        await runPool(missing, FIND_CONCURRENCY, async (t) => {
+          const known = stateOf(t)
+          if (known?.state === "found") {
+            results.set(t.id, known.result)
+          } else {
+            setOne(t.id, { state: "finding" })
+            try {
+              const { result } = await catalog.find(sourceKey, t)
+              if (result?.trackId) setOne(t.id, { state: "added", trackId: result.trackId })
+              else if (result) {
+                results.set(t.id, result)
+                setOne(t.id, { state: "found", result })
+              } else setOne(t.id, { state: "missing" })
+            } catch (e) {
+              setOne(t.id, { state: "error", error: (e as Error).message })
+            }
+          }
+          setProgress((prev) => (prev[key] ? { ...prev, [key]: { ...prev[key], done: prev[key].done + 1 } } : prev))
+        })
+        const seen = new Set<string>()
+        const entries: DiscoverResult[] = []
+        for (const t of missing) {
+          const r = results.get(t.id)
+          if (r && !seen.has(r.id)) {
+            seen.add(r.id)
+            entries.push(r)
+          }
+        }
+        if (entries.length === 0) {
+          toast.error(`None of the missing songs are on ${sourceName}`)
+          return
+        }
+        if (entries.length < missing.length) {
+          toast(`${missing.length - entries.length} of ${missing.length} aren't on ${sourceName}; adding the rest`)
+        }
+        const started = await catalog.add(sourceKey, title, entries)
+        setJobs((prev) => ({ ...prev, [key]: started }))
+      } catch (e) {
+        toast.error((e as Error).message)
+      } finally {
+        setProgress((prev) => {
+          const next = { ...prev }
+          delete next[key]
+          return next
+        })
+      }
+    },
+    [sourceKey, sources, stateOf]
+  )
+
+  const releaseStatus = useCallback(
+    (key: string): ReleaseStatus | null => {
+      const p = progress[key]
+      if (p) return { state: "finding", ...p }
+      const j = jobs[key]
+      return j && jobActive(j) ? { state: "adding", job: j } : null
+    },
+    [progress, jobs]
   )
 
   useEffect(() => {
-    if (!job || !jobActive(job)) return
+    if (!Object.values(jobs).some(jobActive)) return
     const timer = setTimeout(async () => {
       try {
-        const fresh = (await discover.imports()).find((j) => j.id === job.id)
-        if (!fresh) return
-        setJob(fresh)
-        if (!jobActive(fresh)) {
-          await useLibraryStore.getState().fetchAll()
-          onImported()
+        const all = await discover.imports()
+        const updates: Record<string, PlaylistImport> = {}
+        const finished: PlaylistImport[] = []
+        for (const [key, j] of Object.entries(jobs)) {
+          const fresh = all.find((x) => x.id === j.id)
+          if (!fresh) continue
+          updates[key] = fresh
+          if (jobActive(j) && !jobActive(fresh)) finished.push(fresh)
+        }
+        setJobs((prev) => ({ ...prev, ...updates }))
+        if (finished.length === 0) return
+        await useLibraryStore.getState().fetchAll()
+        onImported()
+        for (const fresh of finished) {
           toast.success(
-            fresh.added > 0 ? `Added ${fresh.added} ${fresh.added === 1 ? "song" : "songs"}` : "Nothing new was added",
+            fresh.added > 0
+              ? `Added ${fresh.added} ${fresh.added === 1 ? "song" : "songs"} from ${fresh.title}`
+              : `Nothing new was added from ${fresh.title}`,
             fresh.failed > 0 ? { description: `${fresh.failed} couldn't be fetched` } : undefined
           )
         }
       } catch {}
     }, IMPORT_POLL_MS)
     return () => clearTimeout(timer)
-  }, [job, onImported])
+  }, [jobs, onImported])
 
+  const job = jobs.toolbar ?? null
   const tools = useMemo(
-    () => ({ sources, sourceKey, setSourceKey, states, finding, job, find, addOne, addAll }),
-    [sources, sourceKey, setSourceKey, states, finding, job, find, addOne, addAll]
+    () => ({
+      sources, sourceKey, setSourceKey, states, stateOf, finding, job, find, addOne, addAll, addRelease, releaseStatus,
+    }),
+    [sources, sourceKey, setSourceKey, states, stateOf, finding, job, find, addOne, addAll, addRelease, releaseStatus]
   )
   return <FindToolsContext.Provider value={tools}>{children}</FindToolsContext.Provider>
 }
@@ -398,20 +503,99 @@ function useLoaded<T>(key: string, load: (signal: AbortSignal) => Promise<T>) {
   return data
 }
 
-function haveCount(tracks: CatalogTrack[], states: Record<number, FindState>): number {
-  return tracks.filter((t) => t.trackId || states[t.id]?.state === "added").length
+function titleKey(title: string): string {
+  return title.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "")
 }
 
-function missingTracks(tracks: CatalogTrack[], states: Record<number, FindState>): CatalogTrack[] {
-  return tracks.filter((t) => !t.trackId && states[t.id]?.state !== "added")
+function sameLength(a: number, b: number): boolean {
+  return !a || !b || Math.abs(a - b) <= 8
 }
 
-function foundCount(tracks: CatalogTrack[], states: Record<number, FindState>): number {
-  return tracks.filter((t) => !t.trackId && states[t.id]?.state === "found").length
+function haveCount(tracks: CatalogTrack[], tools: FindTools): number {
+  return tracks.filter((t) => t.trackId || tools.stateOf(t)?.state === "added").length
+}
+
+function missingTracks(tracks: CatalogTrack[], tools: FindTools): CatalogTrack[] {
+  return tracks.filter((t) => !t.trackId && tools.stateOf(t)?.state !== "added")
+}
+
+function foundCount(tracks: CatalogTrack[], tools: FindTools): number {
+  return tracks.filter((t) => !t.trackId && tools.stateOf(t)?.state === "found").length
+}
+
+const SOURCE_BADGES: Record<string, { label: string; className: string }> = {
+  deezer: { label: "Deezer", className: "bg-violet-500/15 text-violet-300 hover:bg-violet-500/25" },
+  youtube: { label: "YouTube", className: "bg-red-500/15 text-red-300 hover:bg-red-500/25" },
+  soundcloud: { label: "SoundCloud", className: "bg-orange-500/15 text-orange-300 hover:bg-orange-500/25" },
+}
+
+function SourceBadges({ found }: { found: DiscoverResult[] }) {
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {found.map((f) => {
+        const style = SOURCE_BADGES[f.source] ?? { label: f.source, className: "bg-zinc-800 text-zinc-300" }
+        return (
+          <a
+            key={`${f.source}:${f.id}`}
+            href={f.pageUrl || undefined}
+            target="_blank"
+            rel="noreferrer"
+            title={`On ${style.label}: ${f.artist} – ${f.title}${f.album ? ` (${f.album})` : ""}`}
+            onClick={(e) => e.stopPropagation()}
+            className={cn("rounded px-1.5 text-[10px] leading-4 font-medium transition-colors", style.className)}
+          >
+            {style.label}
+          </a>
+        )
+      })}
+    </span>
+  )
+}
+
+function SourceSummary({ songs }: { songs: CatalogArtistSongs }) {
+  return (
+    <p className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500">
+      {songs.sources.map((src) => (
+        <span key={src.key} title={src.error} className={cn(src.error && "text-red-400/80")}>
+          {src.name} {src.error ? `· ${src.error}` : `· ${src.count}`}
+        </span>
+      ))}
+    </p>
+  )
 }
 
 function ArtistPage({ id, reload }: { id: string; reload: number }) {
   const page = useLoaded<CatalogArtistPage>(`${id}|${reload}`, (signal) => catalog.artist(id, signal))
+  const songs = useLoaded<CatalogArtistSongs>(`${id}|${reload}|songs`, (signal) => catalog.artistSongs(id, signal))
+  const merged = useMemo(() => {
+    if (!songs.value) return null
+    const used = new Set<number>()
+    return songs.value.songs.map((s, i) => {
+      const sid = s.id && !used.has(s.id) ? s.id : -(i + 1)
+      used.add(sid)
+      return { ...s, id: sid }
+    })
+  }, [songs.value])
+  const known = useMemo(() => {
+    const byId = new Map<number, CatalogTrack>()
+    const byTitle = new Map<string, CatalogTrack[]>()
+    for (const song of merged ?? []) {
+      if (song.id > 0) byId.set(song.id, song)
+      for (const f of song.found ?? []) if (f.source === "deezer") byId.set(Number(f.id), song)
+      const key = titleKey(song.title)
+      byTitle.set(key, [...(byTitle.get(key) ?? []), song])
+    }
+    return { byId, byTitle }
+  }, [merged])
+  const withFound = useCallback(
+    (tracks: CatalogTrack[]) =>
+      tracks.map((t) => {
+        const song =
+          known.byId.get(t.id) ?? known.byTitle.get(titleKey(t.title))?.find((x) => sameLength(x.duration, t.duration))
+        return song ? { ...t, found: t.found ?? song.found, trackId: t.trackId || song.trackId } : t
+      }),
+    [known]
+  )
   const [releaseTracks, setReleaseTracks] = useState<Record<number, CatalogTrack[]>>({})
   const [open, setOpen] = useState<Set<number>>(new Set())
   const [checking, setChecking] = useState<{ done: number; total: number } | null>(null)
@@ -420,6 +604,7 @@ function ArtistPage({ id, reload }: { id: string; reload: number }) {
   const loadRelease = useCallback(async (releaseId: number, signal?: AbortSignal) => {
     const r = await catalog.release(releaseId, signal)
     setReleaseTracks((prev) => ({ ...prev, [releaseId]: r.tracks }))
+    return r.tracks
   }, [])
 
   const loadedIds = useRef<number[]>([])
@@ -460,11 +645,12 @@ function ArtistPage({ id, reload }: { id: string; reload: number }) {
   const everything = [...data.top, ...loaded]
   const unique = new Map<number, CatalogTrack>()
   for (const t of everything) unique.set(t.id, t)
-  const all = [...unique.values()]
-  const allLoaded = data.releases.every((r) => releaseTracks[r.id])
-  const have = haveCount(all, tools.states)
-  const missing = missingTracks(all, tools.states)
-  const found = foundCount(all, tools.states)
+  const all = merged ?? [...unique.values()]
+  const allLoaded = !!merged || data.releases.every((r) => releaseTracks[r.id])
+  const have = haveCount(all, tools)
+  const missing = missingTracks(all, tools)
+  const found = foundCount(all, tools)
+  const sourceCount = songs.value?.sources.filter((src) => !src.error && src.count > 0).length ?? 0
 
   return (
     <>
@@ -476,7 +662,7 @@ function ArtistPage({ id, reload }: { id: string; reload: number }) {
           <p className="text-[11px] font-semibold tracking-widest text-emerald-400/90 uppercase">Discography</p>
           <h1 className="text-3xl font-black tracking-tight wrap-break-word text-zinc-50 md:text-5xl">{data.artist.name}</h1>
           <p className="mt-2 text-sm text-zinc-400">
-            {data.releases.length} releases · {data.artist.fans.toLocaleString()} fans on Deezer
+            {data.releases.length} releases and {data.artist.fans.toLocaleString()} fans on Deezer
             {data.artist.trackCount > 0 ? (
               <>
                 {" · "}
@@ -495,9 +681,11 @@ function ArtistPage({ id, reload }: { id: string; reload: number }) {
 
       <Toolbar
         summary={
-          allLoaded
-            ? `You have ${have} of ${all.length} songs`
-            : `${Object.keys(releaseTracks).length} of ${data.releases.length} releases checked`
+          merged
+            ? `You have ${have} of ${all.length} songs found on ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`
+            : allLoaded
+              ? `You have ${have} of ${all.length} songs`
+              : `${Object.keys(releaseTracks).length} of ${data.releases.length} releases checked`
         }
         extra={
           !allLoaded ? (
@@ -519,12 +707,31 @@ function ArtistPage({ id, reload }: { id: string; reload: number }) {
         tracks={all}
       />
 
-      {data.top.length > 0 ? (
+      {merged && songs.value ? (
         <section className="mt-8">
-          <h2 className="mb-2 text-lg font-bold text-zinc-100">Popular</h2>
-          <TrackRows tracks={data.top} showAlbum />
+          <h2 className="mb-1 text-lg font-bold text-zinc-100">All songs</h2>
+          <SourceSummary songs={songs.value} />
+          <TrackRows tracks={merged} showAlbum />
         </section>
-      ) : null}
+      ) : (
+        <>
+          <p className="mt-6 flex items-center gap-2 text-xs text-zinc-500">
+            {songs.error ? (
+              <>Couldn&apos;t look on other sources: {songs.error}</>
+            ) : (
+              <>
+                <Loader2 className="size-3.5 animate-spin" /> Looking for more songs on YouTube Music and SoundCloud…
+              </>
+            )}
+          </p>
+          {data.top.length > 0 ? (
+            <section className="mt-6">
+              <h2 className="mb-2 text-lg font-bold text-zinc-100">Popular</h2>
+              <TrackRows tracks={data.top} showAlbum />
+            </section>
+          ) : null}
+        </>
+      )}
 
       {RELEASE_GROUPS.map((g) => {
         const list = data.releases.filter((r) => r.type === g.type)
@@ -537,9 +744,10 @@ function ArtistPage({ id, reload }: { id: string; reload: number }) {
                 <ReleaseRow
                   key={r.id}
                   release={r}
-                  tracks={releaseTracks[r.id]}
+                  tracks={releaseTracks[r.id] ? withFound(releaseTracks[r.id]) : undefined}
                   open={open.has(r.id)}
                   onToggle={() => toggle(r.id)}
+                  load={async () => withFound(releaseTracks[r.id] ?? (await loadRelease(r.id)))}
                 />
               ))}
             </div>
@@ -557,7 +765,7 @@ function ReleasePage({ id, reload }: { id: string; reload: number }) {
   if (!data) {
     return page.error ? <EmptyState icon={SearchX} title="Couldn't load this album" subtitle={page.error} compact /> : <Spinner />
   }
-  const have = haveCount(data.tracks, tools.states)
+  const have = haveCount(data.tracks, tools)
   return (
     <>
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:gap-6">
@@ -573,8 +781,17 @@ function ReleasePage({ id, reload }: { id: string; reload: number }) {
       </header>
       <Toolbar
         summary={`You have ${have} of ${data.tracks.length} songs`}
-        missing={missingTracks(data.tracks, tools.states)}
-        found={foundCount(data.tracks, tools.states)}
+        extra={
+          have < data.tracks.length ? (
+            <AddAllButton
+              statusKey={`release:${data.release.id}`}
+              title={`${data.release.artist} – ${data.release.title}`}
+              load={async () => data.tracks}
+            />
+          ) : null
+        }
+        missing={missingTracks(data.tracks, tools)}
+        found={foundCount(data.tracks, tools)}
         title={`${data.release.artist} – ${data.release.title}`}
         tracks={data.tracks}
       />
@@ -602,7 +819,7 @@ function Toolbar({
 }) {
   const tools = useFindTools()
   const unchecked = missing.filter((t) => {
-    const s = tools.states[t.id]?.state
+    const s = tools.stateOf(t)?.state
     return !s || s === "error"
   })
   const running = jobActive(tools.job)
@@ -651,52 +868,95 @@ function Toolbar({
   )
 }
 
+function AddAllButton({
+  statusKey,
+  title,
+  load,
+}: {
+  statusKey: string
+  title: string
+  load: () => Promise<CatalogTrack[]>
+}) {
+  const tools = useFindTools()
+  const status = tools.releaseStatus(statusKey)
+  const sourceName = tools.sources.find((x) => x.key === tools.sourceKey)?.name ?? "the source"
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={!!status || !tools.sourceKey}
+      onClick={() => tools.addRelease(statusKey, title, load)}
+      title={`Find the songs you're missing on ${sourceName} and add them all`}
+      className="h-8 shrink-0 border-zinc-700 bg-zinc-900/60 px-3 text-xs text-zinc-200 hover:bg-zinc-800 hover:text-emerald-300"
+    >
+      {status ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+      {status?.state === "finding"
+        ? status.total > 0
+          ? `Finding ${status.done} of ${status.total}`
+          : "Loading…"
+        : status?.state === "adding"
+          ? `Adding ${status.job.done} of ${status.job.total}`
+          : "Add all"}
+    </Button>
+  )
+}
+
 function ReleaseRow({
   release,
   tracks,
   open,
   onToggle,
+  load,
 }: {
   release: CatalogRelease
   tracks?: CatalogTrack[]
   open: boolean
   onToggle: () => void
+  load: () => Promise<CatalogTrack[]>
 }) {
   const tools = useFindTools()
-  const have = tracks ? haveCount(tracks, tools.states) : null
+  const have = tracks ? haveCount(tracks, tools) : null
   const complete = tracks && have === tracks.length
+  const canAddAll = (release.type === "album" || release.type === "ep") && !complete
+  const songCount = tracks?.length || release.trackCount
   return (
     <div className={cn("rounded-lg", open && "bg-zinc-900/50")}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-zinc-800/60"
-      >
-        <ReleaseArt release={release} className="w-12 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-zinc-100">{release.title}</p>
-          <p className="truncate text-xs text-zinc-500">
-            {release.year ? `${release.year} · ` : ""}
-            {release.trackCount} {release.trackCount === 1 ? "song" : "songs"}
-          </p>
-        </div>
-        {have !== null && tracks ? (
-          <span
-            className={cn(
-              "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-              complete
-                ? "bg-emerald-500/15 text-emerald-300"
-                : have > 0
-                  ? "bg-amber-500/10 text-amber-300"
-                  : "bg-zinc-800 text-zinc-400"
-            )}
-          >
-            {complete ? "Complete" : `${have}/${tracks.length}`}
-          </span>
+      <div className="flex items-center gap-2 pr-2">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-zinc-800/60"
+        >
+          <ReleaseArt release={release} className="w-12 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-zinc-100">{release.title}</p>
+            <p className="truncate text-xs text-zinc-500">
+              {[release.year || "", songCount ? `${songCount} ${songCount === 1 ? "song" : "songs"}` : ""]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          </div>
+          {have !== null && tracks ? (
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
+                complete
+                  ? "bg-emerald-500/15 text-emerald-300"
+                  : have > 0
+                    ? "bg-amber-500/10 text-amber-300"
+                    : "bg-zinc-800 text-zinc-400"
+              )}
+            >
+              {complete ? "Complete" : `${have}/${tracks.length}`}
+            </span>
+          ) : null}
+          <ChevronDown className={cn("size-4 shrink-0 text-zinc-500 transition-transform", open && "rotate-180")} />
+        </button>
+        {canAddAll ? (
+          <AddAllButton statusKey={`release:${release.id}`} title={`${release.artist} – ${release.title}`} load={load} />
         ) : null}
-        <ChevronDown className={cn("size-4 shrink-0 text-zinc-500 transition-transform", open && "rotate-180")} />
-      </button>
+      </div>
       {open ? (
         <div className="px-2 pb-2">{tracks ? <TrackRows tracks={tracks} /> : <Spinner />}</div>
       ) : null}
@@ -716,7 +976,7 @@ function TrackRows({ tracks, showAlbum = false }: { tracks: CatalogTrack[]; show
 
 function CatalogTrackRow({ track, index, showAlbum }: { track: CatalogTrack; index: number; showAlbum: boolean }) {
   const tools = useFindTools()
-  const s = tools.states[track.id]
+  const s = tools.stateOf(track)
   const libraryId = track.trackId || (s?.state === "added" ? s.trackId : "")
   const sourceName = tools.sources.find((x) => x.key === tools.sourceKey)?.name ?? "the source"
 
@@ -800,7 +1060,9 @@ function CatalogTrackRow({ track, index, showAlbum }: { track: CatalogTrack; ind
         <p className="truncate text-xs text-zinc-500">
           {track.artist}
           {showAlbum && track.album ? ` · ${track.album}` : ""}
+          {showAlbum && track.year ? ` · ${track.year}` : ""}
         </p>
+        {track.found?.length ? <SourceBadges found={track.found} /> : null}
       </div>
       <span className="hidden w-12 shrink-0 text-right text-xs text-zinc-500 tabular-nums sm:block">
         {track.duration ? formatDuration(track.duration) : ""}

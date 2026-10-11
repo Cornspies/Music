@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight, Disc3, Play } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -33,10 +33,29 @@ export function Shelf({
   children: React.ReactNode
 }) {
   const rowRef = useRef<HTMLDivElement>(null)
+  const [edges, setEdges] = useState({ start: true, end: true })
   const scroll = (dir: 1 | -1) => {
     const el = rowRef.current
     if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: "smooth" })
   }
+
+  useEffect(() => {
+    const el = rowRef.current
+    if (!el) return
+    const update = () => {
+      const start = el.scrollLeft <= 1
+      const end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1
+      setEdges((prev) => (prev.start === start && prev.end === end ? prev : { start, end }))
+    }
+    update()
+    el.addEventListener("scroll", update, { passive: true })
+    const resize = new ResizeObserver(update)
+    resize.observe(el)
+    return () => {
+      el.removeEventListener("scroll", update)
+      resize.disconnect()
+    }
+  }, [children])
   return (
     <section className="mt-9 first:mt-6">
       <div className="mb-3 flex items-end justify-between gap-4">
@@ -50,7 +69,8 @@ export function Shelf({
             type="button"
             aria-label={`Scroll ${title} back`}
             onClick={() => scroll(-1)}
-            className="hidden size-8 items-center justify-center rounded-full bg-zinc-900 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 md:flex"
+            disabled={edges.start}
+            className="hidden size-8 items-center justify-center rounded-full bg-zinc-900 text-zinc-400 transition-colors enabled:hover:bg-zinc-800 enabled:hover:text-zinc-100 disabled:cursor-default disabled:opacity-35 md:flex"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -58,7 +78,8 @@ export function Shelf({
             type="button"
             aria-label={`Scroll ${title} forward`}
             onClick={() => scroll(1)}
-            className="hidden size-8 items-center justify-center rounded-full bg-zinc-900 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 md:flex"
+            disabled={edges.end}
+            className="hidden size-8 items-center justify-center rounded-full bg-zinc-900 text-zinc-400 transition-colors enabled:hover:bg-zinc-800 enabled:hover:text-zinc-100 disabled:cursor-default disabled:opacity-35 md:flex"
           >
             <ChevronRight className="size-4" />
           </button>

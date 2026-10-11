@@ -23,6 +23,9 @@ const (
 	dzpubCacheTTL  = 6 * time.Hour
 	dzpubCacheSize = 3000
 	catalogMaxRels = 300
+
+	catalogArtistSlack = 15.0
+	catalogLengthSlack = 4.0
 )
 
 var errCatalogOff = &statusError{http.StatusNotFound, "online lookups are turned off on this server"}
@@ -253,10 +256,8 @@ func (idx libraryIndex) find(title, artist string, duration float64) string {
 		agree := artistsOverlap(have, artist) ||
 			strings.Contains(normalizeForMatch(title), artistKey(have)) && artistKey(have) != ""
 		lengthsKnown := duration > 0 && t.Duration > 0
-		if lengthsKnown && math.Abs(t.Duration-duration) > 4 {
-			continue
-		}
-		if agree || have == "" && lengthsKnown {
+		gap := math.Abs(t.Duration - duration)
+		if agree && (!lengthsKnown || gap <= catalogArtistSlack) || have == "" && lengthsKnown && gap <= catalogLengthSlack {
 			return t.ID
 		}
 	}

@@ -4,6 +4,7 @@ import { create } from "zustand"
 import type { Track } from "@/lib/types"
 import type { TrackSort } from "@/stores/library"
 import { routeToPath } from "@/lib/routes"
+import { api } from "@/lib/api"
 
 export type View =
   | "home"
@@ -161,5 +162,17 @@ export const useUIStore = create<UIState>()((set) => ({
   pendingPlaylistTracks: null,
   setPendingPlaylistTracks: (tracks) => set({ pendingPlaylistTracks: tracks }),
   librarySort: "plays",
-  setLibrarySort: (librarySort) => set({ librarySort }),
+  setLibrarySort: (librarySort) => {
+    set({ librarySort })
+    api("/api/prefs/librarySort", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: librarySort }),
+    }).catch(() => {})
+  },
 }))
+
+export async function loadUserPrefs() {
+  const prefs = await api<{ librarySort?: TrackSort }>("/api/prefs")
+  useUIStore.setState({ librarySort: prefs.librarySort ?? "plays" })
+}

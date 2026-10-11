@@ -119,6 +119,11 @@ func migrate(db *sql.DB) error {
 		{"tracks.analyzed_at", `ALTER TABLE tracks ADD COLUMN analyzed_at TEXT NOT NULL DEFAULT ''`},
 		{"tracks.cover_source", `ALTER TABLE tracks ADD COLUMN cover_source TEXT NOT NULL DEFAULT ''`},
 		{"tracks.attention_dismissed", `ALTER TABLE tracks ADD COLUMN attention_dismissed INTEGER NOT NULL DEFAULT 0`},
+		{"tracks.codec", `ALTER TABLE tracks ADD COLUMN codec TEXT NOT NULL DEFAULT ''`},
+		{"tracks.bitrate", `ALTER TABLE tracks ADD COLUMN bitrate INTEGER NOT NULL DEFAULT 0`},
+		{"tracks.sample_rate", `ALTER TABLE tracks ADD COLUMN sample_rate INTEGER NOT NULL DEFAULT 0`},
+		{"tracks.channels", `ALTER TABLE tracks ADD COLUMN channels INTEGER NOT NULL DEFAULT 0`},
+		{"tracks.bit_depth", `ALTER TABLE tracks ADD COLUMN bit_depth INTEGER NOT NULL DEFAULT 0`},
 	}
 	for _, c := range addColumns {
 		if _, err := db.Exec(c.stmt); err != nil {
@@ -227,6 +232,13 @@ func migrate(db *sql.DB) error {
                         repeat     TEXT NOT NULL DEFAULT 'off',
                         updated_at TEXT NOT NULL,
                         PRIMARY KEY (user_id, context)
+                )`,
+		`CREATE TABLE IF NOT EXISTS user_prefs (
+                        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        key        TEXT NOT NULL,
+                        value      TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (user_id, key)
                 )`,
 	}
 	for _, s := range later {

@@ -448,7 +448,7 @@ func (s *Server) replaceTrackAudio(t *Track, oldRel string, up *pendingUpload) e
 	}
 	_, err := s.db.Exec(`UPDATE tracks SET file_name = ?, file_path = ?, mime_type = ?, file_size = ?, file_hash = ?, duration = ?,
                 alt_path = '', alt_mime = '', alt_size = 0, loudness = NULL, waveform_json = '', analyzed_at = '',
-                edges_checked = 0, updated_at = ? WHERE id = ?`,
+                edges_checked = 0, codec = '', updated_at = ? WHERE id = ?`,
 		up.fileName, newRel, up.mimeType, size, up.hash, duration, nowRFC3339(), id)
 	if err != nil {
 		if newRel != oldRel {

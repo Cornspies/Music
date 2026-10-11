@@ -65,6 +65,11 @@ type Track struct {
 	CoverColor     string   `json:"coverColor"`
 	MetadataStatus string   `json:"metadataStatus"`
 	HasWaveform    bool     `json:"hasWaveform"`
+	Codec          string   `json:"codec"`
+	Bitrate        int      `json:"bitrate"`
+	SampleRate     int      `json:"sampleRate"`
+	Channels       int      `json:"channels"`
+	BitDepth       int      `json:"bitDepth"`
 }
 
 type Uploader struct {
@@ -114,7 +119,8 @@ SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration
        COALESCE(t.alt_path, ''), COALESCE(t.alt_mime, ''), COALESCE(t.alt_size, 0),
        COALESCE(t.updated_at, ''), t.loudness, (COALESCE(t.waveform_json, '') <> ''),
        COALESCE(t.source, ''), COALESCE(t.source_id, ''), COALESCE(t.cover_color, ''),
-       CASE WHEN mj.state = 'queued' AND mj.attempts > 0 THEN 'waiting' ELSE COALESCE(mj.state, '') END
+       CASE WHEN mj.state = 'queued' AND mj.attempts > 0 THEN 'waiting' ELSE COALESCE(mj.state, '') END,
+       t.codec, t.bitrate, t.sample_rate, t.channels, t.bit_depth
 FROM tracks t
 LEFT JOIN users u ON u.id = t.user_id
 LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?
@@ -151,6 +157,7 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
 		&altPath, &t.CompatibleMime, &t.CompatibleSize,
 		&t.UpdatedAt, &loudness, &hasWaveform,
 		&t.Source, &t.SourceID, &t.CoverColor, &t.MetadataStatus,
+		&t.Codec, &t.Bitrate, &t.SampleRate, &t.Channels, &t.BitDepth,
 	)
 	if err != nil {
 		return nil, "", "", err

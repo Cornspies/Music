@@ -74,6 +74,8 @@ private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 private const val CHANGE_CHECK_INTERVAL_MS = 30_000L
 private const val PLAYBACK_SYNC_INTERVAL_MS = 5L * 60_000L
 private const val SHUFFLE_HISTORY_MAX = 500
+private const val DEFAULT_LIBRARY_SORT = "created"
+private val LIBRARY_SORTS = setOf("created", "title", "artist", "plays", "recent")
 private const val PAUSE_SETTLE_MS = 2_000L
 
 private const val SESSION_DRIFT_SEC = 1.5
@@ -185,7 +187,7 @@ class AppModel(
         private set
     var tracksError by mutableStateOf<String?>(null)
         private set
-    var tracksSort by mutableStateOf("created")
+    var tracksSort by mutableStateOf(DEFAULT_LIBRARY_SORT)
         private set
 
     var home by mutableStateOf<HomeFeed?>(null)
@@ -461,7 +463,12 @@ class AppModel(
         scope.launch {
             runCatching { api.playbackPrefs() }.onSuccess { list -> contextPrefs = list.associateBy { it.context } }
         }
-        scope.launch { loadLibraryInternal(tracksSort) }
+        scope.launch {
+            runCatching { api.userPrefs() }.onSuccess { prefs ->
+                tracksSort = prefs["librarySort"]?.takeIf { it in LIBRARY_SORTS } ?: DEFAULT_LIBRARY_SORT
+            }
+            loadLibraryInternal(tracksSort)
+        }
         scope.launch { loadStatsInternal() }
         scope.launch { loadFavoritesInternal() }
         scope.launch { loadPlaylistsInternal() }
@@ -521,6 +528,12 @@ class AppModel(
     fun loadLibrary(sort: String = tracksSort) {
         tracksSort = sort
         scope.launch { loadLibraryInternal(sort) }
+    }
+
+    fun setLibrarySort(sort: String) {
+        if (sort !in LIBRARY_SORTS) return
+        loadLibrary(sort)
+        scope.launch { runCatching { api.saveUserPref("librarySort", sort) } }
     }
 
     private suspend fun loadLibraryInternal(sort: String) {

@@ -61,6 +61,11 @@ data class Track(
     val sourceId: String = "",
     val coverColor: String = "",
     val metadataStatus: String = "",
+    val codec: String = "",
+    val bitrate: Int = 0,
+    val sampleRate: Int = 0,
+    val channels: Int = 0,
+    val bitDepth: Int = 0,
 )
 
 @Serializable
@@ -477,6 +482,11 @@ data class UpdatePlaylistRequest(
 @Serializable
 data class AddTrackRequest(
     val trackId: String,
+)
+
+@Serializable
+data class UserPrefValue(
+    val value: String,
 )
 
 @Serializable

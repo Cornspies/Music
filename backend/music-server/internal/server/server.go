@@ -127,6 +127,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/discover/artwork", s.requireMediaAuth(s.handleDiscoverArtwork))
 	mux.HandleFunc("GET /api/catalog/search", s.requireAuth(s.handleCatalogSearch))
 	mux.HandleFunc("GET /api/catalog/artists/{id}", s.requireAuth(s.handleCatalogArtist))
+	mux.HandleFunc("GET /api/catalog/artists/{id}/songs", s.requireAuth(s.handleCatalogArtistSongs))
 	mux.HandleFunc("GET /api/catalog/releases/{id}", s.requireAuth(s.handleCatalogRelease))
 	mux.HandleFunc("GET /api/catalog/find", s.requireAuth(s.handleCatalogFind))
 	mux.HandleFunc("POST /api/catalog/add", s.requireAuth(s.handleCatalogAdd))
@@ -218,6 +219,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/playback", s.requireAuth(s.handlePutPlayback))
 	mux.HandleFunc("GET /api/playback/prefs", s.requireAuth(s.handleListPlaybackPrefs))
 	mux.HandleFunc("PUT /api/playback/prefs", s.requireAuth(s.handlePutPlaybackPref))
+	mux.HandleFunc("GET /api/prefs", s.requireAuth(s.handleListUserPrefs))
+	mux.HandleFunc("PUT /api/prefs/{key}", s.requireAuth(s.handlePutUserPref))
 
 	mux.HandleFunc("GET /api/listen", s.requireAuth(s.handleListenCurrent))
 	mux.HandleFunc("POST /api/listen", s.requireAuth(s.handleListenCreate))

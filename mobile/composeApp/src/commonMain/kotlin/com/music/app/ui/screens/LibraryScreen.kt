@@ -60,6 +60,7 @@ private val SORT_OPTIONS = listOf(
     "title" to "Title",
     "artist" to "Artist",
     "plays" to "Most played",
+    "recent" to "Recently played",
 )
 
 @Composable
@@ -101,7 +102,7 @@ fun LibraryScreen() {
                             text = { Text(label) },
                             onClick = {
                                 sortMenuOpen = false
-                                model.loadLibrary(value)
+                                model.setLibrarySort(value)
                             },
                             trailingIcon = {
                                 if (model.tracksSort == value) {

@@ -401,6 +401,18 @@ class ApiClient(private val store: TokenStore) {
 
     suspend fun playbackPrefs(): List<PlaybackPref> = getJson("/api/playback/prefs")
 
+    suspend fun userPrefs(): Map<String, String> = getJson("/api/prefs")
+
+    suspend fun saveUserPref(key: String, value: String) {
+        expectNoContent(
+            client.put(url("/api/prefs/$key")) {
+                auth()
+                headers.append(HttpHeaders.ContentType, "application/json")
+                setBody(UserPrefValue(value))
+            },
+        )
+    }
+
     suspend fun savePlaybackPref(pref: PlaybackPref) {
         expectNoContent(
             client.put(url("/api/playback/prefs")) {
