@@ -456,6 +456,9 @@ class ApiClient(private val store: TokenStore) {
         )
     }
 
+    suspend fun addPlaylistTracks(playlistId: String, trackIds: List<String>): PlaylistAddResult =
+        postJson("/api/playlists/$playlistId/tracks", AddTracksRequest(trackIds))
+
     suspend fun removePlaylistTrack(playlistId: String, trackId: String) {
         expectNoContent(client.delete(url("/api/playlists/$playlistId/tracks/$trackId")) { auth() })
     }

@@ -40,6 +40,7 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.music.app.state.AppModel
+import com.music.app.ui.components.SelectionBar
 import com.music.app.ui.components.BackHandler
 import com.music.app.ui.components.NowPlayingBar
 import com.music.app.ui.components.OfflineBanner
@@ -197,6 +198,7 @@ private fun MainScreen() {
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
                 Column {
+                    SelectionBar()
                     if (model.currentTrack != null) {
                         NowPlayingBar()
                     }

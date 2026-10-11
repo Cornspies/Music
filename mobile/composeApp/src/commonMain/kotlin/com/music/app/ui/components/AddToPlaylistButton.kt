@@ -11,12 +11,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
+import com.music.app.api.PlaylistAddResult
 import com.music.app.api.Track
 import com.music.app.api.friendlyError
 import com.music.app.ui.theme.Emerald
@@ -52,7 +55,7 @@ fun AddToPlaylistButton(track: Track, modifier: Modifier = Modifier) {
     }
 
     if (open) {
-        AddToPlaylistSheet(track = track, onDismiss = { open = false })
+        AddToPlaylistDialog(tracks = listOf(track), onDismiss = { open = false })
     }
 
     LaunchedEffect(open) {
@@ -60,15 +63,50 @@ fun AddToPlaylistButton(track: Track, modifier: Modifier = Modifier) {
     }
 }
 
+fun playlistAddMessage(result: PlaylistAddResult, count: Int, name: String): String = when {
+    result.added == 0 && count == 1 -> "Already in $name"
+    result.added == 0 -> "All of these are already in $name"
+    else -> "Added ${result.added} ${if (result.added == 1) "song" else "songs"} to $name" +
+        if (result.skipped > 0) " · ${result.skipped} already there" else ""
+}
+
 @Composable
-private fun AddToPlaylistSheet(track: Track, onDismiss: () -> Unit) {
+fun AddToPlaylistDialog(tracks: List<Track>, onDismiss: () -> Unit, onAdded: (() -> Unit)? = null) {
     val model = LocalAppModel.current
     val scope = rememberCoroutineScope()
 
+    LaunchedEffect(Unit) { if (model.playlists == null) model.loadPlaylists() }
+
     val own = (model.playlists ?: emptyList()).filter { it.isMine }
     var pending by remember { mutableStateOf<String?>(null) }
-    var added by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var added by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+
+    fun addTo(id: String, name: String, create: Boolean = false) {
+        pending = id
+        scope.launch {
+            try {
+                error = null
+                val target = if (create) model.createPlaylist(name) else null
+                val result = model.addTracksToPlaylist(target?.id ?: id, tracks)
+                val message = playlistAddMessage(result, tracks.size, target?.name ?: name)
+                if (onAdded != null) {
+                    model.notify(message)
+                    onAdded()
+                } else {
+                    added = added + ((target?.id ?: id) to if (result.added == 0) "Already there" else "Added")
+                    creating = false
+                    newName = ""
+                }
+            } catch (e: Exception) {
+                error = friendlyError(e)
+            } finally {
+                pending = null
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = { if (pending == null) onDismiss() },
@@ -76,7 +114,7 @@ private fun AddToPlaylistSheet(track: Track, onDismiss: () -> Unit) {
             Column {
                 Text("Add to playlist", fontWeight = FontWeight.Bold)
                 Text(
-                    track.title,
+                    if (tracks.size == 1) tracks[0].title else "${tracks.size} songs",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -96,18 +134,18 @@ private fun AddToPlaylistSheet(track: Track, onDismiss: () -> Unit) {
                 }
                 when {
                     model.playlists == null -> LoadingBox(Modifier.heightIn(max = 120.dp))
-                    own.isEmpty() -> Text(
+                    own.isEmpty() && !creating -> Text(
                         "No playlists yet.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     else -> LazyColumn(Modifier.heightIn(max = 320.dp)) {
                         items(own, key = { it.id }) { playlist ->
-                            val isAdded = added.contains(playlist.id)
+                            val state = added[playlist.id]
                             Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 10.dp),
+                                    .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 when {
@@ -115,7 +153,7 @@ private fun AddToPlaylistSheet(track: Track, onDismiss: () -> Unit) {
                                         Modifier.size(18.dp),
                                         strokeWidth = 2.dp,
                                     )
-                                    isAdded -> Icon(Icons.Filled.Check, contentDescription = null, tint = Emerald)
+                                    state != null -> Icon(Icons.Filled.Check, contentDescription = null, tint = Emerald)
                                     else -> Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Zinc500)
                                 }
                                 Text(
@@ -123,31 +161,47 @@ private fun AddToPlaylistSheet(track: Track, onDismiss: () -> Unit) {
                                     modifier = Modifier
                                         .weight(1f)
                                         .padding(start = 12.dp),
-                                    color = if (isAdded) Emerald else MaterialTheme.colorScheme.onSurface,
+                                    color = if (state != null) Emerald else MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 TextButton(
-                                    enabled = pending == null && !isAdded,
-                                    onClick = {
-                                        pending = playlist.id
-                                        scope.launch {
-                                            try {
-                                                error = null
-                                                model.addTrackToPlaylist(playlist.id, track.id)
-                                                added = added + playlist.id
-                                            } catch (e: Exception) {
-                                                error = friendlyError(e)
-                                            } finally {
-                                                pending = null
-                                            }
-                                        }
-                                    },
+                                    enabled = pending == null && state == null,
+                                    onClick = { addTo(playlist.id, playlist.name) },
                                 ) {
-                                    Text(if (isAdded) "Added" else "Add")
+                                    Text(state ?: "Add")
                                 }
                             }
                         }
+                    }
+                }
+                if (creating) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it.take(80) },
+                            singleLine = true,
+                            placeholder = { Text("Playlist name") },
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            enabled = pending == null && newName.isNotBlank(),
+                            onClick = { addTo("new", newName.trim(), create = true) },
+                        ) {
+                            if (pending == "new") {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text("Create")
+                            }
+                        }
+                    }
+                } else if (model.playlists != null) {
+                    TextButton(onClick = { creating = true }, enabled = pending == null) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("New playlist", modifier = Modifier.padding(start = 6.dp))
                     }
                 }
             }

@@ -1,5 +1,11 @@
 package com.music.app.ui.screens
 
+import com.music.app.ui.components.playlistAddMessage
+import com.music.app.ui.components.CoverImage
+import com.music.app.api.Track
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -170,7 +176,7 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
                     }
                 }
                 IconButton(onClick = { showAddDialog = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add tracks")
+                    Icon(Icons.Filled.Add, contentDescription = "Add songs")
                 }
             }
         }
@@ -191,10 +197,19 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
                 ErrorState(model.playlistDetailError ?: "Could not load playlist") {
                     model.loadPlaylist(screen.id)
                 }
-            detail == null || detail.tracks.isEmpty() -> EmptyState(
-                Icons.AutoMirrored.Filled.QueueMusic,
-                "Empty playlist",
-            )
+            detail == null || detail.tracks.isEmpty() -> Column(
+                Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                EmptyState(Icons.AutoMirrored.Filled.QueueMusic, "Empty playlist")
+                if (detail?.isMine == true) {
+                    Button(onClick = { showAddDialog = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(Modifier.size(4.dp))
+                        Text("Add songs")
+                    }
+                }
+            }
             else -> {
                 Row(
                     Modifier
@@ -231,15 +246,22 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
                             track = track,
                             context = detail.tracks,
                             playContext = "playlist:${detail.id}",
+                            onRemove = if (detail.isMine) {
+                                { id: String -> model.removeTrackFromPlaylist(screen.id, id) }
+                            } else {
+                                null
+                            },
                             trailing = {
-                                IconButton(onClick = {
-                                    model.removeTrackFromPlaylist(screen.id, track.id)
-                                }) {
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        contentDescription = "Remove from playlist",
-                                        tint = Zinc500,
-                                    )
+                                if (detail.isMine && !model.selecting) {
+                                    IconButton(onClick = {
+                                        model.removeTrackFromPlaylist(screen.id, track.id)
+                                    }) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = "Remove from playlist",
+                                            tint = Zinc500,
+                                        )
+                                    }
                                 }
                             },
                         )
@@ -263,18 +285,81 @@ private fun AddTracksDialog(playlistId: String, onDismiss: () -> Unit) {
     val model = LocalAppModel.current
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
-    var busyId by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var query by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { if (model.tracks == null) model.loadLibrary() }
 
     val tracks = model.tracks
-    val already = model.playlistDetail?.tracks?.map { it.id }?.toSet() ?: emptySet()
+    val detail = model.playlistDetail
+    val already = remember(detail) { detail?.tracks?.map { it.id }?.toSet() ?: emptySet() }
+    val words = remember(query) { query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() } }
+    val results = remember(tracks, words) {
+        val all = tracks.orEmpty()
+        if (words.isEmpty()) {
+            all.sortedByDescending { it.createdAt }.take(RECENT_TRACKS)
+        } else {
+            all.asSequence()
+                .filter { t ->
+                    val hay = "${t.title} ${t.artist} ${t.album}".lowercase()
+                    words.all { it in hay }
+                }
+                .take(MAX_RESULTS)
+                .toList()
+        }
+    }
+    val addable = results.filter { it.id !in already && it.id !in busy }
+
+    fun add(list: List<Track>) {
+        if (list.isEmpty()) return
+        busy = busy + list.map { it.id }
+        scope.launch {
+            error = null
+            try {
+                val name = detail?.name ?: "playlist"
+                val result = model.addTracksToPlaylist(playlistId, list)
+                if (list.size > 1) model.notify(playlistAddMessage(result, list.size, name))
+            } catch (e: Exception) {
+                error = friendlyError(e)
+            } finally {
+                busy = busy - list.map { it.id }.toSet()
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add tracks") },
+        title = { Text("Add songs") },
         text = {
             Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    placeholder = { Text("Search your library") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        when {
+                            words.isEmpty() -> "Recently added"
+                            results.isEmpty() -> "No matches"
+                            results.size >= MAX_RESULTS -> "First $MAX_RESULTS matches"
+                            results.size == 1 -> "1 match"
+                            else -> "${results.size} matches"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (words.isNotEmpty() && addable.size > 1) {
+                        TextButton(onClick = { add(addable) }) { Text("Add all ${addable.size}") }
+                    }
+                }
                 error?.let {
                     Text(
                         it,
@@ -285,65 +370,47 @@ private fun AddTracksDialog(playlistId: String, onDismiss: () -> Unit) {
                 }
                 when {
                     tracks == null -> LoadingBox(Modifier.heightIn(max = 160.dp))
-                    tracks.isEmpty() -> Text(
-                        "Your library is empty.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
                     else -> LazyColumn(
                         Modifier
                             .heightIn(max = 360.dp)
                             .fillMaxWidth(),
                     ) {
-                        items(tracks, key = { it.id }) { track ->
-                            val added = track.id in already
+                        items(results, key = { it.id }) { track ->
+                            val inside = track.id in already
                             Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 2.dp),
+                                    .clickable(enabled = !inside && track.id !in busy) { add(listOf(track)) }
+                                    .padding(vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    "${track.title}\n${track.artist.ifBlank { "Unknown artist" }}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (added) {
-                                    Icon(
+                                CoverImage(track, 40.dp)
+                                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                    Text(
+                                        track.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        track.artist.ifBlank { "Unknown artist" },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                when {
+                                    track.id in busy -> CircularProgressIndicator(
+                                        Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    inside -> Icon(
                                         Icons.Filled.Check,
                                         contentDescription = "Already in playlist",
-                                        tint = MaterialTheme.colorScheme.primary,
+                                        tint = Emerald,
                                     )
-                                } else {
-                                    IconButton(
-                                        enabled = busyId == null,
-                                        onClick = {
-                                            scope.launch {
-                                                busyId = track.id
-                                                error = null
-                                                try {
-                                                    model.addTrackToPlaylist(playlistId, track.id)
-                                                } catch (e: Exception) {
-                                                    error = e.message
-                                                } finally {
-                                                    busyId = null
-                                                }
-                                            }
-                                        },
-                                    ) {
-                                        if (busyId == track.id) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier
-                                                    .padding(10.dp)
-                                                    .height(18.dp)
-                                                    .width(18.dp),
-                                                strokeWidth = 2.dp,
-                                            )
-                                        } else {
-                                            Icon(Icons.Filled.Add, contentDescription = "Add")
-                                        }
-                                    }
+                                    else -> Icon(Icons.Filled.Add, contentDescription = "Add", tint = Zinc500)
                                 }
                             }
                         }
@@ -356,6 +423,9 @@ private fun AddTracksDialog(playlistId: String, onDismiss: () -> Unit) {
         },
     )
 }
+
+private const val RECENT_TRACKS = 30
+private const val MAX_RESULTS = 60
 
 
 @Composable
