@@ -124,6 +124,7 @@ func migrate(db *sql.DB) error {
 		{"tracks.sample_rate", `ALTER TABLE tracks ADD COLUMN sample_rate INTEGER NOT NULL DEFAULT 0`},
 		{"tracks.channels", `ALTER TABLE tracks ADD COLUMN channels INTEGER NOT NULL DEFAULT 0`},
 		{"tracks.bit_depth", `ALTER TABLE tracks ADD COLUMN bit_depth INTEGER NOT NULL DEFAULT 0`},
+		{"tracks.album_artist", `ALTER TABLE tracks ADD COLUMN album_artist TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, c := range addColumns {
 		if _, err := db.Exec(c.stmt); err != nil {

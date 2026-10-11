@@ -40,6 +40,7 @@ data class Track(
     val title: String,
     val artist: String = "",
     val album: String = "",
+    val albumArtist: String = "",
     val genre: String = "",
     val year: Int = 0,
     val trackNo: Int = 0,

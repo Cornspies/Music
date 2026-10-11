@@ -202,6 +202,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/admin/invites/{code}", s.requireAdmin(s.handleAdminDeleteInvite))
 
 	mux.HandleFunc("GET /api/albums", s.requireAuth(s.handleListAlbums))
+	mux.HandleFunc("POST /api/albums/album-artist", s.requireAuth(s.handleSetAlbumArtist))
 	mux.HandleFunc("GET /api/artists", s.requireAuth(s.handleListArtists))
 
 	mux.HandleFunc("GET /api/playlists", s.requireAuth(s.handleListPlaylists))

@@ -18,7 +18,7 @@ type FileTagDiff struct {
 	Changes []TagChange `json:"changes"`
 }
 
-var tagFields = map[string]bool{"title": true, "artist": true, "album": true, "genre": true, "year": true}
+var tagFields = map[string]bool{"title": true, "artist": true, "album": true, "albumArtist": true, "genre": true, "year": true}
 
 func fileTagChanges(t *Track, tags fileMetadata) []TagChange {
 	changes := []TagChange{}
@@ -30,6 +30,7 @@ func fileTagChanges(t *Track, tags fileMetadata) []TagChange {
 	text("title", t.Title, tags.title)
 	text("artist", t.Artist, tags.artist)
 	text("album", t.Album, tags.album)
+	text("albumArtist", t.AlbumArtist, albumArtistFor(tags.albumArtist, trimDefault(tags.artist, t.Artist)))
 	text("genre", t.Genre, tags.genre)
 	if tags.year > 0 && tags.year != t.Year {
 		current := ""
@@ -43,7 +44,7 @@ func fileTagChanges(t *Track, tags fileMetadata) []TagChange {
 
 func (s *Server) restoreFileTags(t *Track, filePath string, only map[string]bool) ([]string, error) {
 	tags := readMetadata(filepath.Join(s.dataDir, filePath))
-	title, artist, album, genre, year := t.Title, t.Artist, t.Album, t.Genre, t.Year
+	title, artist, album, albumArtist, genre, year := t.Title, t.Artist, t.Album, t.AlbumArtist, t.Genre, t.Year
 	restored := []string{}
 	for _, c := range fileTagChanges(t, tags) {
 		if only != nil && !only[c.Field] {
@@ -56,6 +57,8 @@ func (s *Server) restoreFileTags(t *Track, filePath string, only map[string]bool
 			artist = c.File
 		case "album":
 			album = c.File
+		case "albumArtist":
+			albumArtist = c.File
 		case "genre":
 			genre = c.File
 		case "year":
@@ -66,8 +69,8 @@ func (s *Server) restoreFileTags(t *Track, filePath string, only map[string]bool
 	if len(restored) == 0 {
 		return restored, nil
 	}
-	if _, err := s.db.Exec(`UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, updated_at = ? WHERE id = ?`,
-		title, artist, album, genre, year, nowRFC3339(), t.ID); err != nil {
+	if _, err := s.db.Exec(`UPDATE tracks SET title = ?, artist = ?, album = ?, album_artist = ?, genre = ?, year = ?, updated_at = ? WHERE id = ?`,
+		title, artist, album, albumArtist, genre, year, nowRFC3339(), t.ID); err != nil {
 		return nil, err
 	}
 	if title != t.Title || artist != t.Artist {

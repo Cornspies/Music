@@ -1,5 +1,7 @@
 package com.music.app.ui
 
+import com.music.app.api.Track
+
 private val artistSplit = Regex("""(?i)\s*(?:,|;|&|\s(?:feat\.?|ft\.?|featuring)\s)\s*""")
 private val nonWord = Regex("""[^\p{L}\p{N}]+""")
 
@@ -23,3 +25,6 @@ fun hasArtist(credit: String, name: String): Boolean {
     val want = artistKey(name)
     return want.isNotEmpty() && splitArtists(credit).any { artistKey(it) == want }
 }
+
+fun albumArtistOf(track: Track): String =
+    track.albumArtist.trim().ifEmpty { track.artist.ifBlank { "Unknown Artist" } }

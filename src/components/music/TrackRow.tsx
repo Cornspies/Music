@@ -3,7 +3,7 @@
 import { memo } from "react"
 import { Check, CloudDownload, Heart, Loader2, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { formatDuration } from "@/lib/format"
+import { albumArtistOf, formatDuration } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
@@ -159,7 +159,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
           <JumpLink
             label={track.album}
             onOpen={() =>
-              useUIStore.getState().navigate("album", JSON.stringify({ name: track.album, artist: track.artist }))
+              useUIStore.getState().navigate("album", JSON.stringify({ name: track.album, artist: albumArtistOf(track) }))
             }
           />
         ) : (

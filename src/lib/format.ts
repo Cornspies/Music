@@ -110,8 +110,13 @@ export const TAG_FIELD_LABELS: Record<TagChange["field"], string> = {
   title: "Title",
   artist: "Artist",
   album: "Album",
+  albumArtist: "Album artist",
   genre: "Genre",
   year: "Year",
+}
+
+export function albumArtistOf(t: Pick<Track, "albumArtist" | "artist">): string {
+  return t.albumArtist?.trim() || t.artist || "Unknown Artist"
 }
 
 const SOURCE_NAMES: Record<string, string> = {

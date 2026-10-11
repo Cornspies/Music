@@ -25,6 +25,7 @@ export interface Track {
   sourceId: string
   coverColor: string
   metadataStatus: string
+  albumArtist?: string
   codec?: string
   bitrate?: number
   sampleRate?: number
@@ -71,6 +72,7 @@ export interface Album {
   totalDuration: number
   hasCover: boolean
   coverTrackId: string
+  artistCount?: number
 }
 
 export interface Artist {
@@ -301,7 +303,7 @@ export interface SearchResults {
   playlists: Playlist[]
 }
 
-export type TrackPatch = Partial<Pick<Track, "title" | "artist" | "album" | "genre" | "year">>
+export type TrackPatch = Partial<Pick<Track, "title" | "artist" | "album" | "albumArtist" | "genre" | "year">>
 
 export interface MetadataCandidate {
   id: string
@@ -434,7 +436,7 @@ export interface InviteCheck {
 }
 
 export interface TagChange {
-  field: "title" | "artist" | "album" | "genre" | "year"
+  field: "title" | "artist" | "album" | "albumArtist" | "genre" | "year"
   current: string
   file: string
 }
@@ -604,6 +606,7 @@ export interface FieldOption {
   title: string
   artist: string
   album: string
+  albumArtist?: string
   year: number
   genre: string
   type: string

@@ -61,6 +61,7 @@ function EditTrackForm({
   const [title, setTitle] = useState(track.title)
   const [artist, setArtist] = useState(track.artist)
   const [album, setAlbum] = useState(track.album)
+  const [albumArtist, setAlbumArtist] = useState(track.albumArtist ?? "")
   const [genre, setGenre] = useState(track.genre)
   const [year, setYear] = useState(track.year ? String(track.year) : "")
   const [saving, setSaving] = useState(false)
@@ -74,6 +75,8 @@ function EditTrackForm({
 
   const pick = (field: LookupField, p: LookupPick) => {
     if (field === "album") setAlbum(p.value)
+    if (field === "albumArtist") setAlbumArtist(p.value)
+    if (field === "album" && p.albumArtist !== undefined) setAlbumArtist(p.albumArtist)
     if (field === "artist") setArtist(p.value)
     if (field === "genre") setGenre(p.value)
     if (field === "year" || p.year) setYear(String(p.year ?? p.value))
@@ -97,6 +100,7 @@ function EditTrackForm({
       title: trimmedTitle,
       artist: artist.trim(),
       album: album.trim(),
+      albumArtist: albumArtist.trim().toLowerCase() === artist.trim().toLowerCase() ? "" : albumArtist.trim(),
       genre: genre.trim(),
       year: yearNum,
     })
@@ -166,6 +170,21 @@ function EditTrackForm({
         </div>
         <div className="flex flex-col gap-2">
           <LookupLabel
+            htmlFor="edit-album-artist"
+            label="Album artist"
+            active={lookup === "albumArtist"}
+            onLookup={() => setLookup(lookup === "albumArtist" ? null : "albumArtist")}
+          />
+          <Input
+            id="edit-album-artist"
+            value={albumArtist}
+            onChange={(e) => setAlbumArtist(e.target.value)}
+            placeholder={artist.trim() ? `Same as artist (${artist.trim()})` : "Same as artist"}
+            className="border-zinc-700 bg-zinc-950/60"
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <LookupLabel
             htmlFor="edit-genre"
             label="Genre"
             active={lookup === "genre"}
@@ -218,7 +237,7 @@ function EditTrackForm({
           field={lookup}
           title={title.trim() || track.title}
           artist={artist.trim()}
-          current={{ artist, album, genre, year }[lookup]}
+          current={{ artist, album, albumArtist, genre, year }[lookup]}
           onPick={(p) => pick(lookup, p)}
           onClose={() => setLookup(null)}
         />

@@ -1,6 +1,7 @@
 package com.music.app.ui.components
 
 import com.music.app.ui.splitArtists
+import com.music.app.ui.albumArtistOf
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -377,7 +378,7 @@ fun GoToItems(track: Track, onDone: () -> Unit) {
             text = { Text("Go to album", maxLines = 1) },
             onClick = {
                 onDone()
-                model.openAlbum(track.album, track.artist)
+                model.openAlbum(track.album, albumArtistOf(track))
             },
         )
     }
