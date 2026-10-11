@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Scissors,
   Share2,
+  SquareCheck,
   Trash2,
   Undo2,
 } from "lucide-react"
@@ -25,11 +26,12 @@ import { cn } from "@/lib/utils"
 import { downloadUrl, requestMetadataLookup } from "@/lib/api"
 import type { Track } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
-import { useLibraryStore } from "@/stores/library"
+import { addTracksWithToast, useLibraryStore } from "@/stores/library"
 import { useOfflineStore } from "@/stores/offline"
 import { useAuthStore } from "@/stores/auth"
 import { useUIStore } from "@/stores/ui"
 import { inListenSession } from "@/stores/listen"
+import { selectedTracks, useSelectionStore } from "@/stores/selection"
 import { MenuAtPoint, type MenuPoint } from "@/components/music/MenuAtPoint"
 import { DeleteTrackDialog } from "@/components/music/DeleteTrackDialog"
 import { Button } from "@/components/ui/button"
@@ -59,6 +61,7 @@ interface TrackMenuProps {
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
   onRestoreAttention?: (trackId: string) => void
+  onSelect?: () => void
   triggerClassName?: string
   side?: "top" | "bottom"
   showPlay?: boolean
@@ -72,6 +75,7 @@ export function TrackMenu({
   onRemoveFromPlaylist,
   onDismissAttention,
   onRestoreAttention,
+  onSelect,
   triggerClassName,
   side = "bottom",
   showPlay = true,
@@ -99,6 +103,7 @@ export function TrackMenu({
       onRemoveFromPlaylist={onRemoveFromPlaylist}
       onDismissAttention={onDismissAttention}
       onRestoreAttention={onRestoreAttention}
+      onSelect={onSelect}
       onDelete={() => setDeleteOpen(true)}
       canManage={canManage}
       offline={{
@@ -144,6 +149,7 @@ function TrackMenuContent({
   onRemoveFromPlaylist,
   onDismissAttention,
   onRestoreAttention,
+  onSelect,
   onDelete,
   canManage,
   offline,
@@ -155,10 +161,15 @@ function TrackMenuContent({
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
   onRestoreAttention?: (trackId: string) => void
+  onSelect?: () => void
   onDelete: () => void
   canManage: boolean
   offline: { supported: boolean; downloaded: boolean; downloading: boolean }
 }) {
+  const selected = useSelectionStore((s) => s.ids.has(track.id))
+  const group = useSelectionStore((s) => (s.ids.size > 1 && s.ids.has(track.id) ? s.ids.size : 0))
+  const pick = () => (group ? selectedTracks() : [track])
+
   return (
     <DropdownMenuContent align={align} side={side} className="w-52">
       {showPlay ? (
@@ -185,19 +196,25 @@ function TrackMenuContent({
       >
         <ListEnd className="size-4" /> Add to queue
       </DropdownMenuItem>
+      {onSelect ? (
+        <DropdownMenuItem onClick={onSelect}>
+          <SquareCheck className="size-4" /> {selected ? "Deselect" : "Select"}
+        </DropdownMenuItem>
+      ) : null}
 
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
-          <ListPlus className="size-4" /> Add to playlist
+          <ListPlus className="size-4" /> {group ? `Add ${group} songs to playlist` : "Add to playlist"}
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="max-h-72 overflow-y-auto w-48">
-          <PlaylistItems track={track} />
+          <PlaylistItems pick={pick} clearAfter={group > 0} />
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
               const ui = useUIStore.getState()
-              ui.setPendingPlaylistTrack(track)
+              ui.setPendingPlaylistTracks(pick())
               ui.openPlaylistDialog({ mode: "create" })
+              if (group) useSelectionStore.getState().clear()
             }}
           >
             <ListPlus className="size-4" /> New playlist…
@@ -295,13 +312,13 @@ function TrackMenuContent({
   )
 }
 
-function PlaylistItems({ track }: { track: Track }) {
+function PlaylistItems({ pick, clearAfter }: { pick: () => Track[]; clearAfter: boolean }) {
   const playlists = useLibraryStore((s) => s.playlists)
   const own = playlists.filter((p) => p.isMine)
 
-  const addTo = async (playlistId: string, name: string) => {
-    const ok = await useLibraryStore.getState().addTrackToPlaylist(playlistId, track.id)
-    if (ok) toast.success(`Added to “${name}”`)
+  const addTo = async (playlist: { id: string; name: string }) => {
+    const ok = await addTracksWithToast(playlist, pick())
+    if (ok && clearAfter) useSelectionStore.getState().clear()
   }
 
   if (own.length === 0) {
@@ -314,7 +331,7 @@ function PlaylistItems({ track }: { track: Track }) {
   return (
     <>
       {own.map((p) => (
-        <DropdownMenuItem key={p.id} onClick={() => addTo(p.id, p.name)}>
+        <DropdownMenuItem key={p.id} onClick={() => addTo(p)}>
           <Music4 className="size-4" /> {p.name}
         </DropdownMenuItem>
       ))}

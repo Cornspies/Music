@@ -87,7 +87,19 @@ fun SearchScreen() {
     LaunchedEffect(Unit) { model.loadDiscoverSources() }
     val sources = model.discoverSources.orEmpty()
 
-    LaunchedEffect(query, source) {
+    val pendingDiscover = model.pendingDiscover
+    val knownSources = model.discoverSources
+    LaunchedEffect(pendingDiscover, knownSources) {
+        val wanted = pendingDiscover ?: return@LaunchedEffect
+        val list = knownSources ?: return@LaunchedEffect
+        if (list.isNotEmpty()) {
+            source = (list.firstOrNull { it.songs } ?: list.first()).key
+        }
+        query = wanted
+        model.pendingDiscover = null
+    }
+
+    LaunchedEffect(query, source, model.discoverSongsOnly) {
         val trimmed = query.trim()
         val src = source
         if (trimmed.isEmpty()) {
@@ -171,6 +183,18 @@ private fun SearchResults(
                     FilterChip(selected = source == s.key, onClick = { onSourceChange(s.key) }, label = { Text(s.name, maxLines = 1) })
                 }
             }
+        }
+        if (source != null && sources.firstOrNull { it.key == source }?.songs == true) {
+            FilterChip(
+                selected = model.discoverSongsOnly,
+                onClick = { model.discoverSongsOnly = !model.discoverSongsOnly },
+                label = { Text("Topic songs only", maxLines = 1) },
+                leadingIcon = if (model.discoverSongsOnly) {
+                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                } else {
+                    null
+                },
+            )
         }
         Spacer(Modifier.height(12.dp))
 

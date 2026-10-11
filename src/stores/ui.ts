@@ -72,8 +72,8 @@ interface UIState {
   playlistDialog: PlaylistDialogState
   openPlaylistDialog: (dialog: NonNullable<PlaylistDialogState>) => void
   closePlaylistDialog: () => void
-  pendingPlaylistTrack: Track | null
-  setPendingPlaylistTrack: (track: Track | null) => void
+  pendingPlaylistTracks: Track[] | null
+  setPendingPlaylistTracks: (tracks: Track[] | null) => void
   librarySort: TrackSort
   setLibrarySort: (sort: TrackSort) => void
 }
@@ -158,8 +158,8 @@ export const useUIStore = create<UIState>()((set) => ({
   playlistDialog: null,
   openPlaylistDialog: (dialog) => set({ playlistDialog: dialog }),
   closePlaylistDialog: () => set({ playlistDialog: null }),
-  pendingPlaylistTrack: null,
-  setPendingPlaylistTrack: (track) => set({ pendingPlaylistTrack: track }),
+  pendingPlaylistTracks: null,
+  setPendingPlaylistTracks: (tracks) => set({ pendingPlaylistTracks: tracks }),
   librarySort: "plays",
   setLibrarySort: (librarySort) => set({ librarySort }),
 }))

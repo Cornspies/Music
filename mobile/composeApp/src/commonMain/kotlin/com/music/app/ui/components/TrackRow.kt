@@ -1,5 +1,6 @@
 package com.music.app.ui.components
 
+import com.music.app.ui.splitArtists
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -148,6 +149,7 @@ fun TrackRow(
                     },
                 )
             }
+            GoToItems(track) { menuOpen = false }
             DropdownMenuItem(
                 text = { Text(if (sharing) "Copying link…" else "Copy share link") },
                 enabled = !sharing,
@@ -315,4 +317,30 @@ private fun shortFormat(mime: String): String = when (mime.substringBefore(';').
     "audio/wav", "audio/x-wav", "audio/wave" -> "WAV"
     "audio/aiff", "audio/x-aiff" -> "AIFF"
     else -> mime.substringAfter('/').uppercase()
+}
+
+@Composable
+fun GoToItems(track: Track, onDone: () -> Unit) {
+    val model = LocalAppModel.current
+    val artists = remember(track.artist) {
+        splitArtists(track.artist).filter { !it.equals("Unknown Artist", ignoreCase = true) }.take(4)
+    }
+    artists.forEach { name ->
+        DropdownMenuItem(
+            text = { Text("Go to $name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            onClick = {
+                onDone()
+                model.openArtist(name)
+            },
+        )
+    }
+    if (track.album.isNotBlank() && track.album != "Unknown Album") {
+        DropdownMenuItem(
+            text = { Text("Go to album", maxLines = 1) },
+            onClick = {
+                onDone()
+                model.openAlbum(track.album, track.artist)
+            },
+        )
+    }
 }

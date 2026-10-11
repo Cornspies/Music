@@ -394,6 +394,11 @@ class ApiClient(private val store: TokenStore) {
         return response.body<PlaybackSaved>().updatedAt
     }
 
+    suspend fun home(): HomeFeed = getJson("/api/home")
+
+    fun catalogImageUrl(imageUrl: String): String =
+        url("/api/catalog/image") + "?u=" + imageUrl.encodeURLParameter() + "&token=" + urlToken.encodeURLParameter()
+
     suspend fun playbackPrefs(): List<PlaybackPref> = getJson("/api/playback/prefs")
 
     suspend fun savePlaybackPref(pref: PlaybackPref) {
@@ -464,11 +469,12 @@ class ApiClient(private val store: TokenStore) {
 
     suspend fun discoverSources(): List<DiscoverSource> = getJson("/api/discover/sources")
 
-    suspend fun discoverSearch(source: String, query: String, page: Int = 1): DiscoverSearch =
+    suspend fun discoverSearch(source: String, query: String, page: Int = 1, songsOnly: Boolean = false): DiscoverSearch =
         getJson("/api/discover/search") {
             parameter("source", source)
             parameter("q", query)
             parameter("page", page)
+            if (songsOnly) parameter("only", "songs")
         }
 
     suspend fun discoverAdd(source: String, id: String): Track =

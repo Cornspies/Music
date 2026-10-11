@@ -43,7 +43,10 @@ import com.music.app.state.AppModel
 import com.music.app.ui.components.BackHandler
 import com.music.app.ui.components.NowPlayingBar
 import com.music.app.ui.components.OfflineBanner
+import com.music.app.ui.screens.AlbumScreen
+import com.music.app.ui.screens.ArtistScreen
 import com.music.app.ui.screens.DownloadsScreen
+import com.music.app.ui.screens.MixScreen
 import com.music.app.ui.screens.DuplicatesScreen
 import com.music.app.ui.screens.FavoritesScreen
 import com.music.app.ui.screens.HistoryScreen
@@ -74,6 +77,9 @@ sealed interface Screen {
     data object NowPlaying : Screen
     data object Listen : Screen
     data class PlaylistDetail(val id: String) : Screen
+    data class Mix(val id: String) : Screen
+    data class Artist(val name: String) : Screen
+    data class Album(val name: String, val artist: String) : Screen
 }
 
 val LocalAppModel = staticCompositionLocalOf<AppModel> { error("AppModel is not provided") }
@@ -219,6 +225,9 @@ private fun MainScreen() {
                         Screen.NowPlaying -> HomeScreen()
                         Screen.Listen -> ListenScreen()
                         is Screen.PlaylistDetail -> PlaylistDetailScreen(shown)
+                        is Screen.Mix -> MixScreen(shown)
+                        is Screen.Artist -> ArtistScreen(shown)
+                        is Screen.Album -> AlbumScreen(shown)
                     }
                 }
             }

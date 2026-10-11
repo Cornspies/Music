@@ -1,5 +1,7 @@
 package com.music.app.ui.screens
 
+import com.music.app.ui.components.GoToItems
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
@@ -252,14 +254,21 @@ private fun NowPlayingContent(track: Track) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    track.artist.ifBlank { "Unknown artist" } +
-                        (track.album.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Zinc400,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                var goToOpen by remember(track.id) { mutableStateOf(false) }
+                Box {
+                    Text(
+                        track.artist.ifBlank { "Unknown artist" } +
+                            (track.album.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Zinc400,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable { goToOpen = true },
+                    )
+                    DropdownMenu(expanded = goToOpen, onDismissRequest = { goToOpen = false }) {
+                        GoToItems(track) { goToOpen = false }
+                    }
+                }
             }
             IconButton(onClick = { model.toggleFavorite(track) }) {
                 Icon(

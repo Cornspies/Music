@@ -31,6 +31,8 @@ import { FavoritesView } from "@/components/music/views/FavoritesView"
 import { OfflineView } from "@/components/music/views/OfflineView"
 import { HistoryView } from "@/components/music/views/HistoryView"
 import { OfflineBanner } from "@/components/music/OfflineBanner"
+import { SelectionBar } from "@/components/music/SelectionBar"
+import { useSelectionStore } from "@/stores/selection"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -276,6 +278,7 @@ export function AppShell() {
 
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 })
+    useSelectionStore.getState().clear()
   }, [view, viewArg])
 
   useLayoutEffect(() => {
@@ -315,6 +318,7 @@ export function AppShell() {
               <Suspense fallback={null}>{renderView(view)}</Suspense>
             </div>
           )}
+          <SelectionBar />
         </main>
 
         <LyricsSidebar />

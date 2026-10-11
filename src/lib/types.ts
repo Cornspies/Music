@@ -86,6 +86,11 @@ export interface Playlist {
   isPinned: boolean
 }
 
+export interface PlaylistAddResult {
+  added: number
+  skipped: number
+}
+
 export interface PlaylistDetail extends Playlist {
   tracks: Track[]
 }

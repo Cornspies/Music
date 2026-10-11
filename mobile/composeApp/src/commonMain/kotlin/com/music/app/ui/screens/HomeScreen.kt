@@ -1,5 +1,12 @@
 package com.music.app.ui.screens
 
+import androidx.compose.material3.FilterChip
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.music.app.ui.components.ArtistCircle
+import com.music.app.ui.components.MixCard
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,14 +59,22 @@ fun HomeScreen() {
     val model = LocalAppModel.current
     LaunchedEffect(Unit) {
         model.loadStats()
+        model.loadHome()
         if (model.tracks == null) model.loadLibrary()
     }
 
     val stats = model.stats
+    val home = model.home
+    val allTracks = model.tracks
+    val byId = remember(allTracks) { allTracks.orEmpty().associateBy { it.id } }
+    var span by remember { mutableStateOf<String?>(null) }
 
     RefreshableContent(
         isRefreshing = model.tracksLoading || model.statsLoading,
-        onRefresh = { model.refreshAll() },
+        onRefresh = {
+            model.refreshAll()
+            model.loadHome()
+        },
     ) {
     LazyColumn(
         Modifier.fillMaxWidth(),
@@ -96,17 +111,90 @@ fun HomeScreen() {
             }
         }
 
-        when {
-            stats != null -> item { StatsHeader(stats) }
-            model.statsLoading -> item { LoadingBox() }
-            else -> item {
-                ErrorState(model.statsError ?: "Could not load stats") { model.loadStats() }
+        if (home != null && home.mixes.isNotEmpty()) {
+            item { SectionHeader("Mixes for you") }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(home.mixes, key = { it.id }) { mix ->
+                        MixCard(mix, byId) { model.push(Screen.Mix(mix.id)) }
+                    }
+                }
             }
         }
 
         if (stats != null && stats.recentlyPlayed.isNotEmpty()) {
             item { SectionHeader("Recently played") }
             item { RecentlyAddedRow(stats.recentlyPlayed.take(10)) }
+        }
+
+        if (home != null) {
+            val week = home.similar.week
+            val month = home.similar.month
+            val chosen = span ?: if (week.trackIds.isNotEmpty()) "week" else "month"
+            val similar = (if (chosen == "week") week else month).let { s -> s.trackIds.mapNotNull { byId[it] } to s.basedOn }
+            if (similar.first.isNotEmpty()) {
+                item {
+                    SectionHeader(
+                        if (chosen == "week") "Like what you played this week" else "Like what you played this month",
+                        trailing = if (week.trackIds.isNotEmpty() && month.trackIds.isNotEmpty()) {
+                            {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    FilterChip(selected = chosen == "week", onClick = { span = "week" }, label = { Text("Week") })
+                                    FilterChip(selected = chosen == "month", onClick = { span = "month" }, label = { Text("Month") })
+                                }
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                }
+                if (similar.second.isNotEmpty()) {
+                    item {
+                        Text(
+                            "Based on " + similar.second.joinToString(", "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                item { RecentlyAddedRow(similar.first) }
+            }
+
+            if (home.topArtists.isNotEmpty()) {
+                item { SectionHeader("Your top artists") }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 10.dp)) {
+                        items(home.topArtists, key = { it.name }) { a ->
+                            ArtistCircle(
+                                name = a.name,
+                                caption = if (a.listens > 0) "${a.listens} plays lately" else "${a.trackCount} songs",
+                                picture = a.picture,
+                            ) { model.openArtist(a.name) }
+                        }
+                    }
+                }
+            }
+
+            if (home.suggestedArtists.isNotEmpty()) {
+                item { SectionHeader("Artists you might like") }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 10.dp)) {
+                        items(home.suggestedArtists, key = { it.name }) { a ->
+                            ArtistCircle(
+                                name = a.name,
+                                caption = if (a.trackCount > 0) "${a.trackCount} in your library" else "Because you like ${a.because}",
+                                picture = a.picture,
+                            ) { model.openSuggestion(a) }
+                        }
+                    }
+                }
+            }
         }
 
         val tracks = model.tracks
@@ -138,6 +226,14 @@ fun HomeScreen() {
                 items(stats.mostPlayed, key = { it.id }) { track ->
                     TrackRow(track, stats.mostPlayed)
                 }
+            }
+        }
+
+        when {
+            stats != null -> item { StatsHeader(stats) }
+            model.statsLoading -> item { LoadingBox() }
+            else -> item {
+                ErrorState(model.statsError ?: "Could not load stats") { model.loadStats() }
             }
         }
     }
