@@ -184,10 +184,11 @@ class ApiClient(private val store: TokenStore) {
         expectNoContent(client.post(url("/api/auth/logout-all")) { auth() })
     }
 
-    suspend fun history(limit: Int = 200, since: String? = null): HistoryResponse =
+    suspend fun history(limit: Int = 200, since: String? = null, before: String? = null): HistoryResponse =
         getJson("/api/history") {
             parameter("limit", limit)
             if (!since.isNullOrBlank()) parameter("since", since)
+            if (!before.isNullOrBlank()) parameter("before", before)
         }
 
     suspend fun trackChanges(since: String?): TrackChanges =

@@ -2,6 +2,14 @@
 
 package com.music.app.ui.screens
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,22 +62,68 @@ private enum class HistoryRange(val label: String, val days: Int?) {
     ALL("All time", null),
 }
 
+private const val HISTORY_PAGE = 200
+
+private data class HistoryResult(
+    val range: HistoryRange,
+    val since: String?,
+    val data: HistoryResponse?,
+    val error: String?,
+)
+
 @Composable
 fun HistoryScreen() {
     val model = LocalAppModel.current
+    val scope = rememberCoroutineScope()
 
     var range by remember { mutableStateOf(HistoryRange.WEEK) }
-    var result by remember { mutableStateOf<Triple<HistoryRange, HistoryResponse?, String?>?>(null) }
+    var result by remember { mutableStateOf<HistoryResult?>(null) }
     var reloadTick by remember { mutableStateOf(0) }
-    val loading = result?.first != range
+    var loadingMore by remember { mutableStateOf(false) }
+    var moreError by remember { mutableStateOf<String?>(null) }
+    val loading = result?.range != range
+    val listState = rememberLazyListState()
 
     LaunchedEffect(range, reloadTick) {
         val since = range.days?.let { (Clock.System.now() - it.days).toString() }
+        moreError = null
         result = try {
-            Triple(range, model.api.history(since = since), null)
+            HistoryResult(range, since, model.api.history(HISTORY_PAGE, since), null)
         } catch (e: Exception) {
-            Triple(range, null, friendlyError(e))
+            HistoryResult(range, since, null, friendlyError(e))
         }
+    }
+
+    fun loadMore() {
+        val current = result ?: return
+        val cursor = current.data?.next ?: return
+        if (loadingMore || current.range != range) return
+        loadingMore = true
+        moreError = null
+        scope.launch {
+            try {
+                val page = model.api.history(HISTORY_PAGE, current.since, cursor)
+                val latest = result
+                if (latest != null && latest.range == current.range && latest.data?.next == cursor) {
+                    result = latest.copy(data = latest.data.copy(events = latest.data.events + page.events, next = page.next))
+                }
+            } catch (e: Exception) {
+                moreError = friendlyError(e)
+            } finally {
+                loadingMore = false
+            }
+        }
+    }
+
+    val nearEnd by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            info.totalItemsCount > 0 && last >= info.totalItemsCount - 15
+        }
+    }
+    LaunchedEffect(nearEnd, result?.data?.events?.size, moreError) {
+        if (nearEnd && moreError == null) loadMore()
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -103,7 +157,7 @@ fun HistoryScreen() {
             }
         }
 
-        val data = result?.second
+        val data = result?.data
         if (data != null && data.playCount > 0) {
             Text(
                 "${formatTotalDuration(data.listenedSeconds)} listened • ${data.playCount} plays • ${data.trackCount} tracks",
@@ -114,7 +168,7 @@ fun HistoryScreen() {
         }
         Spacer(Modifier.height(8.dp))
 
-        val error = result?.third
+        val error = result?.error
         when {
             data == null && error != null -> ErrorState(error, onRetry = { reloadTick++ })
             data == null -> LoadingBox()
@@ -125,6 +179,7 @@ fun HistoryScreen() {
             ) {
                 val queue = data.events.map { it.track }
                 LazyColumn(
+                    state = listState,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
@@ -135,6 +190,18 @@ fun HistoryScreen() {
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                    }
+                    if (data.next != null) {
+                        item(key = "more") {
+                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                val failed = moreError
+                                if (failed != null) {
+                                    TextButton(onClick = { loadMore() }) { Text("Couldn't load more · Try again") }
+                                } else {
+                                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                }
+                            }
                         }
                     }
                 }

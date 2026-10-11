@@ -16,6 +16,7 @@ type HistoryResponse struct {
 	ListenedSeconds float64     `json:"listenedSeconds"`
 	PlayCount       int         `json:"playCount"`
 	TrackCount      int         `json:"trackCount"`
+	Next            string      `json:"next,omitempty"`
 }
 
 func (s *Server) recordPlay(userID, trackID string) {
@@ -77,22 +78,28 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	beforeAt, beforeKey, _ := strings.Cut(strings.TrimSpace(q.Get("before")), "|")
 	var query string
+	var args []any
 	if distinct {
 		query = trackSelect + `
 			JOIN (SELECT track_id, MAX(played_at) AS played_at FROM play_events
 			      WHERE user_id = ? AND played_at > ? GROUP BY track_id) pe ON pe.track_id = t.id
-			ORDER BY pe.played_at DESC LIMIT ?`
+			WHERE ? = '' OR pe.played_at < ? OR (pe.played_at = ? AND t.id < ?)
+			ORDER BY pe.played_at DESC, t.id DESC LIMIT ?`
+		query = strings.Replace(query, "\nFROM tracks t", ",\n       pe.played_at, t.id\nFROM tracks t", 1)
+		args = append(trackSelectArgs(u.ID), u.ID, since, beforeAt, beforeAt, beforeAt, beforeKey, limit)
 	} else {
+		eventID, _ := strconv.ParseInt(beforeKey, 10, 64)
 		query = trackSelect + `
-			JOIN (SELECT track_id, played_at FROM play_events
-			      WHERE user_id = ? AND played_at > ?
-			      ORDER BY played_at DESC LIMIT ?) pe ON pe.track_id = t.id
-			ORDER BY pe.played_at DESC`
+			JOIN play_events pe ON pe.track_id = t.id AND pe.user_id = ? AND pe.played_at > ?
+			WHERE ? = '' OR pe.played_at < ? OR (pe.played_at = ? AND pe.id < ?)
+			ORDER BY pe.played_at DESC, pe.id DESC LIMIT ?`
+		query = strings.Replace(query, "\nFROM tracks t", ",\n       pe.played_at, CAST(pe.id AS TEXT)\nFROM tracks t", 1)
+		args = append(trackSelectArgs(u.ID), u.ID, since, beforeAt, beforeAt, beforeAt, eventID, limit)
 	}
-	query = strings.Replace(query, "\nFROM tracks t", ",\n       pe.played_at\nFROM tracks t", 1)
 
-	rows, err := s.db.Query(query, append(trackSelectArgs(u.ID), u.ID, since, limit)...)
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		s.internalErr(w, "list history", err)
 		return
@@ -100,21 +107,26 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	events := []PlayEvent{}
+	next := ""
 	for rows.Next() {
-		var playedAt string
-		t, _, _, err := scanTrackWith(rows.Scan, &playedAt)
+		var playedAt, key string
+		t, _, _, err := scanTrackWith(rows.Scan, &playedAt, &key)
 		if err != nil {
 			s.internalErr(w, "scan history", err)
 			return
 		}
 		events = append(events, PlayEvent{Track: *t, PlayedAt: playedAt})
+		next = playedAt + "|" + key
 	}
 	if err := rows.Err(); err != nil {
 		s.internalErr(w, "iterate history", err)
 		return
 	}
+	if len(events) < limit {
+		next = ""
+	}
 	writeJSON(w, http.StatusOK, HistoryResponse{
-		Events: events, ListenedSeconds: totals.seconds, PlayCount: totals.count, TrackCount: totals.tracks,
+		Events: events, ListenedSeconds: totals.seconds, PlayCount: totals.count, TrackCount: totals.tracks, Next: next,
 	})
 }
 
