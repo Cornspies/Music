@@ -17,13 +17,15 @@ import {
   Play,
   RefreshCw,
   Scissors,
+  ListMinus,
   Share2,
-  SquareCheck,
   Trash2,
   Undo2,
+  Wrench,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { downloadUrl, requestMetadataLookup } from "@/lib/api"
+import { codecName, qualityDetail } from "@/lib/format"
 import type { Track } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
 import { addTracksWithToast, useLibraryStore } from "@/stores/library"
@@ -39,6 +41,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -61,7 +64,6 @@ interface TrackMenuProps {
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
   onRestoreAttention?: (trackId: string) => void
-  onSelect?: () => void
   triggerClassName?: string
   side?: "top" | "bottom"
   showPlay?: boolean
@@ -75,7 +77,6 @@ export function TrackMenu({
   onRemoveFromPlaylist,
   onDismissAttention,
   onRestoreAttention,
-  onSelect,
   triggerClassName,
   side = "bottom",
   showPlay = true,
@@ -103,7 +104,6 @@ export function TrackMenu({
       onRemoveFromPlaylist={onRemoveFromPlaylist}
       onDismissAttention={onDismissAttention}
       onRestoreAttention={onRestoreAttention}
-      onSelect={onSelect}
       onDelete={() => setDeleteOpen(true)}
       canManage={canManage}
       offline={{
@@ -149,7 +149,6 @@ function TrackMenuContent({
   onRemoveFromPlaylist,
   onDismissAttention,
   onRestoreAttention,
-  onSelect,
   onDelete,
   canManage,
   offline,
@@ -161,25 +160,24 @@ function TrackMenuContent({
   onRemoveFromPlaylist?: (trackId: string) => void
   onDismissAttention?: (trackId: string) => void
   onRestoreAttention?: (trackId: string) => void
-  onSelect?: () => void
   onDelete: () => void
   canManage: boolean
   offline: { supported: boolean; downloaded: boolean; downloading: boolean }
 }) {
-  const selected = useSelectionStore((s) => s.ids.has(track.id))
   const group = useSelectionStore((s) => (s.ids.size > 1 && s.ids.has(track.id) ? s.ids.size : 0))
   const pick = () => (group ? selectedTracks() : [track])
 
   return (
-    <DropdownMenuContent align={align} side={side} className="w-52">
+    <DropdownMenuContent align={align} side={side} className="w-56">
+      <DropdownMenuLabel className="text-[11px] leading-snug font-normal text-zinc-500">
+        {qualityDetail(track)}
+      </DropdownMenuLabel>
+      <DropdownMenuSeparator />
       {showPlay ? (
         <DropdownMenuItem onClick={() => usePlayerStore.getState().playNow(track)}>
           <Play className="size-4" /> Play
         </DropdownMenuItem>
       ) : null}
-      <DropdownMenuItem onClick={() => useUIStore.getState().setShareTrack(track)}>
-        <Share2 className="size-4" /> Share link…
-      </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
           usePlayerStore.getState().playNext(track)
@@ -196,11 +194,6 @@ function TrackMenuContent({
       >
         <ListEnd className="size-4" /> Add to queue
       </DropdownMenuItem>
-      {onSelect ? (
-        <DropdownMenuItem onClick={onSelect}>
-          <SquareCheck className="size-4" /> {selected ? "Deselect" : "Select"}
-        </DropdownMenuItem>
-      ) : null}
 
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
@@ -221,8 +214,9 @@ function TrackMenuContent({
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-
-      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={() => useUIStore.getState().setShareTrack(track)}>
+        <Share2 className="size-4" /> Share link…
+      </DropdownMenuItem>
       {offline.supported ? (
         offline.downloading ? (
           <DropdownMenuItem onClick={() => useOfflineStore.getState().cancel(track.id)}>
@@ -238,76 +232,82 @@ function TrackMenuContent({
           </DropdownMenuItem>
         )
       ) : null}
-      {canManage ? (
-        <>
-          <DropdownMenuItem onClick={() => useUIStore.getState().setEditTrackId(track.id)}>
-            <Pencil className="size-4" /> Edit metadata…
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => {
-              requestMetadataLookup(track.id).catch((e: Error) => toast.error(e.message))
-              useUIStore.getState().setMetadataReviewTracks([track])
-            }}
-          >
-            <RefreshCw className="size-4" /> Look up metadata again
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => useUIStore.getState().setRestoreTagsTrack(track)}>
-            <Undo2 className="size-4" /> Restore tags from file…
-          </DropdownMenuItem>
-          {onDismissAttention ? (
-            <DropdownMenuItem onClick={() => onDismissAttention(track.id)}>
-              <Check className="size-4" /> Looks fine
-            </DropdownMenuItem>
-          ) : null}
-          {onRestoreAttention ? (
-            <DropdownMenuItem onClick={() => onRestoreAttention(track.id)}>
-              <Undo2 className="size-4" /> Show in Needs attention
-            </DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem onClick={() => useUIStore.getState().setTrimTrack(track)}>
-            <Scissors className="size-4" /> Trim silence…
-          </DropdownMenuItem>
-        </>
+
+      {onDismissAttention && canManage ? (
+        <DropdownMenuItem onClick={() => onDismissAttention(track.id)}>
+          <Check className="size-4" /> Looks fine
+        </DropdownMenuItem>
       ) : null}
-      <DropdownMenuItem asChild>
-        <a
-          href={downloadUrl(track, "original")}
-          download={`${track.title}${extForMime(track.mimeType)}`}
-          rel="noopener"
-        >
-          <Download className="size-4" />
-          {track.hasCompatible ? "Download original" : "Download"}
-        </a>
-      </DropdownMenuItem>
-      {track.hasCompatible ? (
-        <DropdownMenuItem asChild>
-          <a
-            href={downloadUrl(track, "compatible")}
-            download={`${track.title}.m4a`}
-            rel="noopener"
-          >
-            <Download className="size-4" /> Download AAC (plays anywhere)
-          </a>
+      {onRestoreAttention && canManage ? (
+        <DropdownMenuItem onClick={() => onRestoreAttention(track.id)}>
+          <Undo2 className="size-4" /> Show in Needs attention
+        </DropdownMenuItem>
+      ) : null}
+      {onRemoveFromPlaylist ? (
+        <DropdownMenuItem onClick={() => onRemoveFromPlaylist(track.id)}>
+          <ListMinus className="size-4" /> Remove from this playlist
         </DropdownMenuItem>
       ) : null}
 
-      {onRemoveFromPlaylist ? (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => onRemoveFromPlaylist(track.id)}>
-            <ListEnd className="size-4" /> Remove from this playlist
+      <DropdownMenuSeparator />
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger>
+          <Wrench className="size-4" /> Advanced
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="w-56">
+          {canManage ? (
+            <>
+              <DropdownMenuItem onClick={() => useUIStore.getState().setEditTrackId(track.id)}>
+                <Pencil className="size-4" /> Edit metadata…
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  requestMetadataLookup(track.id).catch((e: Error) => toast.error(e.message))
+                  useUIStore.getState().setMetadataReviewTracks([track])
+                }}
+              >
+                <RefreshCw className="size-4" /> Look up metadata again
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => useUIStore.getState().setRestoreTagsTrack(track)}>
+                <Undo2 className="size-4" /> Restore tags from file…
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => useUIStore.getState().setTrimTrack(track)}>
+                <Scissors className="size-4" /> Trim silence…
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          <DropdownMenuItem asChild>
+            <a
+              href={downloadUrl(track, "original")}
+              download={`${track.title}${extForMime(track.mimeType)}`}
+              rel="noopener"
+            >
+              <Download className="size-4" />
+              {track.hasCompatible ? `Download original (${codecName(track)})` : "Download file"}
+            </a>
           </DropdownMenuItem>
-        </>
-      ) : null}
-
-      {canManage ? (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={onDelete} className="text-red-400 focus:text-red-300">
-            <Trash2 className="size-4" /> Delete track
-          </DropdownMenuItem>
-        </>
-      ) : null}
+          {track.hasCompatible ? (
+            <DropdownMenuItem asChild>
+              <a
+                href={downloadUrl(track, "compatible")}
+                download={`${track.title}.m4a`}
+                rel="noopener"
+              >
+                <Download className="size-4" /> Download AAC (plays anywhere)
+              </a>
+            </DropdownMenuItem>
+          ) : null}
+          {canManage ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onDelete} className="text-red-400 focus:text-red-300">
+                <Trash2 className="size-4" /> Delete track
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
     </DropdownMenuContent>
   )
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,6 +51,7 @@ import com.music.app.LocalAppModel
 import com.music.app.api.Track
 import com.music.app.offline.DownloadState
 import com.music.app.ui.formatDuration
+import com.music.app.ui.qualityDetail
 import com.music.app.ui.formatTimeUntil
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc500
@@ -154,6 +156,14 @@ fun TrackRow(
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            Text(
+                qualityDetail(track),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp).widthIn(max = 260.dp),
+            )
             DropdownMenuItem(
                 text = { Text("Select") },
                 onClick = {

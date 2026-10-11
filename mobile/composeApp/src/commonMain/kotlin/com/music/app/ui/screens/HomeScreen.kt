@@ -111,6 +111,11 @@ fun HomeScreen() {
             }
         }
 
+        if (stats != null && stats.recentlyPlayed.isNotEmpty()) {
+            item { SectionHeader("Recently played") }
+            item { RecentlyAddedRow(stats.recentlyPlayed.take(10)) }
+        }
+
         if (home != null && home.mixes.isNotEmpty()) {
             item { SectionHeader("Mixes for you") }
             item {
@@ -123,11 +128,6 @@ fun HomeScreen() {
                     }
                 }
             }
-        }
-
-        if (stats != null && stats.recentlyPlayed.isNotEmpty()) {
-            item { SectionHeader("Recently played") }
-            item { RecentlyAddedRow(stats.recentlyPlayed.take(10)) }
         }
 
         if (home != null) {

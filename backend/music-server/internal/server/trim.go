@@ -205,7 +205,7 @@ func (s *Server) handleTrackTrim(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) afterAudioChanged(id, filePath string, lyricsShift float64) {
 	s.recordNewAudio(id, filePath)
-	_, _ = s.db.Exec(`UPDATE tracks SET loudness = NULL, waveform_json = '', analyzed_at = '', edges_checked = 2 WHERE id = ?`, id)
+	_, _ = s.db.Exec(`UPDATE tracks SET loudness = NULL, waveform_json = '', analyzed_at = '', edges_checked = 2, codec = '' WHERE id = ?`, id)
 	s.queueAnalysis(id)
 	if lyricsShift > 0 {
 		s.shiftSyncedLyrics(id, -lyricsShift, false)

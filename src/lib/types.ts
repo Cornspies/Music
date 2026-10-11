@@ -25,6 +25,11 @@ export interface Track {
   sourceId: string
   coverColor: string
   metadataStatus: string
+  codec?: string
+  bitrate?: number
+  sampleRate?: number
+  channels?: number
+  bitDepth?: number
 }
 
 export interface SilenceInfo {
@@ -561,6 +566,20 @@ export interface CatalogTrack {
   position?: number
   disc?: number
   trackId?: string
+  year?: number
+  found?: DiscoverResult[]
+}
+
+export interface CatalogSongSource {
+  key: string
+  name: string
+  count: number
+  error?: string
+}
+
+export interface CatalogArtistSongs {
+  songs: CatalogTrack[]
+  sources: CatalogSongSource[]
 }
 
 export interface CatalogArtistPage {

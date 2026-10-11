@@ -186,3 +186,45 @@ export function hasArtist(credit: string, name: string): boolean {
   const want = artistKey(name)
   return want !== "" && splitArtists(credit).some((a) => artistKey(a) === want)
 }
+
+const CODEC_NAMES: Record<string, string> = {
+  mp3: "MP3",
+  aac: "AAC",
+  alac: "ALAC",
+  flac: "FLAC",
+  opus: "Opus",
+  vorbis: "Vorbis",
+  wmav2: "WMA",
+  wmav1: "WMA",
+  wmapro: "WMA",
+}
+
+const MIME_NAMES: Record<string, string> = {
+  "audio/mpeg": "MP3",
+  "audio/mp4": "AAC",
+  "audio/aac": "AAC",
+  "audio/flac": "FLAC",
+  "audio/ogg": "Ogg",
+  "audio/opus": "Opus",
+  "audio/webm": "WebM",
+  "audio/wav": "WAV",
+  "audio/x-ms-wma": "WMA",
+}
+
+type AudioFormat = Pick<Track, "mimeType" | "codec" | "bitrate" | "sampleRate" | "channels" | "bitDepth">
+
+export function codecName(t: AudioFormat): string {
+  const codec = t.codec && t.codec !== "unknown" ? t.codec : ""
+  if (codec.startsWith("pcm_")) return "WAV"
+  return CODEC_NAMES[codec] ?? (codec ? codec.toUpperCase() : (MIME_NAMES[t.mimeType] ?? t.mimeType.replace(/^audio\//, "").toUpperCase()))
+}
+
+export function qualityDetail(t: AudioFormat & Pick<Track, "fileSize">): string {
+  const parts = [codecName(t)]
+  if (t.bitrate) parts.push(`${t.bitrate} kbps`)
+  if (t.sampleRate) parts.push(`${+(t.sampleRate / 1000).toFixed(1)} kHz`)
+  if (t.bitDepth) parts.push(`${t.bitDepth}-bit`)
+  if (t.channels) parts.push(t.channels === 1 ? "mono" : t.channels === 2 ? "stereo" : `${t.channels} ch`)
+  if (t.fileSize) parts.push(formatFileSize(t.fileSize))
+  return parts.join(" · ")
+}

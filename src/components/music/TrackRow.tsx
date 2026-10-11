@@ -75,7 +75,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
         selected && "bg-emerald-500/10 hover:bg-emerald-500/15 focus-visible:bg-emerald-500/15"
       )}
     >
-      <div className={cn("w-6 shrink-0 items-center justify-center", selecting ? "flex" : "hidden sm:flex")}>
+      <div className={cn("w-8 shrink-0 items-center justify-center", selecting ? "flex" : "hidden sm:flex")}>
         {selecting ? (
           <button
             type="button"
@@ -110,9 +110,9 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
                 play()
               }}
               aria-label={`Play ${track.title}`}
-              className="hidden text-zinc-200 transition-colors hover:text-emerald-400 group-hover:block"
+              className="hidden size-8 items-center justify-center rounded-full text-zinc-100 transition-colors hover:bg-zinc-700/80 hover:text-emerald-400 group-hover:flex"
             >
-              <Play className="size-3.5 fill-current" />
+              <Play className="size-4 fill-current" />
             </button>
           </>
         )}
@@ -226,7 +226,6 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
         onRemoveFromPlaylist={onRemoveFromPlaylist}
         onDismissAttention={onDismissAttention}
         onRestoreAttention={onRestoreAttention}
-        onSelect={() => select("toggle")}
         triggerClassName="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
         open={menu.open}
         onOpenChange={menu.onOpenChange}

@@ -7,6 +7,7 @@ import type { HomeFeed, LibraryPin, Playlist, PlaylistAddResult, Stats, Track, T
 import { usePlayerStore } from "@/stores/player"
 import { useMediaTokenStore } from "@/stores/media-token"
 import { useOfflineStore } from "@/stores/offline"
+import { loadUserPrefs } from "@/stores/ui"
 
 function isNetworkError(e: unknown): boolean {
   return e instanceof Error && e.message.startsWith("Network error")
@@ -73,6 +74,7 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
       get().fetchStats(),
       get().fetchPins(),
       usePlayerStore.getState().loadContextPrefs(),
+      loadUserPrefs(),
     ])
     const tracksFailed = results[0].status === "rejected" ? results[0].reason : null
     if (tracksFailed && isNetworkError(tracksFailed)) {

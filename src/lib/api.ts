@@ -36,6 +36,7 @@ import type {
   CatalogRelease,
   CatalogTrack,
   CatalogArtistPage,
+  CatalogArtistSongs,
   CatalogReleasePage,
   DiscoverResult,
   FieldOption,
@@ -486,6 +487,8 @@ export const catalog = {
     }),
   artist: (id: number | string, signal?: AbortSignal) =>
     api<CatalogArtistPage>(`/api/catalog/artists/${encodeURIComponent(String(id))}`, { signal }),
+  artistSongs: (id: number | string, signal?: AbortSignal) =>
+    api<CatalogArtistSongs>(`/api/catalog/artists/${encodeURIComponent(String(id))}/songs`, { signal }),
   release: (id: number | string, signal?: AbortSignal) =>
     api<CatalogReleasePage>(`/api/catalog/releases/${encodeURIComponent(String(id))}`, { signal }),
   find: (source: string, t: CatalogTrack, signal?: AbortSignal) =>

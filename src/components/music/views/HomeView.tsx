@@ -290,14 +290,6 @@ export function HomeView() {
           </div>
         ) : null}
 
-        {mixes.length > 0 ? (
-          <Shelf title="Mixes for you" subtitle="Fresh every day from what you listen to">
-            {mixes.map((m) => (
-              <MixCard key={m.id} mix={m} />
-            ))}
-          </Shelf>
-        ) : null}
-
         <TrackShelf
           title="Recently played"
           tracks={recentlyPlayed}
@@ -312,6 +304,14 @@ export function HomeView() {
             </Button>
           }
         />
+
+        {mixes.length > 0 ? (
+          <Shelf title="Mixes for you" subtitle="Fresh every day from what you listen to">
+            {mixes.map((m) => (
+              <MixCard key={m.id} mix={m} />
+            ))}
+          </Shelf>
+        ) : null}
 
         <TrackShelf
           title={span === "week" ? "Like what you played this week" : "Like what you played this month"}
