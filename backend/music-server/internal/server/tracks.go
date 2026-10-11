@@ -43,6 +43,7 @@ type Track struct {
 	Title          string   `json:"title"`
 	Artist         string   `json:"artist"`
 	Album          string   `json:"album"`
+	AlbumArtist    string   `json:"albumArtist"`
 	Genre          string   `json:"genre"`
 	Year           int      `json:"year"`
 	TrackNo        int      `json:"trackNo"`
@@ -120,7 +121,7 @@ SELECT t.id, t.title, t.artist, t.album, t.genre, t.year, t.track_no, t.duration
        COALESCE(t.updated_at, ''), t.loudness, (COALESCE(t.waveform_json, '') <> ''),
        COALESCE(t.source, ''), COALESCE(t.source_id, ''), COALESCE(t.cover_color, ''),
        CASE WHEN mj.state = 'queued' AND mj.attempts > 0 THEN 'waiting' ELSE COALESCE(mj.state, '') END,
-       t.codec, t.bitrate, t.sample_rate, t.channels, t.bit_depth
+       t.codec, t.bitrate, t.sample_rate, t.channels, t.bit_depth, t.album_artist
 FROM tracks t
 LEFT JOIN users u ON u.id = t.user_id
 LEFT JOIN play_stats ps ON ps.track_id = t.id AND ps.user_id = ?
@@ -157,7 +158,7 @@ func scanTrack(scan func(dest ...any) error) (*Track, string, string, error) {
 		&altPath, &t.CompatibleMime, &t.CompatibleSize,
 		&t.UpdatedAt, &loudness, &hasWaveform,
 		&t.Source, &t.SourceID, &t.CoverColor, &t.MetadataStatus,
-		&t.Codec, &t.Bitrate, &t.SampleRate, &t.Channels, &t.BitDepth,
+		&t.Codec, &t.Bitrate, &t.SampleRate, &t.Channels, &t.BitDepth, &t.AlbumArtist,
 	)
 	if err != nil {
 		return nil, "", "", err
@@ -450,11 +451,11 @@ func (s *Server) finalizeUpload(w http.ResponseWriter, r *http.Request, up *pend
 	res, err := s.db.Exec(`INSERT INTO tracks
                 (id, user_id, title, artist, album, genre, year, track_no, duration,
                  file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
-                 alt_path, alt_mime, alt_size, updated_at, file_hash, cover_source)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?)`,
+                 alt_path, alt_mime, alt_size, updated_at, file_hash, cover_source, album_artist)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)`,
 		id, u.ID, title, artist, album, meta.genre, meta.year, meta.trackNo, duration,
 		fileName, savedPath, mimeType, size, hasCover, createdAt,
-		"", "", 0, createdAt, up.hash, coverOrigin(hasCover, coverFromFile))
+		"", "", 0, createdAt, up.hash, coverOrigin(hasCover, coverFromFile), albumArtistFor(meta.albumArtist, artist))
 	if err != nil {
 		os.Remove(absPath)
 		os.Remove(filepath.Join(s.covDir, id+".img"))
@@ -602,11 +603,12 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	var body struct {
-		Title  *string `json:"title"`
-		Artist *string `json:"artist"`
-		Album  *string `json:"album"`
-		Genre  *string `json:"genre"`
-		Year   *int    `json:"year"`
+		Title       *string `json:"title"`
+		Artist      *string `json:"artist"`
+		Album       *string `json:"album"`
+		AlbumArtist *string `json:"albumArtist"`
+		Genre       *string `json:"genre"`
+		Year        *int    `json:"year"`
 	}
 	if err := jsonDecodeStrict(r, w, &body); err != nil {
 		return
@@ -629,6 +631,10 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
 	if body.Album != nil {
 		sets = append(sets, "album = ?")
 		args = append(args, trimDefault(*body.Album, "Unknown Album"))
+	}
+	if body.AlbumArtist != nil {
+		sets = append(sets, "album_artist = ?")
+		args = append(args, strings.TrimSpace(*body.AlbumArtist))
 	}
 	if body.Genre != nil {
 		sets = append(sets, "genre = ?")

@@ -29,6 +29,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { logoutEverywhere } from "@/lib/api"
+import { albumArtistOf } from "@/lib/format"
 import { isDesktop } from "@/lib/desktop"
 import type { LibraryPin } from "@/lib/types"
 import type { View } from "@/stores/ui"
@@ -180,7 +181,7 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
     const out = new Map<string, string>()
     if (wanted.size === 0) return out
     for (const t of tracks) {
-      const key = `${t.album}\n${t.artist}`
+      const key = `${t.album}\n${albumArtistOf(t)}`
       if (t.hasCover && wanted.has(key) && !out.has(key)) out.set(key, t.id)
     }
     return out

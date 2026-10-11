@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.music.app.LocalAppModel
 import com.music.app.Screen
 import com.music.app.api.Track
+import com.music.app.ui.albumArtistOf
 import com.music.app.ui.artistKey
 import com.music.app.ui.components.ArtistAvatar
 import com.music.app.ui.components.CoverImage
@@ -183,7 +184,7 @@ fun ArtistScreen(screen: Screen.Artist) {
     val albums = remember(tracks) {
         tracks
             .filter { it.album.isNotBlank() && it.album != "Unknown Album" }
-            .groupBy { it.album to it.artist }
+            .groupBy { it.album to albumArtistOf(it) }
             .map { (key, list) -> Triple(key.first, key.second, list.firstOrNull { it.hasCover } ?: list.first()) }
     }
     val home = model.home
@@ -235,7 +236,7 @@ fun AlbumScreen(screen: Screen.Album) {
     LaunchedEffect(Unit) { if (all == null) model.loadLibrary() }
     val tracks = remember(all, screen) {
         all.orEmpty()
-            .filter { it.album == screen.name && it.artist == screen.artist }
+            .filter { it.album == screen.name && albumArtistOf(it) == screen.artist }
             .sortedWith(compareBy({ it.trackNo.takeIf { n -> n > 0 } ?: Int.MAX_VALUE }, { it.title.lowercase() }))
     }
     if (all == null) {
@@ -246,7 +247,11 @@ fun AlbumScreen(screen: Screen.Album) {
     CollectionLayout(
         eyebrow = "Album",
         title = screen.name,
-        subtitle = "${screen.artist.ifBlank { "Unknown artist" }} · ${summary(tracks)}",
+        subtitle = listOfNotNull(
+            screen.artist.ifBlank { "Unknown artist" },
+            tracks.map { it.artist }.distinct().size.takeIf { it > 1 }?.let { "$it artists" },
+            summary(tracks),
+        ).joinToString(" · "),
         tracks = tracks,
         playContext = albumContext(screen.name, screen.artist),
         art = {

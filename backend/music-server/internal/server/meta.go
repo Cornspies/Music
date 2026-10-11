@@ -10,14 +10,15 @@ import (
 )
 
 type fileMetadata struct {
-	title    string
-	artist   string
-	album    string
-	genre    string
-	year     int
-	trackNo  int
-	duration float64
-	picture  []byte
+	title       string
+	artist      string
+	album       string
+	albumArtist string
+	genre       string
+	year        int
+	trackNo     int
+	duration    float64
+	picture     []byte
 }
 
 func readMetadata(path string) fileMetadata {
@@ -28,6 +29,7 @@ func readMetadata(path string) fileMetadata {
 			meta.title = strings.TrimSpace(m.Title())
 			meta.artist = strings.TrimSpace(m.Artist())
 			meta.album = strings.TrimSpace(m.Album())
+			meta.albumArtist = strings.TrimSpace(m.AlbumArtist())
 			meta.genre = strings.TrimSpace(m.Genre())
 			meta.year = m.Year()
 			track, _ := m.Track()
@@ -68,4 +70,12 @@ func mp3DurationSeconds(path string) float64 {
 		return sec
 	}
 	return 0
+}
+
+func albumArtistFor(albumArtist, artist string) string {
+	albumArtist = strings.TrimSpace(albumArtist)
+	if strings.EqualFold(albumArtist, strings.TrimSpace(artist)) {
+		return ""
+	}
+	return albumArtist
 }

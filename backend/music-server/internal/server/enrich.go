@@ -84,6 +84,7 @@ const coverMatchThreshold = 0.75
 
 type metadataCandidate struct {
 	title, artist, album, genre string
+	albumArtist                 string
 	year                        int
 	durationSec                 float64
 	artworkURL                  string
@@ -204,6 +205,10 @@ func applyCandidate(ctx context.Context, meta *fileMetadata, c metadataCandidate
 	if c.album != "" && (overwrite || meta.album == "") {
 		meta.album = strings.TrimSpace(c.album)
 		filled = append(filled, "album")
+	}
+	if c.albumArtist != "" && (overwrite || meta.albumArtist == "") {
+		meta.albumArtist = strings.TrimSpace(c.albumArtist)
+		filled = append(filled, "album artist")
 	}
 	if c.genre != "" && (overwrite || meta.genre == "") {
 		meta.genre = strings.TrimSpace(c.genre)
@@ -378,6 +383,7 @@ type itunesSearchResponse struct {
 		TrackName        string  `json:"trackName"`
 		ArtistName       string  `json:"artistName"`
 		CollectionName   string  `json:"collectionName"`
+		CollectionArtist string  `json:"collectionArtistName"`
 		PrimaryGenreName string  `json:"primaryGenreName"`
 		ReleaseDate      string  `json:"releaseDate"`
 		ArtworkURL100    string  `json:"artworkUrl100"`
@@ -411,7 +417,8 @@ func searchItunes(ctx context.Context, query string) ([]metadataCandidate, error
 		}
 		out = append(out, metadataCandidate{
 			title: r.TrackName, artist: r.ArtistName, album: r.CollectionName,
-			genre: r.PrimaryGenreName, year: parseReleaseYear(r.ReleaseDate),
+			albumArtist: albumArtistFor(r.CollectionArtist, r.ArtistName),
+			genre:       r.PrimaryGenreName, year: parseReleaseYear(r.ReleaseDate),
 			durationSec: r.TrackTimeMillis / 1000, artworkURL: artURL, source: "iTunes",
 		})
 	}

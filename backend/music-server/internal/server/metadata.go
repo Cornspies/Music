@@ -14,17 +14,18 @@ import (
 )
 
 type MetadataCandidate struct {
-	ID         string  `json:"id"`
-	Source     string  `json:"source"`
-	Title      string  `json:"title"`
-	Artist     string  `json:"artist"`
-	Album      string  `json:"album"`
-	Genre      string  `json:"genre"`
-	Year       int     `json:"year"`
-	Duration   float64 `json:"duration"`
-	HasArtwork bool    `json:"hasArtwork"`
-	Confidence float64 `json:"confidence"`
-	Applied    bool    `json:"applied"`
+	ID          string  `json:"id"`
+	Source      string  `json:"source"`
+	Title       string  `json:"title"`
+	Artist      string  `json:"artist"`
+	Album       string  `json:"album"`
+	AlbumArtist string  `json:"albumArtist,omitempty"`
+	Genre       string  `json:"genre"`
+	Year        int     `json:"year"`
+	Duration    float64 `json:"duration"`
+	HasArtwork  bool    `json:"hasArtwork"`
+	Confidence  float64 `json:"confidence"`
+	Applied     bool    `json:"applied"`
 }
 
 type MetadataCandidatesResponse struct {
@@ -44,7 +45,7 @@ func toJSONCandidates(cands []scoredCandidate, appliedID string) []MetadataCandi
 	for _, c := range cands {
 		out = append(out, MetadataCandidate{
 			ID: c.id, Source: c.source, Title: c.title, Artist: c.artist,
-			Album: c.album, Genre: c.genre, Year: c.year, Duration: c.durationSec,
+			Album: c.album, AlbumArtist: c.albumArtist, Genre: c.genre, Year: c.year, Duration: c.durationSec,
 			HasArtwork: c.artURL() != "", Confidence: c.score, Applied: c.id == appliedID,
 		})
 	}
@@ -286,8 +287,9 @@ func (s *Server) applyChosenCandidate(ctx context.Context, track *Track, chosen 
 
 	if _, err := s.db.Exec(
 		`UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, has_cover = ?, updated_at = ?,
-		cover_source = CASE WHEN ? = 1 THEN ? ELSE cover_source END WHERE id = ?`,
-		title, artist, album, genre, year, boolToInt(hasCover), nowRFC3339(), boolToInt(wroteCover), coverSource, id,
+		cover_source = CASE WHEN ? = 1 THEN ? ELSE cover_source END, `+albumArtistUpdate+` WHERE id = ?`,
+		title, artist, album, genre, year, boolToInt(hasCover), nowRFC3339(), boolToInt(wroteCover), coverSource,
+		albumArtistFor(meta.albumArtist, artist), albumArtistFor(meta.albumArtist, artist), album, id,
 	); err != nil {
 		return err
 	}

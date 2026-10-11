@@ -63,6 +63,7 @@ type persistedCandidate struct {
 	Title    string  `json:"title"`
 	Artist   string  `json:"artist"`
 	Album    string  `json:"album"`
+	AlbumArt string  `json:"albumArtist,omitempty"`
 	Genre    string  `json:"genre"`
 	Year     int     `json:"year"`
 	Duration float64 `json:"duration"`
@@ -75,7 +76,7 @@ func marshalCandidates(cands []scoredCandidate) string {
 	out := make([]persistedCandidate, 0, len(cands))
 	for _, c := range cands {
 		out = append(out, persistedCandidate{
-			ID: c.id, Source: c.source, Title: c.title, Artist: c.artist, Album: c.album, Genre: c.genre,
+			ID: c.id, Source: c.source, Title: c.title, Artist: c.artist, Album: c.album, AlbumArt: c.albumArtist, Genre: c.genre,
 			Year: c.year, Duration: c.durationSec, Artwork: c.artworkURL, CAA: c.coverArtArchiveReleaseID, Score: c.score,
 		})
 	}
@@ -92,7 +93,7 @@ func unmarshalCandidates(raw string) []scoredCandidate {
 	for _, p := range in {
 		out = append(out, scoredCandidate{
 			metadataCandidate: metadataCandidate{
-				title: p.Title, artist: p.Artist, album: p.Album, genre: p.Genre, year: p.Year,
+				title: p.Title, artist: p.Artist, album: p.Album, albumArtist: p.AlbumArt, genre: p.Genre, year: p.Year,
 				durationSec: p.Duration, artworkURL: p.Artwork, coverArtArchiveReleaseID: p.CAA, source: p.Source,
 			},
 			id: p.ID, score: p.Score,
@@ -325,8 +326,9 @@ func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMeta
 	artist := trimDefault(meta.artist, "Unknown Artist")
 	album := trimDefault(meta.album, "Unknown Album")
 	if _, err := s.db.Exec(`UPDATE tracks SET title = ?, artist = ?, album = ?, genre = ?, year = ?, has_cover = ?, updated_at = ?,
-		cover_source = CASE WHEN ? = 1 THEN ? ELSE cover_source END WHERE id = ?`,
-		title, artist, album, meta.genre, meta.year, boolToInt(hasCover), nowRFC3339(), boolToInt(wroteCover), coverFromMatch, t.ID); err != nil {
+		cover_source = CASE WHEN ? = 1 THEN ? ELSE cover_source END, `+albumArtistUpdate+` WHERE id = ?`,
+		title, artist, album, meta.genre, meta.year, boolToInt(hasCover), nowRFC3339(), boolToInt(wroteCover), coverFromMatch,
+		albumArtistFor(meta.albumArtist, artist), albumArtistFor(meta.albumArtist, artist), album, t.ID); err != nil {
 		logErr("metadata queue apply", err)
 		return false, false
 	}

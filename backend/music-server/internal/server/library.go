@@ -76,6 +76,54 @@ type Album struct {
 	TotalDuration float64 `json:"totalDuration"`
 	HasCover      bool    `json:"hasCover"`
 	CoverTrackID  string  `json:"coverTrackId"`
+	ArtistCount   int     `json:"artistCount"`
+}
+
+var albumGroupSelect = `
+                SELECT
+                        COALESCE(NULLIF(t.album, ''), 'Unknown Album') AS album_name,
+                        ` + effectiveAlbumArtist + ` AS album_by,
+                        COUNT(*),
+                        COALESCE(SUM(t.duration), 0),
+                        MAX(t.has_cover),
+                        COALESCE((SELECT t2.id FROM tracks t2
+                                  WHERE t2.album = t.album
+                                    AND COALESCE(NULLIF(t2.album_artist, ''), NULLIF(t2.artist, ''), 'Unknown Artist') = ` + effectiveAlbumArtist + `
+                                    AND t2.has_cover = 1 AND ` + visibleToT2 + `
+                                  ORDER BY t2.created_at LIMIT 1), ''),
+                        COUNT(DISTINCT t.artist)
+                FROM tracks t
+                WHERE ` + visibleToT + `
+                GROUP BY album_name, album_by`
+
+var (
+	visibleToT2 = visibleTo("t2.user_id")
+	visibleToT  = visibleTo("t.user_id")
+)
+
+func (s *Server) scanAlbums(w http.ResponseWriter, query string, args ...any) ([]*Album, bool) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		s.internalErr(w, "list albums", err)
+		return nil, false
+	}
+	defer rows.Close()
+	albums := []*Album{}
+	for rows.Next() {
+		var a Album
+		var hasCover int
+		if err := rows.Scan(&a.Name, &a.Artist, &a.TrackCount, &a.TotalDuration, &hasCover, &a.CoverTrackID, &a.ArtistCount); err != nil {
+			s.internalErr(w, "scan album", err)
+			return nil, false
+		}
+		a.HasCover = hasCover == 1
+		albums = append(albums, &a)
+	}
+	if err := rows.Err(); err != nil {
+		s.internalErr(w, "iterate albums", err)
+		return nil, false
+	}
+	return albums, true
 }
 
 type Artist struct {
@@ -86,37 +134,9 @@ type Artist struct {
 
 func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
-	rows, err := s.db.Query(`
-                SELECT
-                        COALESCE(NULLIF(t.album, ''), 'Unknown Album') AS album_name,
-                        COALESCE(NULLIF(t.artist, ''), 'Unknown Artist') AS artist_name,
-                        COUNT(*),
-                        COALESCE(SUM(t.duration), 0),
-                        MAX(t.has_cover),
-                        COALESCE((SELECT t2.id FROM tracks t2
-                                  WHERE t2.album = t.album AND t2.artist = t.artist AND t2.has_cover = 1
-                                    AND `+visibleTo("t2.user_id")+`
-                                  ORDER BY t2.created_at LIMIT 1), '')
-                FROM tracks t
-                WHERE `+visibleTo("t.user_id")+`
-                GROUP BY album_name, artist_name
-                ORDER BY album_name COLLATE NOCASE ASC`, u.ID, u.ID)
-	if err != nil {
-		s.internalErr(w, "list albums", err)
+	albums, ok := s.scanAlbums(w, `SELECT * FROM (`+albumGroupSelect+`) ORDER BY album_name COLLATE NOCASE ASC`, u.ID, u.ID)
+	if !ok {
 		return
-	}
-	defer rows.Close()
-
-	albums := []*Album{}
-	for rows.Next() {
-		var a Album
-		var hasCover int
-		if err := rows.Scan(&a.Name, &a.Artist, &a.TrackCount, &a.TotalDuration, &hasCover, &a.CoverTrackID); err != nil {
-			s.internalErr(w, "scan album", err)
-			return
-		}
-		a.HasCover = hasCover == 1
-		albums = append(albums, &a)
 	}
 	writeJSON(w, http.StatusOK, albums)
 }
@@ -232,28 +252,11 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	result["tracksTotal"] = tracksTotal
 
-	rows2, err := s.db.Query(`
-                SELECT COALESCE(NULLIF(t.album,''),'Unknown Album'), COALESCE(NULLIF(t.artist,''),'Unknown Artist'), COUNT(*), COALESCE(SUM(t.duration),0), MAX(t.has_cover),
-                       COALESCE((SELECT t2.id FROM tracks t2 WHERE t2.album = t.album AND t2.artist = t.artist AND t2.has_cover = 1
-                                   AND `+visibleTo("t2.user_id")+` ORDER BY t2.created_at LIMIT 1), '')
-                FROM tracks t
-                WHERE (t.album LIKE ? ESCAPE '\' OR t.artist LIKE ? ESCAPE '\') AND `+visibleTo("t.user_id")+`
-                GROUP BY 1, 2 ORDER BY 1 COLLATE NOCASE ASC LIMIT 25`, u.ID, like, like, u.ID)
-	if err != nil {
-		s.internalErr(w, "search albums", err)
+	albums, ok := s.scanAlbums(w, albumGroupSelect+`
+                HAVING album_name LIKE ? ESCAPE '\' OR album_by LIKE ? ESCAPE '\' OR MAX(t.artist LIKE ? ESCAPE '\')
+                ORDER BY album_name COLLATE NOCASE ASC LIMIT 25`, u.ID, u.ID, like, like, like)
+	if !ok {
 		return
-	}
-	defer rows2.Close()
-	albums := []*Album{}
-	for rows2.Next() {
-		var a Album
-		var hasCover int
-		if err := rows2.Scan(&a.Name, &a.Artist, &a.TrackCount, &a.TotalDuration, &hasCover, &a.CoverTrackID); err != nil {
-			s.internalErr(w, "scan search album", err)
-			return
-		}
-		a.HasCover = hasCover == 1
-		albums = append(albums, &a)
 	}
 	result["albums"] = albums
 

@@ -7,10 +7,11 @@ import { catalog, fieldLookup } from "@/lib/api"
 import { artistKey, formatDuration } from "@/lib/format"
 import type { FieldOption, LookupSource } from "@/lib/types"
 
-export type LookupField = "artist" | "album" | "genre" | "year"
+export type LookupField = "artist" | "album" | "albumArtist" | "genre" | "year"
 
 export interface LookupPick {
   value: string
+  albumArtist?: string
   year?: number
   cover?: string
   source: string
@@ -21,6 +22,7 @@ const SOURCE_PREF = "field-lookup-source"
 const FIELD_LABELS: Record<LookupField, string> = {
   artist: "artist",
   album: "album",
+  albumArtist: "album artist",
   genre: "genre",
   year: "year",
 }
@@ -53,6 +55,8 @@ function valueOf(o: FieldOption, field: LookupField): string {
       return o.album
     case "artist":
       return o.artist
+    case "albumArtist":
+      return o.albumArtist || o.artist
     case "genre":
       return o.genre
     case "year":
@@ -227,6 +231,7 @@ export function FieldLookup({
                         onClick={() =>
                           onPick({
                             value,
+                            albumArtist: field === "album" ? o.albumArtist || o.artist : undefined,
                             year: field === "album" && withYear && o.year ? o.year : undefined,
                             cover: field === "album" && withCover ? o.cover : undefined,
                             source: o.source,

@@ -27,6 +27,7 @@ type FieldOption struct {
 	Title    string  `json:"title"`
 	Artist   string  `json:"artist"`
 	Album    string  `json:"album"`
+	AlbumArt string  `json:"albumArtist,omitempty"`
 	Year     int     `json:"year"`
 	Genre    string  `json:"genre"`
 	Type     string  `json:"type"`
@@ -210,7 +211,10 @@ func lookupDeezerReleases(ctx context.Context, title, artist string) ([]FieldOpt
 		ReleaseDate string `json:"release_date"`
 		RecordType  string `json:"record_type"`
 		CoverBig    string `json:"cover_big"`
-		Genres      struct {
+		Artist      struct {
+			Name string `json:"name"`
+		} `json:"artist"`
+		Genres struct {
 			Data []struct {
 				Name string `json:"name"`
 			} `json:"data"`
@@ -235,6 +239,7 @@ func lookupDeezerReleases(ctx context.Context, title, artist string) ([]FieldOpt
 			}
 			if info != nil {
 				o.Year, o.Type = parseReleaseYear(info.ReleaseDate), info.RecordType
+				o.AlbumArt = albumArtistFor(info.Artist.Name, t.Artist.Name)
 				if info.CoverBig != "" {
 					o.Cover = info.CoverBig
 				}
@@ -326,6 +331,7 @@ func lookupItunesReleases(ctx context.Context, title, artist string) ([]FieldOpt
 			TrackName         string  `json:"trackName"`
 			ArtistName        string  `json:"artistName"`
 			CollectionName    string  `json:"collectionName"`
+			CollectionArtist  string  `json:"collectionArtistName"`
 			CollectionViewURL string  `json:"collectionViewUrl"`
 			PrimaryGenreName  string  `json:"primaryGenreName"`
 			ReleaseDate       string  `json:"releaseDate"`
@@ -346,7 +352,8 @@ func lookupItunesReleases(ctx context.Context, title, artist string) ([]FieldOpt
 		}
 		out = append(out, FieldOption{
 			Source: "Apple Music", Title: r.TrackName, Artist: r.ArtistName, Album: album,
-			Year: parseReleaseYear(r.ReleaseDate), Genre: r.PrimaryGenreName, Type: kind,
+			AlbumArt: albumArtistFor(r.CollectionArtist, r.ArtistName),
+			Year:     parseReleaseYear(r.ReleaseDate), Genre: r.PrimaryGenreName, Type: kind,
 			Cover:    strings.Replace(r.ArtworkURL100, "100x100bb", "600x600bb", 1),
 			Duration: r.TrackTimeMillis / 1000, URL: r.CollectionViewURL,
 		})

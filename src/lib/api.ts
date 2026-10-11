@@ -456,6 +456,15 @@ export function fetchHome(): Promise<HomeFeed> {
   return api<HomeFeed>("/api/home")
 }
 
+export const albums = {
+  setArtist: (album: string, artists: string[], albumArtist: string) =>
+    api<{ updated: number; skipped: number }>("/api/albums/album-artist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ album, artists, albumArtist }),
+    }),
+}
+
 export const pins = {
   list: () => api<LibraryPin[]>("/api/pins"),
   add: (kind: LibraryPin["kind"], name: string, artist = "") =>

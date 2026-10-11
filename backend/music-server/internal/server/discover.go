@@ -448,11 +448,11 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	_, err = s.db.Exec(`INSERT INTO tracks
 		(id, user_id, title, artist, album, genre, year, track_no, duration,
 		 file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
-		 alt_path, alt_mime, alt_size, updated_at, source, source_id, file_hash, cover_source)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)`,
+		 alt_path, alt_mime, alt_size, updated_at, source, source_id, file_hash, cover_source, album_artist)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)`,
 		id, u.ID, title, artist, album, genre, year, trackNo, duration,
 		sanitizeFilename(dl.FileName), rel, mimeType, n, hasCover, createdAt,
-		"", "", 0, createdAt, sourceKey, sourceID, hash, coverSource)
+		"", "", 0, createdAt, sourceKey, sourceID, hash, coverSource, albumArtistFor(meta.albumArtist, artist))
 	if err != nil {
 		os.Remove(absPath)
 		os.Remove(filepath.Join(s.covDir, id+".img"))
