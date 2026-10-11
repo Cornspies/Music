@@ -23,6 +23,7 @@ import com.music.app.api.Lyrics
 import com.music.app.api.PlaybackState
 import com.music.app.api.PlaylistImport
 import com.music.app.api.Playlist
+import com.music.app.api.PlaylistAddResult
 import com.music.app.api.PlaylistDetail
 import com.music.app.api.SearchResults
 import com.music.app.api.Stats
@@ -497,15 +498,22 @@ class AppModel(
     }
 
     fun push(screen: Screen) {
-        if (backStack.lastOrNull() != screen) backStack.add(screen)
+        if (backStack.lastOrNull() != screen) {
+            if (screen != Screen.NowPlaying) clearSelection()
+            backStack.add(screen)
+        }
     }
 
     fun pop() {
-        if (backStack.size > 1) backStack.removeAt(backStack.size - 1)
+        if (backStack.size > 1) {
+            if (backStack.last() != Screen.NowPlaying) clearSelection()
+            backStack.removeAt(backStack.size - 1)
+        }
     }
 
     fun selectTab(screen: Screen) {
         if (backStack.size == 1 && backStack[0] == screen) return
+        clearSelection()
         backStack.clear()
         backStack.add(screen)
     }
@@ -960,6 +968,44 @@ class AppModel(
                 playlistsError = friendlyError(e)
             }
         }
+    }
+
+    var selectedIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+    var selectionContext by mutableStateOf<List<Track>>(emptyList())
+        private set
+    var selectionRemove by mutableStateOf<((String) -> Unit)?>(null)
+        private set
+    val selecting: Boolean get() = selectedIds.isNotEmpty()
+
+    fun toggleSelected(track: Track, context: List<Track>, remove: ((String) -> Unit)? = null) {
+        val sameList = selectionContext === context ||
+            selectedIds.all { id -> context.any { it.id == id } }
+        val base = if (sameList) selectedIds else emptySet()
+        selectedIds = if (track.id in base) base - track.id else base + track.id
+        selectionContext = context
+        selectionRemove = remove
+    }
+
+    fun selectAll() {
+        selectedIds = selectionContext.map { it.id }.toSet()
+    }
+
+    fun clearSelection() {
+        if (selectedIds.isEmpty() && selectionContext.isEmpty()) return
+        selectedIds = emptySet()
+        selectionContext = emptyList()
+        selectionRemove = null
+    }
+
+    fun selectedTracks(): List<Track> =
+        selectionContext.filter { it.id in selectedIds }.distinctBy { it.id }
+
+    suspend fun addTracksToPlaylist(playlistId: String, tracks: List<Track>): PlaylistAddResult {
+        val result = api.addPlaylistTracks(playlistId, tracks.map { it.id })
+        if (playlistDetail?.id == playlistId) loadPlaylistInternal(playlistId)
+        loadPlaylistsInternal()
+        return result
     }
 
     suspend fun addTrackToPlaylist(playlistId: String, trackId: String) {

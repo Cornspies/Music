@@ -480,6 +480,17 @@ data class AddTrackRequest(
 )
 
 @Serializable
+data class AddTracksRequest(
+    val trackIds: List<String>,
+)
+
+@Serializable
+data class PlaylistAddResult(
+    val added: Int = 0,
+    val skipped: Int = 0,
+)
+
+@Serializable
 data class ApplyMetadataRequest(
     val candidateId: String,
 )

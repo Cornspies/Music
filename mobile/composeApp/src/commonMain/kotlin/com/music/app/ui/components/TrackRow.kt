@@ -2,6 +2,7 @@ package com.music.app.ui.components
 
 import com.music.app.ui.splitArtists
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,8 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -39,6 +42,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +62,7 @@ fun TrackRow(
     context: List<Track>,
     modifier: Modifier = Modifier,
     playContext: String? = null,
+    onRemove: ((String) -> Unit)? = null,
     showActions: Boolean = true,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
@@ -70,18 +75,34 @@ fun TrackRow(
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val lookingUp = track.metadataStatus == "queued" || track.metadataStatus == "running"
+    val selecting = model.selecting
+    val selected = track.id in model.selectedIds
 
     Box(modifier) {
         Row(
             Modifier
                 .fillMaxWidth()
+                .background(if (selected) Emerald.copy(alpha = 0.12f) else Color.Transparent)
                 .combinedClickable(
-                    onClick = { model.playTrack(track, context, playContext) },
-                    onLongClick = { menuOpen = true },
+                    onClick = {
+                        if (selecting) model.toggleSelected(track, context, onRemove)
+                        else model.playTrack(track, context, playContext)
+                    },
+                    onLongClick = {
+                        if (selecting) model.toggleSelected(track, context, onRemove) else menuOpen = true
+                    },
                 )
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (selecting) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { model.toggleSelected(track, context, onRemove) },
+                    colors = CheckboxDefaults.colors(checkedColor = Emerald),
+                    modifier = Modifier.padding(end = 4.dp).size(32.dp),
+                )
+            }
             CoverImage(track, 48.dp)
             Column(
                 Modifier
@@ -133,6 +154,13 @@ fun TrackRow(
             }
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Select") },
+                onClick = {
+                    menuOpen = false
+                    model.toggleSelected(track, context, onRemove)
+                },
+            )
             if (model.listen.session?.canControl == true) {
                 DropdownMenuItem(
                     text = { Text("Play next") },
