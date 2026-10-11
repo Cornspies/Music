@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Check, Compass, ExternalLink, ListPlus, Loader2, Play, Plus, Search, X } from "lucide-react"
+import { BadgeCheck, Check, Compass, ExternalLink, Library, ListPlus, Loader2, Play, Plus, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { discover } from "@/lib/api"
@@ -25,6 +25,21 @@ interface SearchState {
 }
 
 const IMPORT_POLL_MS = 2000
+const SONGS_ONLY_PREF = "discover-songs-only"
+
+function readSongsOnly(): boolean {
+  try {
+    return localStorage.getItem(SONGS_ONLY_PREF) === "1"
+  } catch {
+    return false
+  }
+}
+
+function writeSongsOnly(on: boolean) {
+  try {
+    localStorage.setItem(SONGS_ONLY_PREF, on ? "1" : "0")
+  } catch {}
+}
 
 function importActive(j: PlaylistImport): boolean {
   return j.state === "queued" || j.state === "listing" || j.state === "running"
@@ -42,6 +57,7 @@ export function DiscoverView() {
   const [imports, setImports] = useState<PlaylistImport[]>([])
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set())
   const finishedSeen = useRef<Set<string>>(new Set())
+  const [songsOnlyPref, setSongsOnlyPref] = useState(readSongsOnly)
 
   useEffect(() => {
     discover
@@ -82,7 +98,8 @@ export function DiscoverView() {
     }
   }, [pollKey])
 
-  const key = `${sourceKey}\n${submitted}`
+  const songsOnly = songsOnlyPref && !!sources?.find((s) => s.key === sourceKey)?.songs
+  const key = `${sourceKey}\n${songsOnly ? "songs" : "all"}\n${submitted}`
   const shown = state?.key === key ? state : null
   const searching = submitted !== "" && sourceKey !== "" && !shown
 
@@ -92,7 +109,7 @@ export function DiscoverView() {
     const ctl = new AbortController()
     abortRef.current = ctl
     discover
-      .search(sourceKey, submitted, 1, ctl.signal)
+      .search(sourceKey, submitted, 1, ctl.signal, songsOnly)
       .then((r) => {
         if (!ctl.signal.aborted)
           setState({
@@ -110,13 +127,13 @@ export function DiscoverView() {
         setState({ key, results: [], page: 1, hasMore: false, error: e.message, loadingMore: false, playlist: null })
       })
     return () => ctl.abort()
-  }, [key, submitted, sourceKey])
+  }, [key, submitted, sourceKey, songsOnly])
 
   const loadMore = () => {
     if (!shown || shown.loadingMore || !shown.hasMore) return
     setState({ ...shown, loadingMore: true })
     discover
-      .search(sourceKey, submitted, shown.page + 1)
+      .search(sourceKey, submitted, shown.page + 1, undefined, songsOnly)
       .then((r) =>
         setState((s) =>
           s && s.key === key
@@ -173,8 +190,16 @@ export function DiscoverView() {
   return (
     <div className="p-4 pb-16 md:p-6 md:pb-12">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight text-zinc-50">Discover</h1>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => useUIStore.getState().navigate("catalog")}
+            className="h-8 rounded-full border-zinc-700 bg-zinc-900/60 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-emerald-300"
+          >
+            <Library className="size-3.5" /> Discographies
+          </Button>
         </div>
         {sources && sources.length > 1 ? (
           <div role="tablist" aria-label="Catalogue" className="flex gap-1 rounded-lg bg-zinc-900/70 p-1">
@@ -225,6 +250,30 @@ export function DiscoverView() {
               Search
             </Button>
           </form>
+          {source?.songs ? (
+            <div className="mt-2.5 flex items-center gap-2">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={songsOnlyPref}
+                onClick={() => {
+                  setSongsOnlyPref((on) => {
+                    writeSongsOnly(!on)
+                    return !on
+                  })
+                }}
+                title="Only the official uploads from YouTube Music (the “Artist - Topic” channels)"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  songsOnlyPref
+                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                    : "border-zinc-700 bg-zinc-900/60 text-zinc-400 hover:text-zinc-100"
+                )}
+              >
+                <BadgeCheck className="size-3.5" /> Topic songs only
+              </button>
+            </div>
+          ) : null}
 
           {shownImports.length > 0 ? (
             <div className="mt-5 flex flex-col gap-2">

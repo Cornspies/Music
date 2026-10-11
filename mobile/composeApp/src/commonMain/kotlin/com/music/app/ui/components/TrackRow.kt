@@ -56,6 +56,7 @@ fun TrackRow(
     track: Track,
     context: List<Track>,
     modifier: Modifier = Modifier,
+    playContext: String? = null,
     showActions: Boolean = true,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
@@ -74,7 +75,7 @@ fun TrackRow(
             Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = { model.playTrack(track, context) },
+                    onClick = { model.playTrack(track, context, playContext) },
                     onLongClick = { menuOpen = true },
                 )
                 .padding(horizontal = 16.dp, vertical = 8.dp),

@@ -168,6 +168,13 @@ func (t *scTrack) streams() (aac, mp3 *scTranscoding) {
 	return aac, mp3
 }
 
+func (t *scTrack) album() string {
+	if t.PublisherMetadata == nil {
+		return ""
+	}
+	return strings.TrimSpace(t.PublisherMetadata.AlbumTitle)
+}
+
 func (t *scTrack) unavailable() string {
 	if t.Policy == "BLOCK" || !t.Streamable {
 		return "SoundCloud doesn't play this track here"
@@ -198,6 +205,7 @@ func (t *scTrack) result() discoverResult {
 		ID:       strconv.FormatInt(t.ID, 10),
 		Title:    t.title(),
 		Artist:   t.artist(),
+		Album:    t.album(),
 		Genre:    strings.TrimSpace(t.Genre),
 		Year:     t.year(),
 		Duration: float64(t.Duration) / 1000,

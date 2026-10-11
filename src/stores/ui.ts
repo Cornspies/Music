@@ -17,6 +17,8 @@ export type View =
   | "offline"
   | "history"
   | "discover"
+  | "catalog"
+  | "mix"
   | "duplicates"
   | "filetags"
   | "share"
@@ -52,6 +54,8 @@ interface UIState {
   playbackSettingsOpen: boolean
   setPlaybackSettingsOpen: (open: boolean) => void
   sidebarOpen: boolean
+  sidebarCollapsed: boolean
+  setSidebarCollapsed: (collapsed: boolean) => void
   setSidebarOpen: (open: boolean) => void
   lyricsPanelOpen: boolean
   setLyricsPanelOpen: (open: boolean) => void
@@ -75,6 +79,15 @@ interface UIState {
 }
 
 const LYRICS_PANEL_PREF = "lyrics-panel"
+const SIDEBAR_COLLAPSED_PREF = "sidebar-collapsed"
+
+export function readSidebarCollapsedPref(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(SIDEBAR_COLLAPSED_PREF) === "1"
+  } catch {
+    return false
+  }
+}
 
 export function readLyricsPanelPref(): boolean {
   try {
@@ -118,6 +131,13 @@ export const useUIStore = create<UIState>()((set) => ({
   setPlaybackSettingsOpen: (open) => set({ playbackSettingsOpen: open }),
   sidebarOpen: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  sidebarCollapsed: false,
+  setSidebarCollapsed: (collapsed) => {
+    set({ sidebarCollapsed: collapsed })
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_PREF, collapsed ? "1" : "0")
+    } catch {}
+  },
   lyricsPanelOpen: false,
   setLyricsPanelOpen: (open) => {
     set({ lyricsPanelOpen: open })

@@ -1,11 +1,12 @@
 "use client"
 
-import { ListEnd, Play, Shuffle, MoreHorizontal } from "lucide-react"
+import { ListEnd, Play, Shuffle, MoreHorizontal, Pin, PinOff } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { Track } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
+import { useLibraryStore } from "@/stores/library"
 import { inListenSession } from "@/stores/listen"
 import { Button } from "@/components/ui/button"
 
@@ -121,6 +122,28 @@ export function HeaderMenuTrigger(props: React.ComponentProps<typeof Button>) {
       {...props}
     >
       <MoreHorizontal className="size-4" />
+    </Button>
+  )
+}
+
+export function PinButton({ kind, name, artist = "" }: { kind: "artist" | "album"; name: string; artist?: string }) {
+  const pinned = useLibraryStore((s) =>
+    s.pins.some((p) => p.kind === kind && p.name === name && p.artist === (kind === "artist" ? "" : artist))
+  )
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      aria-pressed={pinned}
+      aria-label={pinned ? "Unpin from the sidebar" : "Pin to the sidebar"}
+      title={pinned ? "Unpin from the sidebar" : "Pin to the sidebar"}
+      onClick={() => useLibraryStore.getState().togglePin(kind, name, artist)}
+      className={cn(
+        "size-10 rounded-full border-zinc-600/80 bg-zinc-900/60 hover:bg-zinc-800",
+        pinned ? "text-emerald-400 hover:text-emerald-300" : "text-zinc-300 hover:text-zinc-100"
+      )}
+    >
+      {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
     </Button>
   )
 }

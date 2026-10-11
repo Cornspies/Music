@@ -1,14 +1,15 @@
 "use client"
 
 import { useMemo } from "react"
-import { Mic2, Music2 } from "lucide-react"
-import { formatTotal, hashGradient } from "@/lib/format"
+import { Library, Mic2, Music2 } from "lucide-react"
+import { formatTotal, hasArtist, hashGradient } from "@/lib/format"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { ArtistImage } from "@/components/music/ArtistImage"
-import { CollectionHeader } from "@/components/music/CollectionHeader"
+import { CollectionHeader, PinButton } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackList } from "@/components/music/TrackList"
+import { Button } from "@/components/ui/button"
 
 export function ArtistView() {
   const viewArg = useUIStore((s) => s.viewArg)
@@ -16,7 +17,7 @@ export function ArtistView() {
 
   const artistName = viewArg ?? ""
   const artistTracks = useMemo(
-    () => tracks.filter((t) => t.artist === artistName),
+    () => tracks.filter((t) => hasArtist(t.artist, artistName)),
     [tracks, artistName]
   )
 
@@ -35,6 +36,20 @@ export function ArtistView() {
           albumCount > 0 ? `${albumCount} album${albumCount === 1 ? "" : "s"} · ` : ""
         }${formatTotal(totalDuration)}`}
         tracks={artistTracks}
+        actions={
+          artistName ? (
+            <>
+              <PinButton kind="artist" name={artistName} />
+              <Button
+                variant="outline"
+                onClick={() => useUIStore.getState().navigate("catalog", `find:${artistName}`)}
+                className="h-10 rounded-full border-zinc-600/80 bg-zinc-900/60 px-5 text-zinc-200 hover:bg-zinc-800 hover:text-emerald-300"
+              >
+                <Library className="size-4" /> Discography
+              </Button>
+            </>
+          ) : null
+        }
         cover={
           <ArtistImage
             name={artistName}

@@ -203,7 +203,7 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Button(
-                        onClick = { model.playAll(detail.tracks) },
+                        onClick = { model.playAll(detail.tracks, playContext = "playlist:${detail.id}") },
                         modifier = Modifier.weight(1f),
                     ) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null)
@@ -230,6 +230,7 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
                         TrackRow(
                             track = track,
                             context = detail.tracks,
+                            playContext = "playlist:${detail.id}",
                             trailing = {
                                 IconButton(onClick = {
                                     model.removeTrackFromPlaylist(screen.id, track.id)

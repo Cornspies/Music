@@ -61,11 +61,16 @@ type sourceDownload struct {
 
 type linkSource interface{ takesLinks() }
 
+type songSearcher interface {
+	searchSongs(ctx context.Context, query string) ([]discoverResult, error)
+}
+
 type DiscoverSource struct {
 	Key       string `json:"key"`
 	Name      string `json:"name"`
 	Playlists bool   `json:"playlists"`
 	Links     bool   `json:"links"`
+	Songs     bool   `json:"songs"`
 }
 
 type DiscoverSearch struct {
@@ -131,7 +136,8 @@ func (s *Server) handleDiscoverSources(w http.ResponseWriter, _ *http.Request) {
 		for _, src := range discoverSources {
 			_, playlists := src.(playlistSource)
 			_, links := src.(linkSource)
-			out = append(out, DiscoverSource{Key: src.key(), Name: src.name(), Playlists: playlists, Links: links})
+			_, songs := src.(songSearcher)
+			out = append(out, DiscoverSource{Key: src.key(), Name: src.name(), Playlists: playlists, Links: links, Songs: songs})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -184,7 +190,16 @@ func (s *Server) handleDiscoverSearch(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	results, more, err := src.search(ctx, q, page)
+	var results []discoverResult
+	var more bool
+	var err error
+	if songs, ok := src.(songSearcher); ok && r.URL.Query().Get("only") == "songs" && !strings.Contains(q, "://") {
+		if page == 1 {
+			results, err = songs.searchSongs(ctx, q)
+		}
+	} else {
+		results, more, err = src.search(ctx, q, page)
+	}
 	noteSource(src.key(), err)
 	if err != nil {
 		var status *statusError
@@ -213,6 +228,10 @@ func (s *Server) handleDiscoverArtwork(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "not a catalogue image")
 		return
 	}
+	serveArtwork(w, r, u)
+}
+
+func serveArtwork(w http.ResponseWriter, r *http.Request, u string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	b, err := fetchArtwork(ctx, u)

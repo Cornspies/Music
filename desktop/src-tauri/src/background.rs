@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -18,6 +19,7 @@ const TOKEN_MARGIN_MS: f64 = 600_000.0;
 const TOKEN_RETRY: Duration = Duration::from_secs(60);
 const TICK: Duration = Duration::from_secs(1);
 const FLUSH_WAIT: Duration = Duration::from_secs(3);
+const SHUFFLE_HISTORY_MAX: usize = 500;
 
 #[derive(Default)]
 pub struct Background(Mutex<Option<Sender<Command>>>);
@@ -43,11 +45,26 @@ pub struct Handoff {
     next_id: Option<u64>,
     next_index: Option<usize>,
     shuffle: bool,
+    #[serde(default)]
+    shuffle_all: bool,
+    #[serde(default)]
+    history: ShuffleHistory,
     repeat: String,
     sleep_ends_at: Option<f64>,
     sleep_after_track: bool,
     position: f64,
     playing: bool,
+}
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ShuffleHistory {
+    #[serde(default)]
+    back: Vec<String>,
+    #[serde(default)]
+    forward: Vec<String>,
+    #[serde(default)]
+    played: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -65,6 +82,7 @@ pub struct Resume {
     sleep_after_track: bool,
     media_token: String,
     media_expires_at: f64,
+    history: ShuffleHistory,
 }
 
 pub struct Taken {
@@ -79,6 +97,7 @@ pub struct Taken {
     sleep_after_track: bool,
     media_token: String,
     media_expires_at: f64,
+    history: ShuffleHistory,
 }
 
 #[derive(Deserialize)]
@@ -139,6 +158,10 @@ struct Controller {
     next: Option<(u64, usize)>,
     ids: u64,
     shuffle: bool,
+    shuffle_all: bool,
+    back: Vec<String>,
+    forward: Vec<String>,
+    played: HashSet<String>,
     repeat: Repeat,
     sleep_ends_at: Option<f64>,
     sleep_after_track: bool,
@@ -214,6 +237,7 @@ impl Controller {
                 if let Some((next_id, index)) = self.next
                     && next_id == id
                 {
+                    self.note_move(index);
                     self.next = None;
                     self.playing = true;
                     self.begin(index, id);
@@ -318,7 +342,10 @@ impl Controller {
             .map(|(_, index)| index)
             .or_else(|| self.pick(false))
         {
-            Some(index) => self.play_index(index),
+            Some(index) => {
+                self.note_move(index);
+                self.play_index(index)
+            }
             None => {
                 self.send(Msg::Pause);
                 self.send(Msg::Seek(0.0));
@@ -330,6 +357,20 @@ impl Controller {
 
     fn previous(&mut self) {
         if self.position > 3.0 {
+            self.seek(0.0);
+            return;
+        }
+        if self.shuffle {
+            while let Some(id) = self.back.pop() {
+                if let Some(index) = self.queue.iter().position(|t| t.id == id)
+                    && index != self.index
+                {
+                    let current = self.queue[self.index].id.clone();
+                    self.forward.push(current);
+                    self.play_index(index);
+                    return;
+                }
+            }
             self.seek(0.0);
             return;
         }
@@ -352,6 +393,12 @@ impl Controller {
             return None;
         }
         if self.shuffle {
+            if let Some(index) = self.forward_index() {
+                return Some(index);
+            }
+            if self.shuffle_all {
+                return self.pick_fresh();
+            }
             loop {
                 let index = self.random(count);
                 if index != self.index {
@@ -365,6 +412,61 @@ impl Controller {
             Some(0)
         } else {
             None
+        }
+    }
+
+    fn forward_index(&mut self) -> Option<usize> {
+        while let Some(id) = self.forward.last().cloned() {
+            if let Some(index) = self.queue.iter().position(|t| t.id == id)
+                && index != self.index
+            {
+                return Some(index);
+            }
+            self.forward.pop();
+        }
+        None
+    }
+
+    fn pick_fresh(&mut self) -> Option<usize> {
+        let count = self.queue.len();
+        let mut fresh: Vec<usize> = (0..count)
+            .filter(|&i| i != self.index && !self.played.contains(&self.queue[i].id))
+            .collect();
+        if fresh.is_empty() {
+            if self.repeat != Repeat::All {
+                return None;
+            }
+            let current = self.queue[self.index].id.clone();
+            self.played.clear();
+            self.played.insert(current.clone());
+            fresh = (0..count)
+                .filter(|&i| i != self.index && self.queue[i].id != current)
+                .collect();
+            if fresh.is_empty() {
+                return None;
+            }
+        }
+        let pick = self.random(fresh.len());
+        Some(fresh[pick])
+    }
+
+    fn note_move(&mut self, to: usize) {
+        if !self.shuffle || to >= self.queue.len() || self.index >= self.queue.len() {
+            return;
+        }
+        let from = self.queue[self.index].id.clone();
+        let to_id = self.queue[to].id.clone();
+        if from == to_id {
+            return;
+        }
+        self.back.push(from);
+        if self.back.len() > SHUFFLE_HISTORY_MAX {
+            self.back.remove(0);
+        }
+        if self.forward.last() == Some(&to_id) {
+            self.forward.pop();
+        } else {
+            self.forward.clear();
         }
     }
 
@@ -402,6 +504,9 @@ impl Controller {
     fn begin(&mut self, index: usize, id: u64) {
         self.flush_listening();
         self.index = index;
+        if self.shuffle && self.shuffle_all {
+            self.played.insert(self.queue[index].id.clone());
+        }
         self.current_id = id;
         self.position = 0.0;
         self.retried = false;
@@ -600,6 +705,11 @@ impl Controller {
             sleep_after_track: self.sleep_after_track,
             media_token: self.media_token.clone(),
             media_expires_at: self.media_expires_at,
+            history: ShuffleHistory {
+                back: self.back.clone(),
+                forward: self.forward.clone(),
+                played: self.played.iter().cloned().collect(),
+            },
         }
     }
 }
@@ -720,6 +830,10 @@ pub fn background_start(
             .max(handoff.current_id)
             .max(handoff.next_id.unwrap_or(0)),
         shuffle: handoff.shuffle,
+        shuffle_all: handoff.shuffle_all,
+        back: handoff.history.back,
+        forward: handoff.history.forward,
+        played: handoff.history.played.into_iter().collect(),
         repeat: repeat_mode(&handoff.repeat),
         sleep_ends_at: handoff.sleep_ends_at,
         sleep_after_track: handoff.sleep_after_track,
@@ -790,6 +904,7 @@ fn take(audio: &Audio, background: &Background) -> Option<Resume> {
         sleep_after_track: taken.sleep_after_track,
         media_token: taken.media_token,
         media_expires_at: taken.media_expires_at,
+        history: taken.history,
     })
 }
 

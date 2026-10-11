@@ -3,7 +3,8 @@
 import { useMemo } from "react"
 import { Mic2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { hashGradient, initialsOf } from "@/lib/format"
+import { hasArtist, hashGradient, initialsOf } from "@/lib/format"
+import { catalog } from "@/lib/api"
 import { useLibraryStore } from "@/stores/library"
 import { CoverArt } from "@/components/music/CoverArt"
 
@@ -13,8 +14,10 @@ export function ArtistImage({
   sizes,
   className,
   initialsClassName,
+  picture,
 }: {
   name: string
+  picture?: string
   size?: 128 | 256 | 512
   sizes?: string
   className?: string
@@ -24,12 +27,22 @@ export function ArtistImage({
   const coverId = useMemo(() => {
     let best: { id: string; plays: number } | null = null
     for (const t of tracks) {
-      if (t.artist !== name || !t.hasCover) continue
+      if (!t.hasCover || !hasArtist(t.artist, name)) continue
       if (!best || t.plays > best.plays) best = { id: t.id, plays: t.plays }
     }
     return best?.id ?? null
   }, [tracks, name])
 
+  if (picture) {
+    return (
+      <img
+        src={catalog.imageUrl(picture)}
+        alt=""
+        loading="lazy"
+        className={cn("aspect-square w-full rounded-full bg-zinc-800 object-cover", className)}
+      />
+    )
+  }
   if (coverId) {
     return (
       <CoverArt

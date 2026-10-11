@@ -31,6 +31,16 @@ import type {
   FileTagDiff,
   TagChange,
   UpgradeStatus,
+  HomeFeed,
+  CatalogArtist,
+  CatalogRelease,
+  CatalogTrack,
+  CatalogArtistPage,
+  CatalogReleasePage,
+  DiscoverResult,
+  FieldOption,
+  LookupSource,
+  LibraryPin,
 } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
@@ -421,9 +431,11 @@ export const discover = {
     }),
   imports: () => api<PlaylistImport[]>("/api/discover/imports"),
   cancelImport: (id: string) => api<void>(`/api/discover/imports/${id}`, { method: "DELETE" }),
-  search: (source: string, q: string, page = 1, signal?: AbortSignal) =>
+  search: (source: string, q: string, page = 1, signal?: AbortSignal, songsOnly = false) =>
     api<DiscoverSearch>(
-      `/api/discover/search?source=${encodeURIComponent(source)}&q=${encodeURIComponent(q)}&page=${page}`,
+      `/api/discover/search?source=${encodeURIComponent(source)}&q=${encodeURIComponent(q)}&page=${page}${
+        songsOnly ? "&only=songs" : ""
+      }`,
       { signal }
     ),
   artworkUrl: (source: string, u: string) =>
@@ -434,6 +446,66 @@ export const discover = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, id }),
     }),
+}
+
+export function fetchHome(): Promise<HomeFeed> {
+  return api<HomeFeed>("/api/home")
+}
+
+export const pins = {
+  list: () => api<LibraryPin[]>("/api/pins"),
+  add: (kind: LibraryPin["kind"], name: string, artist = "") =>
+    api<LibraryPin>("/api/pins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, name, artist }),
+    }),
+  remove: (kind: LibraryPin["kind"], name: string, artist = "") =>
+    api<void>(`/api/pins?${new URLSearchParams({ kind, name, artist })}`, { method: "DELETE" }),
+}
+
+export const fieldLookup = {
+  sources: () => api<LookupSource[]>("/api/metadata/lookup-sources"),
+  search: (trackId: string, source: string, title: string, artist: string, signal?: AbortSignal) =>
+    api<{ options: FieldOption[] }>(
+      `/api/tracks/${encodeURIComponent(trackId)}/lookup?${new URLSearchParams({ source, title, artist })}`,
+      { signal }
+    ),
+  setCover: (trackId: string, url: string) =>
+    api<Track>(`/api/tracks/${encodeURIComponent(trackId)}/cover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }),
+}
+
+export const catalog = {
+  search: (q: string, signal?: AbortSignal) =>
+    api<{ artists: CatalogArtist[]; releases: CatalogRelease[] }>(`/api/catalog/search?q=${encodeURIComponent(q)}`, {
+      signal,
+    }),
+  artist: (id: number | string, signal?: AbortSignal) =>
+    api<CatalogArtistPage>(`/api/catalog/artists/${encodeURIComponent(String(id))}`, { signal }),
+  release: (id: number | string, signal?: AbortSignal) =>
+    api<CatalogReleasePage>(`/api/catalog/releases/${encodeURIComponent(String(id))}`, { signal }),
+  find: (source: string, t: CatalogTrack, signal?: AbortSignal) =>
+    api<{ result: DiscoverResult | null }>(
+      `/api/catalog/find?${new URLSearchParams({
+        source,
+        id: String(t.id),
+        title: t.title,
+        artist: t.artist,
+        duration: String(t.duration || 0),
+      })}`,
+      { signal }
+    ),
+  add: (source: string, title: string, entries: DiscoverResult[]) =>
+    api<PlaylistImport>("/api/catalog/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, title, entries }),
+    }),
+  imageUrl: (u: string) => withToken(`/api/catalog/image?u=${encodeURIComponent(u)}`),
 }
 
 class LyricsMissing extends Error {

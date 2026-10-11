@@ -11,11 +11,58 @@ import { AudioEngine, type Engine, type EngineEvents, trackGain } from "@/lib/au
 import { isDesktop, serverUrl } from "@/lib/desktop"
 import { NativeAudioEngine, type PreviewState } from "@/lib/native-audio"
 import { useAuthStore } from "@/stores/auth"
+import { useUIStore } from "@/stores/ui"
+import { artistKey } from "@/lib/format"
 import { useMediaTokenStore } from "@/stores/media-token"
 
 export type RepeatMode = "off" | "all" | "one"
 
 export const CROSSFADE_OPTIONS = [0, 2, 4, 8, 12] as const
+
+export type ShuffleMode = "off" | "random" | "norepeat"
+
+export interface ContextPref {
+  shuffle: ShuffleMode
+  repeat: RepeatMode
+}
+
+export function shuffleModeOf(s: { shuffle: boolean; shuffleNoRepeat: boolean }): ShuffleMode {
+  return !s.shuffle ? "off" : s.shuffleNoRepeat ? "norepeat" : "random"
+}
+
+function shuffleFields(mode: ShuffleMode) {
+  return { shuffle: mode !== "off", shuffleNoRepeat: mode === "norepeat" }
+}
+
+function contextFromView(): string | null {
+  const { view, viewArg } = useUIStore.getState()
+  if (view === "favorites") return "favorites"
+  if (!viewArg) return null
+  switch (view) {
+    case "playlist":
+      return `playlist:${viewArg}`
+    case "artist":
+      return `artist:${artistKey(viewArg)}`
+    case "album":
+      return `album:${viewArg}`
+    case "mix":
+      return `mix:${viewArg}`
+  }
+  return null
+}
+
+function saveContextPref() {
+  const s = usePlayerStore.getState()
+  const context = s.playContext
+  if (!context || session) return
+  const pref: ContextPref = { shuffle: shuffleModeOf(s), repeat: s.repeat }
+  usePlayerStore.setState({ contextPrefs: { ...s.contextPrefs, [context]: pref } })
+  api("/api/playback/prefs", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ context, ...pref }),
+  }).catch(() => {})
+}
 
 interface PlayerState {
   currentTrack: Track | null
@@ -27,7 +74,12 @@ interface PlayerState {
   volume: number
   muted: boolean
   shuffle: boolean
+  shuffleNoRepeat: boolean
   repeat: RepeatMode
+  playContext: string | null
+  contextPrefs: Record<string, ContextPref>
+  loadContextPrefs: () => Promise<void>
+  setShuffleMode: (mode: ShuffleMode) => void
   playNow: (track: Track, contextQueue?: Track[]) => void
   togglePlay: () => void
   next: () => void
@@ -303,6 +355,8 @@ function getEngine(): Engine | null {
           ? pendingNextIndex
           : s.queue.findIndex((t) => t.id === track.id)
         pendingNextIndex = -1
+        noteShuffleMove(s.currentTrack?.id, track.id)
+        notePlayed(track.id)
         usePlayerStore.setState({
           currentTrack: track,
           queueIndex: index,
@@ -478,6 +532,58 @@ export function stopNativePreview() {
 }
 
 let pendingNextIndex = -1
+const SHUFFLE_HISTORY_MAX = 500
+let shuffleBack: string[] = []
+let shuffleForward: string[] = []
+let shufflePlayed = new Set<string>()
+
+function resetShuffleHistory() {
+  shuffleBack = []
+  shuffleForward = []
+  shufflePlayed = new Set()
+}
+
+function notePlayed(id: string) {
+  const s = usePlayerStore.getState()
+  if (s.shuffle && s.shuffleNoRepeat) shufflePlayed.add(id)
+}
+
+function shufflePick(queue: Track[], queueIndex: number, repeat: RepeatMode): number {
+  const forward = forwardIndex(queue, queueIndex)
+  if (forward >= 0) return forward
+  if (queue.length < 2) return -1
+  if (!usePlayerStore.getState().shuffleNoRepeat) {
+    let next = queueIndex
+    while (next === queueIndex) next = Math.floor(Math.random() * queue.length)
+    return next
+  }
+  let fresh = queue.flatMap((t, i) => (i !== queueIndex && !shufflePlayed.has(t.id) ? [i] : []))
+  if (fresh.length === 0) {
+    if (repeat !== "all") return -1
+    const current = queue[queueIndex]?.id
+    shufflePlayed = new Set(current ? [current] : [])
+    fresh = queue.flatMap((t, i) => (i !== queueIndex && t.id !== current ? [i] : []))
+    if (fresh.length === 0) return -1
+  }
+  return fresh[Math.floor(Math.random() * fresh.length)]
+}
+
+function noteShuffleMove(fromId: string | undefined, toId: string) {
+  if (!usePlayerStore.getState().shuffle || !fromId || fromId === toId) return
+  shuffleBack.push(fromId)
+  if (shuffleBack.length > SHUFFLE_HISTORY_MAX) shuffleBack.shift()
+  if (shuffleForward[shuffleForward.length - 1] === toId) shuffleForward.pop()
+  else shuffleForward = []
+}
+
+function forwardIndex(queue: Track[], queueIndex: number): number {
+  while (shuffleForward.length > 0) {
+    const idx = queue.findIndex((t) => t.id === shuffleForward[shuffleForward.length - 1])
+    if (idx >= 0 && idx !== queueIndex) return idx
+    shuffleForward.pop()
+  }
+  return -1
+}
 
 function prepareNext() {
   const e = getEngine()
@@ -487,9 +593,7 @@ function prepareNext() {
   let next = -1
   if (!s.sleepAfterTrack && repeat !== "one" && queue.length > 1) {
     if (shuffle) {
-      do {
-        next = Math.floor(Math.random() * queue.length)
-      } while (next === queueIndex)
+      next = shufflePick(queue, queueIndex, repeat)
     } else if (queueIndex + 1 < queue.length) {
       next = queueIndex + 1
     } else if (repeat === "all") {
@@ -511,6 +615,7 @@ function playIndex(index: number) {
     duration: track.duration || 0,
     isPlaying: true,
   })
+  notePlayed(track.id)
   const e = getEngine()
   if (!e) return
   e.load(track, { autoplay: true })
@@ -653,7 +758,28 @@ export const usePlayerStore = create<PlayerState>()(
       volume: 0.8,
       muted: false,
       shuffle: false,
+      shuffleNoRepeat: false,
       repeat: "off",
+      playContext: null,
+      contextPrefs: {},
+
+      loadContextPrefs: async () => {
+        try {
+          const list = await api<({ context: string } & ContextPref)[]>("/api/playback/prefs")
+          const prefs: Record<string, ContextPref> = {}
+          for (const p of list) prefs[p.context] = { shuffle: p.shuffle, repeat: p.repeat }
+          set({ contextPrefs: prefs })
+        } catch {}
+      },
+
+      setShuffleMode: (mode) => {
+        resetShuffleHistory()
+        set(shuffleFields(mode))
+        const current = get().currentTrack
+        if (current) notePlayed(current.id)
+        if (!session) prepareNext()
+        saveContextPref()
+      },
       sleepEndsAt: null,
       sleepAfterTrack: false,
       crossfadeSeconds: 0,
@@ -677,6 +803,10 @@ export const usePlayerStore = create<PlayerState>()(
 
       playNow: (track, contextQueue) => {
         if (session) return session.playNow(track)
+        resetShuffleHistory()
+        const context = contextFromView()
+        const pref = context ? get().contextPrefs[context] : undefined
+        set({ playContext: context, ...(pref ? { ...shuffleFields(pref.shuffle), repeat: pref.repeat } : {}) })
         const s = get()
         let queue: Track[]
         if (contextQueue && contextQueue.length > 0) {
@@ -724,9 +854,11 @@ export const usePlayerStore = create<PlayerState>()(
         if (pendingNextIndex >= 0 && pendingNextIndex < queue.length) {
           nextIndex = pendingNextIndex
         } else if (shuffle) {
-          do {
-            nextIndex = Math.floor(Math.random() * queue.length)
-          } while (nextIndex === queueIndex && queue.length > 1)
+          nextIndex = shufflePick(queue, queueIndex, repeat)
+          if (nextIndex < 0) {
+            rewindCurrent()
+            return
+          }
         } else {
           nextIndex = queueIndex + 1
         }
@@ -737,6 +869,7 @@ export const usePlayerStore = create<PlayerState>()(
             return
           }
         }
+        noteShuffleMove(get().currentTrack?.id, queue[nextIndex].id)
         playIndex(nextIndex)
       },
 
@@ -747,6 +880,20 @@ export const usePlayerStore = create<PlayerState>()(
         const e = getEngine()
         if (e && e.currentTime > 3) {
           e.seek(0)
+          set({ position: 0 })
+          return
+        }
+        if (s.shuffle) {
+          while (shuffleBack.length > 0) {
+            const id = shuffleBack.pop()!
+            const idx = s.queue.findIndex((t) => t.id === id)
+            if (idx >= 0 && idx !== s.queueIndex) {
+              shuffleForward.push(s.currentTrack.id)
+              playIndex(idx)
+              return
+            }
+          }
+          if (e) e.seek(0)
           set({ position: 0 })
           return
         }
@@ -791,11 +938,13 @@ export const usePlayerStore = create<PlayerState>()(
         const current = get().repeat
         set({ repeat: order[(order.indexOf(current) + 1) % order.length] })
         if (!session) prepareNext()
+        saveContextPref()
       },
 
       toggleShuffle: () => {
-        set({ shuffle: !get().shuffle })
-        if (!session) prepareNext()
+        const order: ShuffleMode[] = ["off", "random", "norepeat"]
+        const current = shuffleModeOf(get())
+        get().setShuffleMode(order[(order.indexOf(current) + 1) % order.length])
       },
 
       playNext: (track) => {
@@ -827,8 +976,8 @@ export const usePlayerStore = create<PlayerState>()(
         if (session) return session.addAll(opts.shuffle ? shuffled(tracks) : tracks, "now")
         const s = get()
         if (!opts.shuffle) return s.playNow(tracks[0], tracks)
-        if (!s.shuffle) s.toggleShuffle()
         s.playNow(tracks[Math.floor(Math.random() * tracks.length)], tracks)
+        if (!get().shuffle) get().setShuffleMode("random")
       },
 
       addAllToQueue: (tracks) => {
@@ -857,8 +1006,9 @@ export const usePlayerStore = create<PlayerState>()(
 
       jumpTo: (index) => {
         if (session) return session.jumpTo(index)
-        const { queue } = get()
+        const { queue, currentTrack } = get()
         if (index < 0 || index >= queue.length) return
+        noteShuffleMove(currentTrack?.id, queue[index].id)
         playIndex(index)
       },
 
@@ -876,6 +1026,7 @@ export const usePlayerStore = create<PlayerState>()(
         session?.signedOut()
         getEngine()?.stop()
         pendingNextIndex = -1
+        resetShuffleHistory()
         set({
           currentTrack: null,
           queue: [],
@@ -956,7 +1107,10 @@ export const usePlayerStore = create<PlayerState>()(
       partialize: (s) => ({
         volume: s.volume,
         shuffle: s.shuffle,
+        shuffleNoRepeat: s.shuffleNoRepeat,
         repeat: s.repeat,
+        playContext: s.playContext,
+        contextPrefs: s.contextPrefs,
         crossfadeSeconds: s.crossfadeSeconds,
         normalizeVolume: s.normalizeVolume,
       }),
@@ -977,6 +1131,7 @@ interface BackgroundResume {
   sleepAfterTrack: boolean
   mediaToken: string
   mediaExpiresAt: number
+  history?: { back: string[]; forward: string[]; played: string[] }
 }
 
 let reattaching: Promise<boolean> | null = null
@@ -1007,6 +1162,11 @@ async function takeBackground(): Promise<boolean> {
   const next = resume.nextId !== null && nextTrack ? { id: resume.nextId, track: nextTrack } : null
   e.adopt({ id: resume.currentId, track }, next, resume.position, resume.duration, resume.playing)
   pendingNextIndex = next && resume.nextIndex !== null ? resume.nextIndex : -1
+  if (resume.history) {
+    shuffleBack = resume.history.back
+    shuffleForward = resume.history.forward
+    shufflePlayed = new Set(resume.history.played)
+  }
   lastSavedQueueKey = queueKey(queue)
   lastSavedPosition = resume.position
   positionDirty = false
@@ -1048,6 +1208,8 @@ async function handOff(e: NativeAudioEngine): Promise<boolean> {
         nextId: next,
         nextIndex: next !== null && pendingNextIndex >= 0 ? pendingNextIndex : null,
         shuffle: s.shuffle,
+        shuffleAll: s.shuffle && s.shuffleNoRepeat,
+        history: { back: shuffleBack, forward: shuffleForward, played: [...shufflePlayed] },
         repeat: s.repeat,
         sleepEndsAt: s.sleepEndsAt,
         sleepAfterTrack: s.sleepAfterTrack,

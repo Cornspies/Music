@@ -487,10 +487,7 @@ func (y *ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, er
 	}
 	ext := strings.ToLower(filepath.Ext(matches[0]))
 
-	title, artist := strings.TrimSpace(info.Track), ""
-	if len(info.Artists) > 0 {
-		artist = strings.TrimSpace(info.Artists[0])
-	}
+	title, artist := strings.TrimSpace(info.Track), joinArtists(info.Artists)
 	artist = trimDefault(artist, info.Artist)
 	if title == "" || artist == "" {
 		a, t := parseYouTubeTitle(info.Title, trimDefault(info.Channel, info.Uploader))
@@ -515,8 +512,21 @@ func (y *ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, er
 		Duration:       info.Duration,
 		CoverURL:       cover,
 		SquareCover:    true,
-		LookupMetadata: true,
+		LookupMetadata: false,
 	}, nil
+}
+
+func joinArtists(names []string) string {
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if key := artistKey(n); key != "" && !seen[key] {
+			seen[key] = true
+			out = append(out, n)
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 func ytdlpFriendly(err error, withCookies bool) string {

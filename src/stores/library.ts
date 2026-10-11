@@ -2,8 +2,8 @@
 
 import { create } from "zustand"
 import { toast } from "sonner"
-import { api, fetchTrackChanges } from "@/lib/api"
-import type { Playlist, Stats, Track, TrackPatch } from "@/lib/types"
+import { api, fetchHome, fetchTrackChanges, pins as pinsApi } from "@/lib/api"
+import type { HomeFeed, LibraryPin, Playlist, Stats, Track, TrackPatch } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
 import { useMediaTokenStore } from "@/stores/media-token"
 import { useOfflineStore } from "@/stores/offline"
@@ -19,6 +19,8 @@ interface LibraryState {
   playlists: Playlist[]
   favorites: Track[]
   stats: Stats | null
+  home: HomeFeed | null
+  pins: LibraryPin[]
   loading: boolean
   initialized: boolean
   playlistVersion: number
@@ -27,6 +29,9 @@ interface LibraryState {
   fetchPlaylists: () => Promise<void>
   fetchFavorites: () => Promise<void>
   fetchStats: () => Promise<void>
+  fetchHome: () => Promise<void>
+  fetchPins: () => Promise<void>
+  togglePin: (kind: LibraryPin["kind"], name: string, artist?: string) => Promise<void>
   toggleFavorite: (trackId: string) => Promise<void>
   createPlaylist: (name: string) => Promise<Playlist | null>
   deletePlaylist: (id: string) => Promise<boolean>
@@ -50,6 +55,8 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
   publicPlaylists: [],
   favorites: [],
   stats: null,
+  home: null,
+  pins: [],
   loading: false,
   initialized: false,
   playlistVersion: 0,
@@ -63,6 +70,8 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
       get().fetchPublicPlaylists(),
       get().fetchFavorites(),
       get().fetchStats(),
+      get().fetchPins(),
+      usePlayerStore.getState().loadContextPrefs(),
     ])
     const tracksFailed = results[0].status === "rejected" ? results[0].reason : null
     if (tracksFailed && isNetworkError(tracksFailed)) {
@@ -128,6 +137,33 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
   fetchStats: async () => {
     const stats = await api<Stats>("/api/stats")
     set({ stats })
+  },
+
+  fetchHome: async () => {
+    const home = await fetchHome()
+    set({ home })
+  },
+
+  fetchPins: async () => {
+    set({ pins: await pinsApi.list() })
+  },
+
+  togglePin: async (kind, name, artist = "") => {
+    const key = (p: LibraryPin) => p.kind === kind && p.name === name && p.artist === (kind === "artist" ? "" : artist)
+    const before = get().pins
+    const pinned = before.some(key)
+    set({
+      pins: pinned
+        ? before.filter((p) => !key(p))
+        : [{ kind, name, artist: kind === "artist" ? "" : artist, pinnedAt: new Date().toISOString() }, ...before],
+    })
+    try {
+      if (pinned) await pinsApi.remove(kind, name, artist)
+      else await pinsApi.add(kind, name, artist)
+    } catch (e) {
+      set({ pins: before })
+      toast.error((e as Error).message)
+    }
   },
 
   toggleFavorite: async (trackId) => {
@@ -337,6 +373,8 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
       publicPlaylists: [],
       favorites: [],
       stats: null,
+      home: null,
+      pins: [],
       loading: false,
       initialized: false,
       playlistVersion: 0,

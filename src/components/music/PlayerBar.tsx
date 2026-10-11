@@ -21,7 +21,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatDuration } from "@/lib/format"
-import { usePlayerStore } from "@/stores/player"
+import { ShuffleGlyph, shuffleLabel } from "@/components/music/ShuffleGlyph"
+import { usePlayerStore, shuffleModeOf } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { useListenStore } from "@/stores/listen"
@@ -109,6 +110,7 @@ export function PlayerBar() {
   const volume = usePlayerStore((s) => s.volume)
   const muted = usePlayerStore((s) => s.muted)
   const shuffle = usePlayerStore((s) => s.shuffle)
+  const shuffleMode = usePlayerStore((s) => shuffleModeOf(s))
   const repeat = usePlayerStore((s) => s.repeat)
   const queueLength = usePlayerStore((s) => s.queue.length)
   const crossfade = usePlayerStore((s) => s.crossfadeSeconds)
@@ -227,12 +229,12 @@ export function PlayerBar() {
         <div className="hidden flex-1 flex-col items-center gap-1.5 md:flex">
           <div className="flex items-center gap-1">
             <ControlButton
-              label="Shuffle"
+              label={shuffleLabel(shuffleMode)}
               active={shuffle && !inSession}
               disabled={inSession}
               onClick={() => usePlayerStore.getState().toggleShuffle()}
             >
-              <Shuffle className="size-4" />
+              <ShuffleGlyph mode={shuffleMode} className="size-4" />
             </ControlButton>
             <ControlButton
               label="Previous track"

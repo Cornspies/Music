@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -121,27 +122,72 @@ func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListArtists(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.db.Query(`
-                SELECT COALESCE(NULLIF(t.artist, ''), 'Unknown Artist'), COUNT(*), COALESCE(SUM(t.duration), 0)
-                FROM tracks t
-                WHERE `+visibleTo("t.user_id")+`
-                GROUP BY 1 ORDER BY 1 COLLATE NOCASE ASC`, userFrom(r).ID)
+	artists, err := s.libraryArtists(userFrom(r).ID, "")
 	if err != nil {
 		s.internalErr(w, "list artists", err)
 		return
 	}
-	defer rows.Close()
-
-	artists := []*Artist{}
-	for rows.Next() {
-		var a Artist
-		if err := rows.Scan(&a.Name, &a.TrackCount, &a.TotalDuration); err != nil {
-			s.internalErr(w, "scan artist", err)
-			return
-		}
-		artists = append(artists, &a)
-	}
 	writeJSON(w, http.StatusOK, artists)
+}
+
+func (s *Server) libraryArtists(userID, filter string) ([]*Artist, error) {
+	rows, err := s.db.Query(`SELECT t.artist, t.duration FROM tracks t WHERE `+visibleTo("t.user_id"), userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type tally struct {
+		artist   Artist
+		spelling map[string]int
+	}
+	byKey := map[string]*tally{}
+	var order []string
+	filter = artistKey(filter)
+	for rows.Next() {
+		var credit string
+		var duration float64
+		if err := rows.Scan(&credit, &duration); err != nil {
+			return nil, err
+		}
+		names := splitArtists(dropPlaceholder(credit, "Unknown Artist"))
+		if len(names) == 0 {
+			names = []string{"Unknown Artist"}
+		}
+		for _, name := range names {
+			key := artistKey(name)
+			if filter != "" && !strings.Contains(key, filter) {
+				continue
+			}
+			t := byKey[key]
+			if t == nil {
+				t = &tally{spelling: map[string]int{}}
+				byKey[key] = t
+				order = append(order, key)
+			}
+			t.artist.TrackCount++
+			t.artist.TotalDuration += duration
+			t.spelling[name]++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]*Artist, 0, len(order))
+	for _, key := range order {
+		t := byKey[key]
+		best := 0
+		for name, n := range t.spelling {
+			if n > best || n == best && name < t.artist.Name {
+				t.artist.Name, best = name, n
+			}
+		}
+		a := t.artist
+		out = append(out, &a)
+	}
+	slices.SortFunc(out, func(a, b *Artist) int {
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	})
+	return out, nil
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -211,23 +257,13 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	result["albums"] = albums
 
-	rows3, err := s.db.Query(`
-                SELECT COALESCE(NULLIF(t.artist,''),'Unknown Artist'), COUNT(*), COALESCE(SUM(t.duration),0)
-                FROM tracks t WHERE (t.artist LIKE ? ESCAPE '\' OR t.album LIKE ? ESCAPE '\') AND `+visibleTo("t.user_id")+`
-                GROUP BY 1 ORDER BY 1 COLLATE NOCASE ASC LIMIT 25`, like, like, u.ID)
+	artists, err := s.libraryArtists(u.ID, q)
 	if err != nil {
 		s.internalErr(w, "search artists", err)
 		return
 	}
-	defer rows3.Close()
-	artists := []*Artist{}
-	for rows3.Next() {
-		var a Artist
-		if err := rows3.Scan(&a.Name, &a.TrackCount, &a.TotalDuration); err != nil {
-			s.internalErr(w, "scan search artist", err)
-			return
-		}
-		artists = append(artists, &a)
+	if len(artists) > 25 {
+		artists = artists[:25]
 	}
 	result["artists"] = artists
 
@@ -261,11 +297,14 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	var totalDuration float64
 
 	if err := s.db.QueryRow(`
-                SELECT COUNT(*), COALESCE(SUM(t.duration),0), COUNT(DISTINCT COALESCE(NULLIF(t.artist,''),'Unknown Artist')), COUNT(DISTINCT COALESCE(NULLIF(t.album,''),'Unknown Album'))
+                SELECT COUNT(*), COALESCE(SUM(t.duration),0), COUNT(DISTINCT COALESCE(NULLIF(t.album,''),'Unknown Album'))
                 FROM tracks t WHERE `+visibleTo("t.user_id"), u.ID).
-		Scan(&trackCount, &totalDuration, &artistCount, &albumCount); err != nil {
+		Scan(&trackCount, &totalDuration, &albumCount); err != nil {
 		s.internalErr(w, "stats tracks", err)
 		return
+	}
+	if artists, err := s.libraryArtists(u.ID, ""); err == nil {
+		artistCount = len(artists)
 	}
 	if err := s.db.QueryRow(`SELECT COUNT(1) FROM favorites WHERE user_id = ?`, u.ID).Scan(&favoriteCount); err != nil {
 		s.internalErr(w, "stats favorites", err)

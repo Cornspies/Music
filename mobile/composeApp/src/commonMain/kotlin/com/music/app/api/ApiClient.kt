@@ -394,6 +394,18 @@ class ApiClient(private val store: TokenStore) {
         return response.body<PlaybackSaved>().updatedAt
     }
 
+    suspend fun playbackPrefs(): List<PlaybackPref> = getJson("/api/playback/prefs")
+
+    suspend fun savePlaybackPref(pref: PlaybackPref) {
+        expectNoContent(
+            client.put(url("/api/playback/prefs")) {
+                auth()
+                headers.append(HttpHeaders.ContentType, "application/json")
+                setBody(pref)
+            },
+        )
+    }
+
     suspend fun favorites(): List<Track> = getJson("/api/favorites")
 
     suspend fun addFavorite(trackId: String) {

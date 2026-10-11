@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import com.music.app.Screen
 import com.music.app.DeepLinks
 import com.music.app.api.ApiClient
+import com.music.app.api.PlaybackPref
 import com.music.app.api.AuthConfig
 import com.music.app.api.ApiException
 import com.music.app.api.DiscoverResult
@@ -59,11 +60,14 @@ import kotlin.time.TimeSource
 
 enum class RepeatMode { OFF, ALL, ONE }
 
+enum class ShuffleMode { OFF, RANDOM, NO_REPEAT }
+
 private const val KEY_SWIPE_TO_DELETE = "ui.swipeToDelete"
 private const val KEY_UPDATE_DISMISSED = "update.dismissed"
 private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 private const val CHANGE_CHECK_INTERVAL_MS = 30_000L
 private const val PLAYBACK_SYNC_INTERVAL_MS = 5L * 60_000L
+private const val SHUFFLE_HISTORY_MAX = 500
 private const val PAUSE_SETTLE_MS = 2_000L
 
 private const val SESSION_DRIFT_SEC = 1.5
@@ -227,8 +231,28 @@ class AppModel(
     var queueIndex by mutableIntStateOf(0)
         private set
 
-    var shuffle by mutableStateOf(false)
-    var repeatMode by mutableStateOf(RepeatMode.OFF)
+    private var shuffleOn by mutableStateOf(false)
+    private var shuffleNoRepeatOn by mutableStateOf(false)
+    val shuffle: Boolean get() = shuffleOn
+    val shuffleMode: ShuffleMode
+        get() = when {
+            !shuffleOn -> ShuffleMode.OFF
+            shuffleNoRepeatOn -> ShuffleMode.NO_REPEAT
+            else -> ShuffleMode.RANDOM
+        }
+    private var repeatState by mutableStateOf(RepeatMode.OFF)
+    var repeatMode: RepeatMode
+        get() = repeatState
+        set(value) {
+            repeatState = value
+            saveContextPref()
+        }
+
+    private val shuffleBack = ArrayDeque<String>()
+    private val shuffleForward = ArrayDeque<String>()
+    private val shufflePlayed = mutableSetOf<String>()
+    private var playContext: String? = null
+    private var contextPrefs: Map<String, PlaybackPref> = emptyMap()
 
     private val statsQueue = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
@@ -423,6 +447,9 @@ class AppModel(
     }
 
     fun refreshAll() {
+        scope.launch {
+            runCatching { api.playbackPrefs() }.onSuccess { list -> contextPrefs = list.associateBy { it.context } }
+        }
         scope.launch { loadLibraryInternal(tracksSort) }
         scope.launch { loadStatsInternal() }
         scope.launch { loadFavoritesInternal() }
@@ -902,23 +929,82 @@ class AppModel(
         }
     }
 
-    fun playTrack(track: Track, context: List<Track>) {
+    fun playTrack(track: Track, context: List<Track>, playContext: String? = null) {
         if (listen.active) return listen.add(listOf(track), "now")
+        resetShuffleHistory()
+        applyContext(playContext)
         val idx = context.indexOfFirst { it.id == track.id }
         queue = if (idx >= 0) context else listOf(track)
         queueIndex = if (idx >= 0) idx else 0
         startCurrent()
     }
 
-    fun playAll(context: List<Track>, index: Int = 0) {
+    fun playAll(context: List<Track>, index: Int = 0, playContext: String? = null, shuffled: Boolean = false) {
         if (context.isEmpty()) return
-        if (listen.active) return listen.add(context.drop(index.coerceIn(0, context.lastIndex)), "now")
+        if (listen.active) {
+            val list = if (shuffled) context.shuffled() else context.drop(index.coerceIn(0, context.lastIndex))
+            return listen.add(list, "now")
+        }
+        resetShuffleHistory()
+        applyContext(playContext)
         queue = context
-        queueIndex = index.coerceIn(0, context.lastIndex)
+        queueIndex = if (shuffled) Random.nextInt(context.size) else index.coerceIn(0, context.lastIndex)
         startCurrent()
+        if (shuffled && !shuffleOn) setShuffleMode(ShuffleMode.RANDOM)
+    }
+
+    fun cycleShuffle() {
+        setShuffleMode(
+            when (shuffleMode) {
+                ShuffleMode.OFF -> ShuffleMode.RANDOM
+                ShuffleMode.RANDOM -> ShuffleMode.NO_REPEAT
+                ShuffleMode.NO_REPEAT -> ShuffleMode.OFF
+            },
+        )
+    }
+
+    fun setShuffleMode(mode: ShuffleMode) {
+        resetShuffleHistory()
+        shuffleOn = mode != ShuffleMode.OFF
+        shuffleNoRepeatOn = mode == ShuffleMode.NO_REPEAT
+        queue.getOrNull(queueIndex)?.let { notePlayed(it.id) }
+        saveContextPref()
+    }
+
+    private fun applyContext(context: String?) {
+        playContext = context
+        val pref = context?.let { contextPrefs[it] } ?: return
+        shuffleOn = pref.shuffle != "off"
+        shuffleNoRepeatOn = pref.shuffle == "norepeat"
+        repeatState = when (pref.repeat) {
+            "all" -> RepeatMode.ALL
+            "one" -> RepeatMode.ONE
+            else -> RepeatMode.OFF
+        }
+    }
+
+    private fun saveContextPref() {
+        val context = playContext ?: return
+        if (listen.active) return
+        val pref = PlaybackPref(
+            context = context,
+            shuffle = when (shuffleMode) {
+                ShuffleMode.OFF -> "off"
+                ShuffleMode.RANDOM -> "random"
+                ShuffleMode.NO_REPEAT -> "norepeat"
+            },
+            repeat = when (repeatState) {
+                RepeatMode.OFF -> "off"
+                RepeatMode.ALL -> "all"
+                RepeatMode.ONE -> "one"
+            },
+        )
+        contextPrefs = contextPrefs + (context to pref)
+        scope.launch { runCatching { api.savePlaybackPref(pref) } }
     }
 
     private fun startCurrent() {
+        queue.getOrNull(queueIndex)?.let { notePlayed(it.id) }
         val track = loadCurrent(autoplay = true) ?: return
         countPlay(track)
         savePlayback(position = 0.0)
@@ -1030,9 +1116,18 @@ class AppModel(
 
     private fun advance(auto: Boolean) {
         if (queue.isEmpty()) return
-        val i = if (shuffle && queue.size > 1) randomOtherIndex() else queueIndex + 1
+        val i = if (shuffle && queue.size > 1) {
+            forwardIndex().takeIf { it >= 0 } ?: pickShuffled(wrap = !auto || repeatMode == RepeatMode.ALL)
+        } else {
+            queueIndex + 1
+        }
         when {
+            i < 0 -> {
+                player.pause()
+                player.seekTo(0.0)
+            }
             i < queue.size -> {
+                noteShuffleMove(queue.getOrNull(queueIndex)?.id, queue[i].id)
                 queueIndex = i
                 startCurrent()
             }
@@ -1051,6 +1146,47 @@ class AppModel(
         }
     }
 
+    private fun resetShuffleHistory() {
+        shuffleBack.clear()
+        shuffleForward.clear()
+        shufflePlayed.clear()
+    }
+
+    private fun notePlayed(id: String) {
+        if (shuffleOn && shuffleNoRepeatOn) shufflePlayed.add(id)
+    }
+
+    private fun pickShuffled(wrap: Boolean): Int {
+        if (!shuffleNoRepeatOn) return randomOtherIndex()
+        var fresh = queue.indices.filter { it != queueIndex && queue[it].id !in shufflePlayed }
+        if (fresh.isEmpty()) {
+            if (!wrap) return -1
+            val current = queue.getOrNull(queueIndex)?.id
+            shufflePlayed.clear()
+            current?.let { shufflePlayed.add(it) }
+            fresh = queue.indices.filter { it != queueIndex && queue[it].id != current }
+            if (fresh.isEmpty()) return -1
+        }
+        return fresh[Random.nextInt(fresh.size)]
+    }
+
+    private fun noteShuffleMove(fromId: String?, toId: String) {
+        if (!shuffle || fromId == null || fromId == toId) return
+        shuffleBack.addLast(fromId)
+        if (shuffleBack.size > SHUFFLE_HISTORY_MAX) shuffleBack.removeFirst()
+        if (shuffleForward.lastOrNull() == toId) shuffleForward.removeLast() else shuffleForward.clear()
+    }
+
+    private fun forwardIndex(): Int {
+        while (shuffleForward.isNotEmpty()) {
+            val id = shuffleForward.last()
+            val idx = queue.indexOfFirst { it.id == id }
+            if (idx >= 0 && idx != queueIndex) return idx
+            shuffleForward.removeLast()
+        }
+        return -1
+    }
+
     private fun randomOtherIndex(): Int {
         var candidate = queueIndex
         while (candidate == queueIndex) candidate = Random.nextInt(queue.size)
@@ -1061,6 +1197,21 @@ class AppModel(
         if (listen.active) return listen.previous()
         if (queue.isEmpty()) return
         if (restartFirst && player.currentPositionSec() > 3.0) {
+            seekTo(0.0)
+            return
+        }
+        if (shuffle) {
+            val currentId = queue.getOrNull(queueIndex)?.id
+            while (shuffleBack.isNotEmpty()) {
+                val id = shuffleBack.removeLast()
+                val idx = queue.indexOfFirst { it.id == id }
+                if (idx >= 0 && idx != queueIndex) {
+                    if (currentId != null) shuffleForward.addLast(currentId)
+                    queueIndex = idx
+                    startCurrent()
+                    return
+                }
+            }
             seekTo(0.0)
             return
         }

@@ -142,3 +142,47 @@ export function formatAudioLabel(mime: string): string {
   if (m.includes("aac")) return "AAC"
   return m || "audio"
 }
+
+const ARTIST_SPLIT = /\s*(?:,|;|&|\s(?:feat\.?|ft\.?|featuring)\s)\s*/i
+
+function decodeEntities(s: string): string {
+  return s.replace(/&(amp|quot|#39|apos|lt|gt);/g, (_, e: string) =>
+    e === "amp" ? "&" : e === "quot" ? '"' : e === "lt" ? "<" : e === "gt" ? ">" : "'"
+  )
+}
+
+export function artistKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+}
+
+export function artistParts(credit: string): { text: string; artist: boolean }[] {
+  const clean = decodeEntities(credit || "").trim()
+  if (!clean) return []
+  return clean
+    .split(new RegExp(`(${ARTIST_SPLIT.source})`, "i"))
+    .filter((s) => s !== "")
+    .map((text, i) => ({ text, artist: i % 2 === 0 && artistKey(text) !== "" }))
+}
+
+export function splitArtists(credit: string): string[] {
+  const clean = decodeEntities(credit || "").trim()
+  if (!clean) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of clean.split(ARTIST_SPLIT)) {
+    const part = raw.trim()
+    const key = artistKey(part)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(part)
+  }
+  return out.length > 0 ? out : [clean]
+}
+
+export function hasArtist(credit: string, name: string): boolean {
+  const want = artistKey(name)
+  return want !== "" && splitArtists(credit).some((a) => artistKey(a) === want)
+}
