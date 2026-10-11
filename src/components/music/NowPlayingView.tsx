@@ -18,7 +18,8 @@ import {
 import { cn } from "@/lib/utils"
 import { formatDuration, hashGradient } from "@/lib/format"
 import { coverUrl } from "@/lib/api"
-import { usePlayerStore } from "@/stores/player"
+import { ShuffleGlyph, shuffleLabel } from "@/components/music/ShuffleGlyph"
+import { usePlayerStore, shuffleModeOf } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { useListenStore } from "@/stores/listen"
@@ -89,6 +90,7 @@ export function NowPlayingView() {
   const position = usePlayerStore((s) => s.position)
   const duration = usePlayerStore((s) => s.duration)
   const shuffle = usePlayerStore((s) => s.shuffle)
+  const shuffleMode = usePlayerStore((s) => shuffleModeOf(s))
   const repeat = usePlayerStore((s) => s.repeat)
   const queue = usePlayerStore((s) => s.queue)
   const queueIndex = usePlayerStore((s) => s.queueIndex)
@@ -320,13 +322,13 @@ export function NowPlayingView() {
 
         <div className="flex items-center gap-2 md:gap-4">
           <GhostControl
-            label="Shuffle"
+            label={shuffleLabel(shuffleMode)}
             active={shuffle && !listeners}
             disabled={listeners > 0}
             onClick={() => usePlayerStore.getState().toggleShuffle()}
             className="hidden sm:flex"
           >
-            <Shuffle className="size-4.5" />
+            <ShuffleGlyph mode={shuffleMode} className="size-4.5" />
           </GhostControl>
           <GhostControl label="Previous track" disabled={!canSkip} onClick={() => usePlayerStore.getState().prev()}>
             <SkipBack className="size-6 fill-current" />

@@ -204,6 +204,30 @@ func migrate(db *sql.DB) error {
                         used_at    TEXT,
                         revoked_at TEXT
                 )`,
+		`CREATE TABLE IF NOT EXISTS artist_info (
+                        artist_key   TEXT PRIMARY KEY,
+                        name         TEXT NOT NULL DEFAULT '',
+                        deezer_id    INTEGER NOT NULL DEFAULT 0,
+                        picture      TEXT NOT NULL DEFAULT '',
+                        related_json TEXT NOT NULL DEFAULT '[]',
+                        fetched_at   TEXT NOT NULL DEFAULT ''
+                )`,
+		`CREATE TABLE IF NOT EXISTS library_pins (
+                        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        kind       TEXT NOT NULL,
+                        name       TEXT NOT NULL,
+                        artist     TEXT NOT NULL DEFAULT '',
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (user_id, kind, name, artist)
+                )`,
+		`CREATE TABLE IF NOT EXISTS playback_prefs (
+                        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        context    TEXT NOT NULL,
+                        shuffle    TEXT NOT NULL DEFAULT 'off',
+                        repeat     TEXT NOT NULL DEFAULT 'off',
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (user_id, context)
+                )`,
 	}
 	for _, s := range later {
 		if _, err := db.Exec(s); err != nil {

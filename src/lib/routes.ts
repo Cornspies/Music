@@ -43,6 +43,13 @@ export function routeToPath(view: View, arg: string | null): string {
       return "/history"
     case "discover":
       return "/discover"
+    case "catalog":
+      if (!arg) return "/catalog"
+      if (arg.startsWith("find:")) return `/catalog/find/${encodeURIComponent(arg.slice(5))}`
+      if (arg.startsWith("release:")) return `/catalog/releases/${encodeURIComponent(arg.slice(8))}`
+      return `/catalog/artists/${encodeURIComponent(arg)}`
+    case "mix":
+      return arg ? `/mixes/${encodeURIComponent(arg)}` : "/"
     case "duplicates":
       return "/duplicates"
     case "filetags":
@@ -85,6 +92,13 @@ export function pathToRoute(pathname: string): Route {
       return { view: "history", arg: null }
     case "discover":
       return { view: "discover", arg: null }
+    case "catalog":
+      if (parts[1] === "find" && parts[2]) return { view: "catalog", arg: `find:${parts[2]}` }
+      if (parts[1] === "releases" && parts[2]) return { view: "catalog", arg: `release:${parts[2]}` }
+      if (parts[1] === "artists" && parts[2]) return { view: "catalog", arg: parts[2] }
+      return { view: "catalog", arg: null }
+    case "mixes":
+      return parts[1] ? { view: "mix", arg: parts[1] } : { view: "home", arg: null }
     case "duplicates":
       return { view: "duplicates", arg: null }
     case "file-tags":

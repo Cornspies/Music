@@ -2,7 +2,10 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { Loader2, Pencil } from "lucide-react"
+import { Loader2, Pencil, Search, X } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { catalog, fieldLookup } from "@/lib/api"
+import { FieldLookup, type LookupField, type LookupPick } from "@/components/music/FieldLookup"
 import { useUIStore } from "@/stores/ui"
 import { useLibraryStore } from "@/stores/library"
 import { Button } from "@/components/ui/button"
@@ -17,13 +20,66 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { Track } from "@/lib/types"
 
-function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }) {
+function LookupLabel({
+  htmlFor,
+  label,
+  active,
+  onLookup,
+}: {
+  htmlFor: string
+  label: string
+  active: boolean
+  onLookup: () => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      <button
+        type="button"
+        onClick={onLookup}
+        aria-pressed={active}
+        className={cn(
+          "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-colors",
+          active ? "bg-emerald-500/15 text-emerald-300" : "text-zinc-500 hover:text-emerald-300"
+        )}
+      >
+        <Search className="size-3" /> Look up
+      </button>
+    </div>
+  )
+}
+
+function EditTrackForm({
+  track,
+  onClose,
+  onLookupChange,
+}: {
+  track: Track
+  onClose: () => void
+  onLookupChange: (open: boolean) => void
+}) {
   const [title, setTitle] = useState(track.title)
   const [artist, setArtist] = useState(track.artist)
   const [album, setAlbum] = useState(track.album)
   const [genre, setGenre] = useState(track.genre)
   const [year, setYear] = useState(track.year ? String(track.year) : "")
   const [saving, setSaving] = useState(false)
+  const [lookup, setLookupRaw] = useState<LookupField | null>(null)
+  const [pendingCover, setPendingCover] = useState<{ url: string; source: string } | null>(null)
+
+  const setLookup = (field: LookupField | null) => {
+    setLookupRaw(field)
+    onLookupChange(field !== null)
+  }
+
+  const pick = (field: LookupField, p: LookupPick) => {
+    if (field === "album") setAlbum(p.value)
+    if (field === "artist") setArtist(p.value)
+    if (field === "genre") setGenre(p.value)
+    if (field === "year" || p.year) setYear(String(p.year ?? p.value))
+    if (p.cover) setPendingCover({ url: p.cover, source: p.source })
+    setLookup(null)
+  }
 
   const save = async () => {
     const trimmedTitle = title.trim()
@@ -44,6 +100,13 @@ function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }
       genre: genre.trim(),
       year: yearNum,
     })
+    if (ok && pendingCover) {
+      try {
+        useLibraryStore.getState().replaceTrack(await fieldLookup.setCover(track.id, pendingCover.url))
+      } catch (e) {
+        toast.error(`The details were saved, but the cover wasn't: ${(e as Error).message}`)
+      }
+    }
     setSaving(false)
     if (ok) {
       toast.success("Track updated")
@@ -53,7 +116,7 @@ function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }
 
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex min-w-0 flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault()
         save()
@@ -72,7 +135,12 @@ function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="edit-artist">Artist</Label>
+          <LookupLabel
+            htmlFor="edit-artist"
+            label="Artist"
+            active={lookup === "artist"}
+            onLookup={() => setLookup(lookup === "artist" ? null : "artist")}
+          />
           <Input
             id="edit-artist"
             value={artist}
@@ -82,7 +150,12 @@ function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="edit-album">Album</Label>
+          <LookupLabel
+            htmlFor="edit-album"
+            label="Album"
+            active={lookup === "album"}
+            onLookup={() => setLookup(lookup === "album" ? null : "album")}
+          />
           <Input
             id="edit-album"
             value={album}
@@ -92,7 +165,12 @@ function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="edit-genre">Genre</Label>
+          <LookupLabel
+            htmlFor="edit-genre"
+            label="Genre"
+            active={lookup === "genre"}
+            onLookup={() => setLookup(lookup === "genre" ? null : "genre")}
+          />
           <Input
             id="edit-genre"
             value={genre}
@@ -102,7 +180,12 @@ function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="edit-year">Year</Label>
+          <LookupLabel
+            htmlFor="edit-year"
+            label="Year"
+            active={lookup === "year"}
+            onLookup={() => setLookup(lookup === "year" ? null : "year")}
+          />
           <Input
             id="edit-year"
             inputMode="numeric"
@@ -113,6 +196,33 @@ function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }
           />
         </div>
       </div>
+
+      {pendingCover ? (
+        <div className="flex items-center gap-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-2">
+          <img src={catalog.imageUrl(pendingCover.url)} alt="" className="size-10 rounded bg-zinc-800 object-cover" />
+          <p className="min-w-0 flex-1 text-xs text-zinc-300">The cover from {pendingCover.source} will be used when you save.</p>
+          <button
+            type="button"
+            onClick={() => setPendingCover(null)}
+            aria-label="Keep the current cover"
+            className="rounded p-1 text-zinc-500 hover:text-zinc-100"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      ) : null}
+
+      {lookup ? (
+        <FieldLookup
+          trackId={track.id}
+          field={lookup}
+          title={title.trim() || track.title}
+          artist={artist.trim()}
+          current={{ artist, album, genre, year }[lookup]}
+          onPick={(p) => pick(lookup, p)}
+          onClose={() => setLookup(null)}
+        />
+      ) : null}
 
       <DialogFooter>
         <Button
@@ -137,6 +247,7 @@ function EditTrackForm({ track, onClose }: { track: Track; onClose: () => void }
 }
 
 export function EditTrackDialog() {
+  const [wide, setWide] = useState(false)
   const editTrackId = useUIStore((s) => s.editTrackId)
   const setEditTrackId = useUIStore((s) => s.setEditTrackId)
   const track = useLibraryStore((s) =>
@@ -147,16 +258,32 @@ export function EditTrackDialog() {
     <Dialog
       open={Boolean(editTrackId && track)}
       onOpenChange={(o) => {
-        if (!o) setEditTrackId(null)
+        if (!o) {
+          setEditTrackId(null)
+          setWide(false)
+        }
       }}
     >
-      <DialogContent aria-describedby={undefined} className="border-zinc-800 bg-zinc-900">
+      <DialogContent
+        aria-describedby={undefined}
+        className={cn("max-h-[92dvh] overflow-y-auto border-zinc-800 bg-zinc-900", wide && "sm:max-w-2xl")}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Pencil className="size-4 text-emerald-400" aria-hidden="true" /> Edit track
           </DialogTitle>
         </DialogHeader>
-        {track ? <EditTrackForm key={track.id} track={track} onClose={() => setEditTrackId(null)} /> : null}
+        {track ? (
+          <EditTrackForm
+            key={track.id}
+            track={track}
+            onClose={() => {
+              setEditTrackId(null)
+              setWide(false)
+            }}
+            onLookupChange={setWide}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   )

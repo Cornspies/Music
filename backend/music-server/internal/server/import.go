@@ -82,8 +82,10 @@ type importJob struct {
 	mu sync.Mutex
 	PlaylistImport
 	user       *User
-	src        playlistSource
+	src        source
 	listID     string
+	preset     []discoverResult
+	noPlaylist bool
 	cancel     context.CancelFunc
 	finishedAt time.Time
 }
@@ -252,29 +254,35 @@ func (s *Server) runImport(job *importJob) {
 	job.mu.Unlock()
 	defer cancel()
 
-	listCtx, listCancel := context.WithTimeout(ctx, importListTime)
-	pl, err := job.src.listPlaylist(listCtx, job.listID)
-	listCancel()
-	if err != nil {
-		if ctx.Err() != nil {
-			job.finish(importCancelled, "")
+	entries, title := job.preset, job.snapshot().Title
+	if ps, ok := job.src.(playlistSource); ok && job.preset == nil {
+		listCtx, listCancel := context.WithTimeout(ctx, importListTime)
+		pl, err := ps.listPlaylist(listCtx, job.listID)
+		listCancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				job.finish(importCancelled, "")
+				return
+			}
+			logErr("import list", err)
+			job.finish(importFailed, friendlyImportError(err, "couldn't read the playlist"))
 			return
 		}
-		logErr("import list", err)
-		job.finish(importFailed, friendlyImportError(err, "couldn't read the playlist"))
-		return
+		entries, title = pl.Entries, trimDefault(pl.Title, job.src.name()+" playlist")
 	}
-	entries := pl.Entries
 	if len(entries) == 0 {
 		job.finish(importFailed, "the playlist has no tracks that can be fetched")
 		return
 	}
-	title := trimDefault(pl.Title, job.src.name()+" playlist")
-	playlistID, err := s.playlistForImport(job.user.ID, title)
-	if err != nil {
-		logErr("import playlist", err)
-		job.finish(importFailed, "couldn't create the playlist")
-		return
+	playlistID := ""
+	if !job.noPlaylist {
+		var err error
+		playlistID, err = s.playlistForImport(job.user.ID, title)
+		if err != nil {
+			logErr("import playlist", err)
+			job.finish(importFailed, "couldn't create the playlist")
+			return
+		}
 	}
 	job.update(func(p *PlaylistImport) {
 		p.Title, p.Total, p.PlaylistID, p.State = title, len(entries), playlistID, importRunning
@@ -305,8 +313,10 @@ func (s *Server) runImport(job *importJob) {
 			})
 			continue
 		}
-		if err := s.linkIntoPlaylist(playlistID, trackID); err != nil {
-			logErr("import link", err)
+		if playlistID != "" {
+			if err := s.linkIntoPlaylist(playlistID, trackID); err != nil {
+				logErr("import link", err)
+			}
 		}
 		job.update(func(p *PlaylistImport) {
 			p.Done++
@@ -334,7 +344,7 @@ func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResu
 	if existing, ok := s.trackFromSource(job.user.ID, job.src.key(), e.ID); ok {
 		return existing, false, "the same video was added before", nil, nil
 	}
-	lookalike = s.sameSongInLibrary(job.user.ID, e)
+	lookalike = s.sameSongInLibrary(job.user.ID, e, job.preset != nil)
 	fetchCtx, cancel := context.WithTimeout(ctx, importFetchTime)
 	defer cancel()
 	dl, err := job.src.fetch(fetchCtx, e.ID)
@@ -350,11 +360,14 @@ func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResu
 	return id, true, "", lookalike, nil
 }
 
-func (s *Server) sameSongInLibrary(userID string, e discoverResult) *Track {
+func (s *Server) sameSongInLibrary(userID string, e discoverResult, clean bool) *Track {
 	artist, title := parseYouTubeTitle(e.Title, "")
 	title = trimDefault(title, e.Title)
 	veto := artist != ""
 	artist = trimDefault(artist, e.Artist)
+	if clean {
+		title, artist, veto = e.Title, e.Artist, e.Artist != ""
+	}
 	matches := s.findSameSong(userID, title, artist, e.Duration, true, veto)
 	if len(matches) == 0 {
 		return nil

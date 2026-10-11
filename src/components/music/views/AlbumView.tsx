@@ -6,7 +6,7 @@ import { formatTotal, hashGradient } from "@/lib/format"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
-import { CollectionHeader } from "@/components/music/CollectionHeader"
+import { CollectionHeader, PinButton } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackList } from "@/components/music/TrackList"
 
@@ -42,6 +42,7 @@ export function AlbumView() {
           albumTracks.length === 1 ? "" : "s"
         } · ${formatTotal(totalDuration)}`}
         tracks={albumTracks}
+        actions={albumKey.name ? <PinButton kind="album" name={albumKey.name} artist={albumKey.artist} /> : null}
         cover={
           withCover ? (
             <CoverArt

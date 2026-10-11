@@ -14,22 +14,7 @@ import { UserAvatar } from "@/components/music/UserAvatar"
 import { EqualizerButton } from "@/components/music/EqualizerIcon"
 import { TrackMenu } from "@/components/music/TrackMenu"
 import { useContextMenu } from "@/components/music/MenuAtPoint"
-
-export function JumpLink({ label, onOpen }: { label: string; onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onOpen()
-      }}
-      onDoubleClick={(e) => e.stopPropagation()}
-      className="max-w-full truncate text-left hover:text-zinc-200 hover:underline focus-visible:underline focus-visible:outline-none"
-    >
-      {label}
-    </button>
-  )
-}
+import { ArtistLinks, JumpLink } from "@/components/music/ArtistLinks"
 
 interface TrackRowProps {
   track: Track
@@ -128,11 +113,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
             />
           )}
           <span className="truncate">
-            {track.artist ? (
-              <JumpLink label={track.artist} onOpen={() => useUIStore.getState().navigate("artist", track.artist)} />
-            ) : (
-              "Unknown artist"
-            )}
+            <ArtistLinks credit={track.artist} />
             {track.year ? ` · ${track.year}` : ""}
           </span>
         </div>

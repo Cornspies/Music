@@ -545,22 +545,28 @@ type musicbrainzSearchResponse struct {
 }
 
 func musicbrainzRequest(ctx context.Context, query string) (*musicbrainzSearchResponse, error) {
-	q := url.Values{"query": {query}, "fmt": {"json"}, "limit": {"5"}}
+	var parsed musicbrainzSearchResponse
+	if err := musicbrainzGet(ctx, url.Values{"query": {query}, "fmt": {"json"}, "limit": {"5"}}, &parsed); err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
 
+func musicbrainzGet(ctx context.Context, q url.Values, out any) error {
 	for attempt := 1; attempt <= mbMaxAttempts; attempt++ {
 		if err := mbThrottle(ctx); err != nil {
-			return nil, err
+			return err
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, musicbrainzSearchURL+"?"+q.Encode(), nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		req.Header.Set("User-Agent", "Music-SelfHosted-MusicPlayer/1.0 ( self-hosted )")
 
 		resp, err := metadataLookupClient.Do(req)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests {
@@ -568,30 +574,26 @@ func musicbrainzRequest(ctx context.Context, query string) (*musicbrainzSearchRe
 			resp.Body.Close()
 			if attempt == mbMaxAttempts {
 				mbStartCooldown()
-				return nil, errMusicBrainzBusy
+				return errMusicBrainzBusy
 			}
 			select {
 			case <-time.After(delay):
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return ctx.Err()
 			}
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			return nil, fmt.Errorf("musicbrainz search: status %d", resp.StatusCode)
+			return fmt.Errorf("musicbrainz search: status %d", resp.StatusCode)
 		}
 
-		var parsed musicbrainzSearchResponse
-		decErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&parsed)
+		decErr := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(out)
 		resp.Body.Close()
-		if decErr != nil {
-			return nil, decErr
-		}
-		return &parsed, nil
+		return decErr
 	}
-	return nil, errMusicBrainzBusy
+	return errMusicBrainzBusy
 }
 
 func searchMusicBrainz(ctx context.Context, query string) ([]metadataCandidate, error) {

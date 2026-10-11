@@ -368,6 +368,13 @@ data class PlaybackState(
 data class PlaybackSaved(val updatedAt: String = "")
 
 @Serializable
+data class PlaybackPref(
+    val context: String,
+    val shuffle: String = "off",
+    val repeat: String = "off",
+)
+
+@Serializable
 data class PlaybackRequest(
     val trackId: String,
     val position: Double,

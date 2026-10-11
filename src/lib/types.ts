@@ -134,6 +134,7 @@ export interface DiscoverSource {
   name: string
   playlists: boolean
   links: boolean
+  songs: boolean
 }
 
 export interface DiscoverResult {
@@ -484,4 +485,111 @@ export interface BulkApplyResult {
   applying: number
   lookups: number
   uncertain: number
+}
+
+export interface HomeMix {
+  id: string
+  kind: "artist" | "repeat" | "rediscover"
+  title: string
+  subtitle: string
+  seed?: string
+  trackIds: string[]
+  coverTrackIds: string[]
+}
+
+export interface HomeArtist {
+  name: string
+  trackCount: number
+  listens: number
+  coverTrackId?: string
+  picture?: string
+}
+
+export interface HomeSuggestion {
+  name: string
+  deezerId?: number
+  picture?: string
+  trackCount: number
+  because: string
+}
+
+export interface HomeSimilar {
+  trackIds: string[]
+  basedOn: string[]
+}
+
+export interface HomeFeed {
+  mixes: HomeMix[]
+  topArtists: HomeArtist[]
+  suggestedArtists: HomeSuggestion[]
+  similar: { week: HomeSimilar; month: HomeSimilar }
+  pending: boolean
+}
+
+export interface CatalogArtist {
+  id: number
+  name: string
+  picture?: string
+  fans: number
+  releases: number
+  trackCount: number
+}
+
+export interface CatalogRelease {
+  id: number
+  title: string
+  artist: string
+  type: string
+  year: number
+  cover?: string
+  trackCount: number
+}
+
+export interface CatalogTrack {
+  id: number
+  title: string
+  artist: string
+  album?: string
+  albumId?: number
+  cover?: string
+  duration: number
+  position?: number
+  disc?: number
+  trackId?: string
+}
+
+export interface CatalogArtistPage {
+  artist: CatalogArtist
+  top: CatalogTrack[]
+  releases: CatalogRelease[]
+}
+
+export interface CatalogReleasePage {
+  release: CatalogRelease
+  tracks: CatalogTrack[]
+}
+
+export interface LookupSource {
+  key: string
+  name: string
+}
+
+export interface FieldOption {
+  source: string
+  title: string
+  artist: string
+  album: string
+  year: number
+  genre: string
+  type: string
+  cover?: string
+  duration: number
+  url?: string
+}
+
+export interface LibraryPin {
+  kind: "artist" | "album"
+  name: string
+  artist: string
+  pinnedAt: string
 }

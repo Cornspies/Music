@@ -1,11 +1,11 @@
 "use client"
 
-import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react"
 import { AudioLines, Home, Library, Menu, Search, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { fetchSharedTrackForMember } from "@/lib/api"
-import { useUIStore, type View } from "@/stores/ui"
+import { readSidebarCollapsedPref, useUIStore, type View } from "@/stores/ui"
 import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
 import { reattachBackground, restorePlayback, usePlayerStore } from "@/stores/player"
@@ -23,6 +23,8 @@ import { SearchView } from "@/components/music/views/SearchView"
 import { LibraryView } from "@/components/music/views/LibraryView"
 import { AlbumView } from "@/components/music/views/AlbumView"
 import { ArtistView } from "@/components/music/views/ArtistView"
+import { CatalogView } from "@/components/music/views/CatalogView"
+import { MixView } from "@/components/music/views/MixView"
 import { PlaylistsView } from "@/components/music/views/PlaylistsView"
 import { PlaylistView } from "@/components/music/views/PlaylistView"
 import { FavoritesView } from "@/components/music/views/FavoritesView"
@@ -214,6 +216,10 @@ function renderView(view: View) {
       return <HistoryView />
     case "discover":
       return <DiscoverView />
+    case "catalog":
+      return <CatalogView />
+    case "mix":
+      return <MixView />
     case "duplicates":
       return <DuplicatesView />
     case "filetags":
@@ -245,6 +251,7 @@ export function AppShell() {
   const viewArg = useUIStore((s) => s.viewArg)
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed)
 
   const fetchAll = useLibraryStore((s) => s.fetchAll)
   const initialized = useLibraryStore((s) => s.initialized)
@@ -271,14 +278,23 @@ export function AppShell() {
     mainRef.current?.scrollTo({ top: 0 })
   }, [view, viewArg])
 
+  useLayoutEffect(() => {
+    if (readSidebarCollapsedPref()) useUIStore.setState({ sidebarCollapsed: true })
+  }, [])
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       <MobileHeader />
       <OfflineBanner />
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950/70 md:flex">
-          <SidebarContent />
+        <aside
+          className={cn(
+            "hidden shrink-0 flex-col border-r border-zinc-800/60 bg-zinc-950/70 transition-[width] duration-200 md:flex",
+            sidebarCollapsed ? "w-[72px]" : "w-60"
+          )}
+        >
+          <SidebarContent collapsed={sidebarCollapsed} collapsible />
         </aside>
 
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>

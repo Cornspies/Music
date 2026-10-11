@@ -68,6 +68,7 @@ import com.music.app.LocalAppModel
 import com.music.app.Screen
 import com.music.app.api.Track
 import com.music.app.state.RepeatMode
+import com.music.app.state.ShuffleMode
 import com.music.app.ui.components.CoverImage
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.LyricsScreen
@@ -297,12 +298,28 @@ private fun NowPlayingContent(track: Track) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            IconButton(onClick = { model.shuffle = !model.shuffle }, enabled = session == null) {
-                Icon(
-                    Icons.Filled.Shuffle,
-                    contentDescription = "Shuffle",
-                    tint = if (model.shuffle && session == null) Emerald else Zinc500,
-                )
+            IconButton(onClick = { model.cycleShuffle() }, enabled = session == null) {
+                val tint = if (model.shuffle && session == null) Emerald else Zinc500
+                Box {
+                    Icon(
+                        Icons.Filled.Shuffle,
+                        contentDescription = when (model.shuffleMode) {
+                            ShuffleMode.OFF -> "Shuffle off"
+                            ShuffleMode.RANDOM -> "Shuffle on"
+                            ShuffleMode.NO_REPEAT -> "Shuffle without repeats"
+                        },
+                        tint = tint,
+                    )
+                    if (model.shuffleMode == ShuffleMode.NO_REPEAT) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 3.dp, y = (-3).dp)
+                                .size(6.dp)
+                                .background(tint, CircleShape),
+                        )
+                    }
+                }
             }
             IconButton(onClick = { model.previous() }, enabled = canSkip) {
                 Icon(

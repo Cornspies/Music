@@ -82,15 +82,11 @@ fun FavoritesScreen() {
             Spacer(Modifier.weight(1f))
             val favorites = model.favorites
             if (!favorites.isNullOrEmpty()) {
-                Button(onClick = { model.playAll(favorites, 0) }) {
+                Button(onClick = { model.playAll(favorites, 0, playContext = "favorites") }) {
                     Text("Play all")
                 }
                 Spacer(Modifier.padding(start = 8.dp))
-                TextButton(onClick = {
-                    model.shuffle = true
-                    model.playAll(favorites.shuffled(), 0)
-                    model.shuffle = false
-                }) {
+                TextButton(onClick = { model.playAll(favorites, playContext = "favorites", shuffled = true) }) {
                     Icon(Icons.Filled.Shuffle, contentDescription = null)
                     Spacer(Modifier.padding(start = 4.dp))
                     Text("Shuffle")
@@ -140,7 +136,7 @@ fun FavoritesScreen() {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp),
                 ) {
                     items(favorites, key = { it.id }) { track ->
-                        TrackRow(track = track, context = favorites)
+                        TrackRow(track = track, context = favorites, playContext = "favorites")
                     }
                 }
             }
