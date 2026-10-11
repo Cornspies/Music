@@ -1,7 +1,7 @@
 "use client"
 
 import { memo } from "react"
-import { CloudDownload, Heart, Loader2, Play } from "lucide-react"
+import { Check, CloudDownload, Heart, Loader2, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatDuration } from "@/lib/format"
 import type { Track } from "@/lib/types"
@@ -9,6 +9,7 @@ import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useOfflineStore } from "@/stores/offline"
 import { useUIStore } from "@/stores/ui"
+import { useSelectionStore, type SelectMode } from "@/stores/selection"
 import { CoverArt } from "@/components/music/CoverArt"
 import { UserAvatar } from "@/components/music/UserAvatar"
 import { EqualizerButton } from "@/components/music/EqualizerIcon"
@@ -32,11 +33,17 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
   const isDownloaded = useOfflineStore((s) => s.ids.has(track.id))
   const downloadJob = useOfflineStore((s) => s.jobs[track.id])
 
+  const selected = useSelectionStore((s) => s.ids.has(track.id))
+  const selecting = useSelectionStore((s) => s.ids.size > 0)
+
   const menu = useContextMenu()
 
   const play = () => {
     usePlayerStore.getState().playNow(track, contextQueue ?? [track])
   }
+
+  const select = (mode: SelectMode) =>
+    useSelectionStore.getState().select(track, index, contextQueue ?? [track], mode, onRemoveFromPlaylist)
 
   const isTouch = () =>
     typeof window !== "undefined" && window.matchMedia("(hover: none)").matches
@@ -47,8 +54,15 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
       tabIndex={0}
       aria-label={`Play ${track.title} by ${track.artist || "unknown artist"}`}
       onDoubleClick={play}
-      onClick={() => {
-        if (isTouch()) play()
+      data-selected={selected || undefined}
+      onClick={(e) => {
+        const mod = e.ctrlKey || e.metaKey
+        if (isTouch()) {
+          if (useSelectionStore.getState().ids.size > 0) select("toggle")
+          else play()
+          return
+        }
+        select(e.shiftKey ? (mod ? "extend" : "range") : mod ? "toggle" : "replace")
       }}
       onContextMenu={menu.onContextMenu}
       onKeyDown={(e) => {
@@ -57,11 +71,32 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
       className={cn(
         "group flex cursor-default items-center gap-3 rounded-lg px-2 py-1.5 select-none md:px-3",
         "hover:bg-zinc-800/60 focus-visible:bg-zinc-800/60 focus-visible:outline-none",
-        isCurrent && "bg-zinc-800/40"
+        isCurrent && "bg-zinc-800/40",
+        selected && "bg-emerald-500/10 hover:bg-emerald-500/15 focus-visible:bg-emerald-500/15"
       )}
     >
-      <div className="hidden w-6 shrink-0 items-center justify-center sm:flex">
-        {isCurrent ? (
+      <div className={cn("w-6 shrink-0 items-center justify-center", selecting ? "flex" : "hidden sm:flex")}>
+        {selecting ? (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={selected}
+            aria-label={`Select ${track.title}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              select(e.shiftKey ? "extend" : "toggle")
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+            className={cn(
+              "flex size-4 items-center justify-center rounded border transition-colors",
+              selected
+                ? "border-emerald-400 bg-emerald-500 text-zinc-950"
+                : "border-zinc-600 hover:border-zinc-400"
+            )}
+          >
+            {selected ? <Check className="size-3" strokeWidth={3} /> : null}
+          </button>
+        ) : isCurrent ? (
           <EqualizerButton playing={isPlaying} />
         ) : (
           <>
@@ -191,6 +226,7 @@ export const TrackRow = memo(function TrackRow({ track, index, contextQueue, onR
         onRemoveFromPlaylist={onRemoveFromPlaylist}
         onDismissAttention={onDismissAttention}
         onRestoreAttention={onRestoreAttention}
+        onSelect={() => select("toggle")}
         triggerClassName="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
         open={menu.open}
         onOpenChange={menu.onOpenChange}

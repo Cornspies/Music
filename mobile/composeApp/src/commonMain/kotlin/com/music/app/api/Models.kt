@@ -69,6 +69,7 @@ data class DiscoverSource(
     val name: String,
     val playlists: Boolean = false,
     val links: Boolean = false,
+    val songs: Boolean = false,
 )
 
 @Serializable
@@ -366,6 +367,56 @@ data class PlaybackState(
 
 @Serializable
 data class PlaybackSaved(val updatedAt: String = "")
+
+@Serializable
+data class HomeMix(
+    val id: String,
+    val kind: String = "artist",
+    val title: String,
+    val subtitle: String = "",
+    val seed: String? = null,
+    val trackIds: List<String> = emptyList(),
+    val coverTrackIds: List<String> = emptyList(),
+)
+
+@Serializable
+data class HomeArtist(
+    val name: String,
+    val trackCount: Int = 0,
+    val listens: Int = 0,
+    val coverTrackId: String? = null,
+    val picture: String? = null,
+)
+
+@Serializable
+data class HomeSuggestion(
+    val name: String,
+    val deezerId: Long? = null,
+    val picture: String? = null,
+    val trackCount: Int = 0,
+    val because: String = "",
+)
+
+@Serializable
+data class HomeSimilar(
+    val trackIds: List<String> = emptyList(),
+    val basedOn: List<String> = emptyList(),
+)
+
+@Serializable
+data class HomeSimilarSpans(
+    val week: HomeSimilar = HomeSimilar(),
+    val month: HomeSimilar = HomeSimilar(),
+)
+
+@Serializable
+data class HomeFeed(
+    val mixes: List<HomeMix> = emptyList(),
+    val topArtists: List<HomeArtist> = emptyList(),
+    val suggestedArtists: List<HomeSuggestion> = emptyList(),
+    val similar: HomeSimilarSpans = HomeSimilarSpans(),
+    val pending: Boolean = false,
+)
 
 @Serializable
 data class PlaybackPref(

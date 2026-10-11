@@ -116,6 +116,17 @@ export function PlaylistManageItems({
         )}
       </DropdownMenuItem>
       {copyLink}
+      <DropdownMenuItem onClick={togglePinned}>
+        {playlist.isPinned ? (
+          <>
+            <PinOff className="size-4" /> Unpin
+          </>
+        ) : (
+          <>
+            <Pin className="size-4" /> Pin to sidebar
+          </>
+        )}
+      </DropdownMenuItem>
       <DropdownMenuItem onClick={onDelete} className="text-red-400">
         <Trash2 className="size-4" /> Delete playlist
       </DropdownMenuItem>

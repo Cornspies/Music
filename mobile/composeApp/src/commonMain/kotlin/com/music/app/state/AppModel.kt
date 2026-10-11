@@ -12,6 +12,8 @@ import com.music.app.Screen
 import com.music.app.DeepLinks
 import com.music.app.api.ApiClient
 import com.music.app.api.PlaybackPref
+import com.music.app.api.HomeFeed
+import com.music.app.api.HomeSuggestion
 import com.music.app.api.AuthConfig
 import com.music.app.api.ApiException
 import com.music.app.api.DiscoverResult
@@ -63,6 +65,9 @@ enum class RepeatMode { OFF, ALL, ONE }
 enum class ShuffleMode { OFF, RANDOM, NO_REPEAT }
 
 private const val KEY_SWIPE_TO_DELETE = "ui.swipeToDelete"
+private const val KEY_SONGS_ONLY = "discover.songsOnly"
+private const val HOME_RETRIES = 4
+private const val HOME_RETRY_MS = 5_000L
 private const val KEY_UPDATE_DISMISSED = "update.dismissed"
 private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 private const val CHANGE_CHECK_INTERVAL_MS = 30_000L
@@ -181,6 +186,11 @@ class AppModel(
         private set
     var tracksSort by mutableStateOf("created")
         private set
+
+    var home by mutableStateOf<HomeFeed?>(null)
+        private set
+    private var homeJob: Job? = null
+    var pendingDiscover by mutableStateOf<String?>(null)
 
     var stats by mutableStateOf<Stats?>(null)
         private set
@@ -454,6 +464,36 @@ class AppModel(
         scope.launch { loadStatsInternal() }
         scope.launch { loadFavoritesInternal() }
         scope.launch { loadPlaylistsInternal() }
+    }
+
+    fun loadHome() {
+        homeJob?.cancel()
+        homeJob = scope.launch {
+            var tries = 0
+            while (true) {
+                val feed = runCatching { api.home() }.getOrNull() ?: break
+                home = feed
+                if (!feed.pending || tries++ >= HOME_RETRIES) break
+                delay(HOME_RETRY_MS)
+            }
+        }
+    }
+
+    fun openArtist(name: String) {
+        if (backStack.lastOrNull() == Screen.NowPlaying) pop()
+        push(Screen.Artist(name))
+    }
+
+    fun openAlbum(name: String, artist: String) {
+        if (backStack.lastOrNull() == Screen.NowPlaying) pop()
+        push(Screen.Album(name, artist))
+    }
+
+    fun openSuggestion(suggestion: HomeSuggestion) {
+        if (suggestion.trackCount > 0) return openArtist(suggestion.name)
+        loadDiscoverSources()
+        pendingDiscover = suggestion.name
+        selectTab(Screen.Search)
     }
 
     fun push(screen: Screen) {
@@ -777,7 +817,18 @@ class AppModel(
         private set
     var discoverError by mutableStateOf<String?>(null)
         private set
-    private var discoverQuery: Pair<String, String>? = null
+    private var discoverQuery: Triple<String, String, Boolean>? = null
+
+    private var songsOnlyState by mutableStateOf(localStore.loadMeta(KEY_SONGS_ONLY) == "1")
+    var discoverSongsOnly: Boolean
+        get() = songsOnlyState
+        set(value) {
+            songsOnlyState = value
+            localStore.saveMeta(KEY_SONGS_ONLY, if (value) "1" else null)
+        }
+
+    private fun songsOnlyFor(source: String): Boolean =
+        discoverSongsOnly && discoverSources?.firstOrNull { it.key == source }?.songs == true
 
     fun loadDiscoverSources() {
         if (discoverSources != null) return
@@ -788,15 +839,17 @@ class AppModel(
 
     fun discoverSearch(source: String, query: String) {
         val q = query.trim()
-        discoverQuery = source to q
+        val songs = songsOnlyFor(source)
+        val key = Triple(source, q, songs)
+        discoverQuery = key
         scope.launch {
             discoverLoading = true
             discoverError = null
             try {
-                val r = api.discoverSearch(source, q)
-                if (discoverQuery == source to q) discoverResults = r
+                val r = api.discoverSearch(source, q, songsOnly = songs)
+                if (discoverQuery == key) discoverResults = r
             } catch (e: Exception) {
-                if (discoverQuery == source to q) discoverError = friendlyError(e)
+                if (discoverQuery == key) discoverError = friendlyError(e)
             } finally {
                 discoverLoading = false
             }
@@ -804,14 +857,15 @@ class AppModel(
     }
 
     fun discoverLoadMore() {
-        val (source, q) = discoverQuery ?: return
+        val key = discoverQuery ?: return
+        val (source, q, songs) = key
         val current = discoverResults ?: return
         if (discoverLoading || !current.hasMore) return
         scope.launch {
             discoverLoading = true
             try {
-                val next = api.discoverSearch(source, q, current.page + 1)
-                if (discoverQuery == source to q) {
+                val next = api.discoverSearch(source, q, current.page + 1, songs)
+                if (discoverQuery == key) {
                     discoverResults = next.copy(results = current.results + next.results)
                 }
             } catch (_: Exception) {} finally {

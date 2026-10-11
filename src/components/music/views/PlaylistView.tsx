@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { Link as LinkIcon, ListMusic, Music2, Music4, Pin, PinOff } from "lucide-react"
 import { api } from "@/lib/api"
@@ -11,6 +11,7 @@ import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { CollectionHeader, HeaderMenuTrigger } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
+import { AddSongsButton } from "@/components/music/AddSongsButton"
 import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 import { Skeleton } from "@/components/ui/skeleton"
 import { copyPlaylistLink, DeletePlaylistDialog, PlaylistManageItems } from "@/components/music/PlaylistMenu"
@@ -41,6 +42,8 @@ export function PlaylistView() {
       cancelled = true
     }
   }, [viewArg, playlistVersion])
+
+  const trackIds = useMemo(() => detail?.tracks.map((t) => t.id) ?? [], [detail])
 
   const removeTrack = useCallback(
     (trackId: string) => {
@@ -113,6 +116,8 @@ export function PlaylistView() {
         }
         actions={
           detail.isMine ? (
+            <>
+            <AddSongsButton playlist={detail} trackIds={trackIds} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <HeaderMenuTrigger />
@@ -125,6 +130,7 @@ export function PlaylistView() {
                 />
               </DropdownMenuContent>
             </DropdownMenu>
+            </>
           ) : detail.isPublic ? (
             <>
               <button

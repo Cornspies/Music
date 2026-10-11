@@ -82,7 +82,7 @@ export function AddToPlaylistButton({ track }: { track: Track }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {
-            useUIStore.getState().setPendingPlaylistTrack(track)
+            useUIStore.getState().setPendingPlaylistTracks([track])
             useUIStore.getState().openPlaylistDialog({ mode: "create" })
           }}
         >

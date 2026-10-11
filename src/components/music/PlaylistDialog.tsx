@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { ListMusic, Loader2 } from "lucide-react"
 import { useUIStore } from "@/stores/ui"
-import { useLibraryStore } from "@/stores/library"
+import { addTracksWithToast, useLibraryStore } from "@/stores/library"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -21,7 +21,7 @@ export function PlaylistDialog() {
   const dialog = useUIStore((s) => s.playlistDialog)
   const openPlaylistDialog = useUIStore((s) => s.openPlaylistDialog)
   const closePlaylistDialog = useUIStore((s) => s.closePlaylistDialog)
-  const pendingTrack = useUIStore((s) => s.pendingPlaylistTrack)
+  const pendingTracks = useUIStore((s) => s.pendingPlaylistTracks)
 
   const [name, setName] = useState("")
   const [saving, setSaving] = useState(false)
@@ -44,15 +44,12 @@ export function PlaylistDialog() {
       if (dialog.mode === "create") {
         const playlist = await useLibraryStore.getState().createPlaylist(trimmed)
         if (playlist) {
-          if (pendingTrack) {
-            const ok = await useLibraryStore
-              .getState()
-              .addTrackToPlaylist(playlist.id, pendingTrack.id)
-            if (ok) toast.success(`Playlist “${playlist.name}” created with “${pendingTrack.title}”`)
+          if (pendingTracks?.length) {
+            await addTracksWithToast(playlist, pendingTracks)
           } else {
             toast.success(`Playlist “${playlist.name}” created`)
           }
-          useUIStore.getState().setPendingPlaylistTrack(null)
+          useUIStore.getState().setPendingPlaylistTracks(null)
           closePlaylistDialog()
         }
       } else {
@@ -73,7 +70,7 @@ export function PlaylistDialog() {
       onOpenChange={(o) => {
         if (o) openPlaylistDialog(dialog ?? { mode: "create" })
         else {
-          useUIStore.getState().setPendingPlaylistTrack(null)
+          useUIStore.getState().setPendingPlaylistTracks(null)
           closePlaylistDialog()
         }
       }}

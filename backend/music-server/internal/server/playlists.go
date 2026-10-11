@@ -186,12 +186,7 @@ func (s *Server) handlePinPlaylist(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 	id := r.PathValue("id")
 
-	p, ok := s.getPlaylist(w, u, id)
-	if !ok {
-		return
-	}
-	if p.IsMine {
-		writeErr(w, http.StatusBadRequest, "your own playlists are always in the sidebar")
+	if _, ok := s.getPlaylist(w, u, id); !ok {
 		return
 	}
 	if _, err := s.db.Exec(
@@ -295,9 +290,14 @@ func (s *Server) handleAddPlaylistTrack(w http.ResponseWriter, r *http.Request) 
 	id := r.PathValue("id")
 
 	var body struct {
-		TrackID string `json:"trackId"`
+		TrackID  string   `json:"trackId"`
+		TrackIDs []string `json:"trackIds"`
 	}
 	if err := jsonDecodeStrict(r, w, &body); err != nil {
+		return
+	}
+	if body.TrackIDs != nil {
+		s.addPlaylistTracks(w, u, id, body.TrackIDs)
 		return
 	}
 	if body.TrackID == "" {
@@ -331,6 +331,63 @@ func (s *Server) handleAddPlaylistTrack(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]int{"position": next})
+}
+
+const maxBulkPlaylistAdd = 5000
+
+func (s *Server) addPlaylistTracks(w http.ResponseWriter, u *User, id string, trackIDs []string) {
+	if len(trackIDs) == 0 {
+		writeErr(w, http.StatusBadRequest, "missing trackIds")
+		return
+	}
+	if len(trackIDs) > maxBulkPlaylistAdd {
+		writeErr(w, http.StatusBadRequest, "too many tracks")
+		return
+	}
+	if _, ok := s.requireOwnPlaylist(w, u, id); !ok {
+		return
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		s.internalErr(w, "begin add playlist tracks", err)
+		return
+	}
+	defer tx.Rollback()
+
+	var next int
+	if err := tx.QueryRow(`SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_tracks WHERE playlist_id = ?`, id).Scan(&next); err != nil {
+		s.internalErr(w, "next position", err)
+		return
+	}
+	added, skipped := 0, 0
+	seen := make(map[string]bool, len(trackIDs))
+	for _, trackID := range trackIDs {
+		if trackID == "" || seen[trackID] {
+			skipped++
+			continue
+		}
+		seen[trackID] = true
+		res, err := tx.Exec(`INSERT INTO playlist_tracks (playlist_id, track_id, position)
+			SELECT ?, t.id, ? FROM tracks t
+			WHERE t.id = ? AND `+visibleTo("t.user_id")+`
+			  AND NOT EXISTS (SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = t.id)`,
+			id, next, trackID, u.ID, id)
+		if err != nil {
+			s.internalErr(w, "add playlist tracks", err)
+			return
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			added++
+			next++
+		} else {
+			skipped++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		s.internalErr(w, "commit add playlist tracks", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"added": added, "skipped": skipped})
 }
 
 func (s *Server) handleRemovePlaylistTrack(w http.ResponseWriter, r *http.Request) {

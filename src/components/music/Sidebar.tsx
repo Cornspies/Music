@@ -17,7 +17,6 @@ import {
   PanelLeftOpen,
   Pin,
   PinOff,
-  Plus,
   Search,
   Settings,
   MonitorSmartphone,
@@ -166,8 +165,8 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
   const view = useUIStore((s) => s.view)
   const viewArg = useUIStore((s) => s.viewArg)
   const navigate = useUIStore((s) => s.navigate)
-  const openPlaylistDialog = useUIStore((s) => s.openPlaylistDialog)
   const playlists = useLibraryStore((s) => s.playlists)
+  const pinnedPlaylists = useMemo(() => playlists.filter((p) => p.isPinned), [playlists])
   const pins = useLibraryStore((s) => s.pins)
   const tracks = useLibraryStore((s) => s.tracks)
   const user = useAuthStore((s) => s.user)
@@ -325,30 +324,10 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
 
         <div className={cn("mt-2 flex min-h-36 flex-1 flex-col", collapsed ? "px-2" : "px-3")}>
           {collapsed ? (
-            <div className="mx-auto mb-1 flex flex-col items-center gap-1 border-t border-zinc-800/70 pt-2">
-              <button
-                type="button"
-                onClick={() => openPlaylistDialog({ mode: "create" })}
-                aria-label="New playlist"
-                {...tips.props("New playlist")}
-                className="flex size-11 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-emerald-400"
-              >
-                <Plus className="size-4.5" />
-              </button>
-            </div>
+            <div className="mx-auto mb-1 w-8 border-t border-zinc-800/70 pt-1" />
           ) : (
-            <div className="flex items-center justify-between border-t border-zinc-800/70 px-2 pt-2 pb-1">
+            <div className="border-t border-zinc-800/70 px-2 pt-2.5 pb-1.5">
               <h3 className="text-[11px] font-semibold tracking-widest text-zinc-500 uppercase">Pins</h3>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="New playlist"
-                title="New playlist"
-                onClick={() => openPlaylistDialog({ mode: "create" })}
-                className="size-7 text-zinc-500 hover:text-emerald-400"
-              >
-                <Plus className="size-4" />
-              </Button>
             </div>
           )}
           <div className={cn("min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-2", collapsed && "flex flex-col items-center gap-1 scrollbar-none!")}>
@@ -422,17 +401,13 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
               )
             })}
 
-            {playlists.length === 0 && pins.length === 0 && !collapsed ? (
-              <button
-                type="button"
-                onClick={() => openPlaylistDialog({ mode: "create" })}
-                className="flex w-full items-center gap-3 rounded-lg border border-dashed border-zinc-800 px-3 py-2.5 text-left text-xs text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-300"
-              >
-                <Music4 className="size-4 shrink-0" aria-hidden="true" />
-                Create your first playlist
-              </button>
+            {pinnedPlaylists.length === 0 && pins.length === 0 && !collapsed ? (
+              <p className="flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-600">
+                <Pin className="size-3.5 shrink-0" aria-hidden="true" />
+                Pin playlists, artists and albums to keep them here
+              </p>
             ) : (
-              playlists.map((p) => {
+              pinnedPlaylists.map((p) => {
                 const active = view === "playlist" && viewArg === p.id
                 const icon = (
                   <div className="relative shrink-0">
@@ -476,26 +451,38 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
                   )
                 }
                 return (
-                  <button
+                  <div
                     key={p.id}
-                    type="button"
-                    onClick={() => go("playlist", p.id)}
-                    aria-current={active ? "page" : undefined}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors",
+                      "group flex items-center rounded-lg transition-colors",
                       active ? "bg-zinc-800/80 text-zinc-100" : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
                     )}
                   >
-                    {icon}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{p.name}</p>
-                      <p className="truncate text-[11px] text-zinc-600">
-                        {p.isMine ? "" : `${p.owner?.username ?? "shared"} · `}
-                        {p.trackCount} track{p.trackCount === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                    {!p.isMine ? <Pin className="size-3 shrink-0 text-emerald-400/70" aria-label="Pinned" /> : null}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => go("playlist", p.id)}
+                      aria-current={active ? "page" : undefined}
+                      className="flex min-w-0 flex-1 items-center gap-3 px-3 py-1.5 text-left"
+                    >
+                      {icon}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm">{p.name}</p>
+                        <p className="truncate text-[11px] text-zinc-600">
+                          {p.isMine ? "Playlist · " : `${p.owner?.username ?? "shared"} · `}
+                          {p.trackCount} track{p.trackCount === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => useLibraryStore.getState().setPlaylistPinned(p.id, false)}
+                      aria-label={`Unpin ${p.name}`}
+                      title="Unpin"
+                      className="mr-1.5 rounded p-1.5 text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100 hover:text-zinc-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+                    >
+                      <PinOff className="size-3.5" />
+                    </button>
+                  </div>
                 )
               })
             )}

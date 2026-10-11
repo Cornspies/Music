@@ -3,7 +3,7 @@
 import { create } from "zustand"
 import { toast } from "sonner"
 import { api, fetchHome, fetchTrackChanges, pins as pinsApi } from "@/lib/api"
-import type { HomeFeed, LibraryPin, Playlist, Stats, Track, TrackPatch } from "@/lib/types"
+import type { HomeFeed, LibraryPin, Playlist, PlaylistAddResult, Stats, Track, TrackPatch } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
 import { useMediaTokenStore } from "@/stores/media-token"
 import { useOfflineStore } from "@/stores/offline"
@@ -41,6 +41,7 @@ interface LibraryState {
   setPlaylistPublic: (id: string, isPublic: boolean) => Promise<boolean>
   setPlaylistPinned: (id: string, pinned: boolean) => Promise<boolean>
   addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<boolean>
+  addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<PlaylistAddResult | null>
   removePlaylistTrack: (playlistId: string, trackId: string) => Promise<void>
   deleteTrack: (id: string, into?: string) => Promise<boolean>
   updateTrack: (id: string, patch: TrackPatch) => Promise<boolean>
@@ -274,6 +275,26 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     }
   },
 
+  addTracksToPlaylist: async (playlistId, trackIds) => {
+    try {
+      const r = await api<PlaylistAddResult>(`/api/playlists/${playlistId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackIds }),
+      })
+      set({
+        playlists: get().playlists.map((p) =>
+          p.id === playlistId ? { ...p, trackCount: p.trackCount + r.added } : p
+        ),
+        playlistVersion: get().playlistVersion + 1,
+      })
+      return r
+    } catch (e) {
+      toast.error((e as Error).message)
+      return null
+    }
+  },
+
   removePlaylistTrack: async (playlistId, trackId) => {
     try {
       await api(`/api/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" })
@@ -381,3 +402,22 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     })
   },
 }))
+
+export async function addTracksWithToast(playlist: { id: string; name: string }, tracks: Track[]): Promise<boolean> {
+  const r = await useLibraryStore.getState().addTracksToPlaylist(
+    playlist.id,
+    tracks.map((t) => t.id)
+  )
+  if (!r) return false
+  if (r.added === 0) {
+    toast(tracks.length === 1 ? `Already in “${playlist.name}”` : `All of these are already in “${playlist.name}”`)
+  } else {
+    toast.success(
+      r.added === 1 && tracks.length === 1
+        ? `Added “${tracks[0].title}” to ${playlist.name}`
+        : `Added ${r.added} ${r.added === 1 ? "song" : "songs"} to ${playlist.name}`,
+      { description: r.skipped > 0 ? `${r.skipped} already there` : undefined }
+    )
+  }
+  return true
+}
