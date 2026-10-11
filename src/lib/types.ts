@@ -123,6 +123,7 @@ export interface HistoryResponse {
   listenedSeconds: number
   playCount: number
   trackCount: number
+  next?: string
 }
 
 

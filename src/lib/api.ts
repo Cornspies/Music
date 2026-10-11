@@ -299,11 +299,14 @@ export function logoutEverywhere(): Promise<void> {
   return api<void>("/api/auth/logout-all", { method: "POST" })
 }
 
-export function fetchHistory(opts: { limit?: number; distinct?: boolean; since?: string } = {}): Promise<HistoryResponse> {
+export function fetchHistory(
+  opts: { limit?: number; distinct?: boolean; since?: string; before?: string } = {}
+): Promise<HistoryResponse> {
   const params = new URLSearchParams()
   if (opts.limit) params.set("limit", String(opts.limit))
   if (opts.distinct) params.set("distinct", "1")
   if (opts.since) params.set("since", opts.since)
+  if (opts.before) params.set("before", opts.before)
   const qs = params.toString()
   return api<HistoryResponse>(`/api/history${qs ? `?${qs}` : ""}`)
 }

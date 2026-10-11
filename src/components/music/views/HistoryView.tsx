@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Clock3, History, Loader2, Music2, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { fetchHistory } from "@/lib/api"
@@ -13,6 +13,8 @@ import { EmptyState } from "@/components/music/EmptyState"
 import { EqualizerIcon } from "@/components/music/EqualizerIcon"
 
 type Range = "day" | "week" | "month" | "all"
+
+const PAGE_SIZE = 200
 
 const RANGES: { key: Range; label: string; days: number | null }[] = [
   { key: "day", label: "Today", days: 1 },
@@ -98,17 +100,25 @@ function EventRow({ event, queue }: { event: PlayEvent; queue: PlayEvent[] }) {
 
 export function HistoryView() {
   const [range, setRange] = useState<Range>("week")
-  const [result, setResult] = useState<{ range: Range; data: HistoryResponse | null; error: string | null } | null>(null)
+  const [result, setResult] = useState<{
+    range: Range
+    since?: string
+    data: HistoryResponse | null
+    error: string | null
+  } | null>(null)
+  const [more, setMore] = useState<{ cursor: string; error: string | null } | null>(null)
   const navigate = useUIStore((s) => s.navigate)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let alive = true
-    fetchHistory({ limit: 200, since: sinceFor(range) })
+    const since = sinceFor(range)
+    fetchHistory({ limit: PAGE_SIZE, since })
       .then((d) => {
-        if (alive) setResult({ range, data: d, error: null })
+        if (alive) setResult({ range, since, data: d, error: null })
       })
       .catch((e: Error) => {
-        if (alive) setResult({ range, data: null, error: e.message })
+        if (alive) setResult({ range, since, data: null, error: e.message })
       })
     return () => {
       alive = false
@@ -118,6 +128,42 @@ export function HistoryView() {
   const loading = result?.range !== range
   const data = result?.data ?? null
   const error = loading ? null : (result?.error ?? null)
+  const next = loading ? undefined : data?.next
+  const loadingMore = !!more && more.cursor === next && !more.error
+
+  const loadMore = useCallback(async () => {
+    if (!result?.data?.next || loadingMore) return
+    const { range: forRange, since } = result
+    const cursor = result.data.next
+    setMore({ cursor, error: null })
+    try {
+      const page = await fetchHistory({ limit: PAGE_SIZE, since, before: cursor })
+      setResult((prev) =>
+        prev?.range === forRange && prev.data?.next === cursor
+          ? { ...prev, data: { ...prev.data, events: [...prev.data.events, ...page.events], next: page.next } }
+          : prev
+      )
+      setMore(null)
+    } catch (e) {
+      setMore({ cursor, error: (e as Error).message })
+    }
+  }, [result, loadingMore])
+
+  const loadMoreRef = useRef(loadMore)
+  useEffect(() => {
+    loadMoreRef.current = loadMore
+  })
+  const shown = data?.events.length ?? 0
+  const failedMore = !!more?.error && more.cursor === next
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !next || failedMore) return
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) loadMoreRef.current()
+    }, { rootMargin: "800px 0px" })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [next, shown, failedMore])
 
   return (
     <div className="p-4 pb-16 md:p-6 md:pb-12">
@@ -172,6 +218,24 @@ export function HistoryView() {
             {data.events.map((ev, i) => (
               <EventRow key={`${ev.playedAt}-${ev.track.id}-${i}`} event={ev} queue={data.events} />
             ))}
+            {next ? (
+              <div ref={sentinelRef} className="flex items-center justify-center gap-2 py-6 text-xs text-zinc-500">
+                {failedMore ? (
+                  <>
+                    Couldn&apos;t load more: {more?.error}
+                    <button type="button" onClick={loadMore} className="text-emerald-300 hover:underline">
+                      Try again
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> Loading older plays…
+                  </>
+                )}
+              </div>
+            ) : data.events.length > 0 && !loading ? (
+              <p className="py-6 text-center text-xs text-zinc-600">That&apos;s everything</p>
+            ) : null}
           </div>
         ) : null}
       </div>

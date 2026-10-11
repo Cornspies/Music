@@ -290,6 +290,7 @@ data class HistoryResponse(
     val listenedSeconds: Double = 0.0,
     val playCount: Int = 0,
     val trackCount: Int = 0,
+    val next: String? = null,
 )
 
 @Serializable
