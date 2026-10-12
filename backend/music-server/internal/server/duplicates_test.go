@@ -38,7 +38,7 @@ func TestSameRecordingVariantTags(t *testing.T) {
 	}
 }
 
-func TestSameSongIgnoresLength(t *testing.T) {
+func TestSameSongAllowsEditionLength(t *testing.T) {
 	own := upgradeTrack{title: "Song", artist: "Band", duration: 200}
 	remaster := discoverResult{Title: "Song (Remastered 2011)", Artist: "Band", Duration: 212}
 	if !sameSong(own, remaster) {
@@ -46,6 +46,15 @@ func TestSameSongIgnoresLength(t *testing.T) {
 	}
 	if sameRecording(own, remaster) {
 		t.Error("strict match should still reject a different length")
+	}
+	if !sameSong(own, discoverResult{Title: "Song", Artist: "Band", Duration: 219}) {
+		t.Error("upgrade match rejected an edition within 10% of the length")
+	}
+	if sameSong(own, discoverResult{Title: "Band - Song (Official Music Video)", Artist: "Band", Duration: 245}) {
+		t.Error("upgrade match accepted a music video with a long intro")
+	}
+	if !sameSong(own, discoverResult{Title: "Song", Artist: "Band"}) {
+		t.Error("upgrade match rejected a result without a length")
 	}
 	if sameSong(own, discoverResult{Title: "Song", Artist: "Someone Else", Duration: 200}) {
 		t.Error("upgrade match accepted a different artist")
