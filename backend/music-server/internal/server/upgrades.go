@@ -388,7 +388,7 @@ func (s *Server) searchRecording(ctx context.Context, src source, t upgradeTrack
 		results = results[:upgradeSearchHits]
 	}
 	for i := range results {
-		if sameRecording(t, results[i]) {
+		if sameSong(t, results[i]) {
 			return &results[i], nil
 		}
 	}
@@ -440,7 +440,9 @@ func leadArtist(artist string) string {
 	return strings.TrimSpace(a)
 }
 
-func sameRecording(t upgradeTrack, r discoverResult) bool {
+// sameTitle reports whether r carries the same song title as t: same core
+// title, same version tags (Live, Remix, ...) and no extra variant words.
+func sameTitle(t upgradeTrack, r discoverResult) bool {
 	want := coreTitle(t.title)
 	if want == "" {
 		return false
@@ -460,15 +462,56 @@ func sameRecording(t upgradeTrack, r discoverResult) bool {
 			return false
 		}
 	}
-	lengthKnown := t.duration > 0 && r.Duration > 0
-	if lengthKnown && math.Abs(t.duration-r.Duration) > 3 {
-		return false
-	}
+	return true
+}
+
+// sameArtist reports whether r credits t's lead artist. known is false when
+// t has no usable artist to compare against.
+func sameArtist(t upgradeTrack, r discoverResult) (match, known bool) {
 	artist := leadArtist(dropPlaceholder(t.artist, "Unknown Artist"))
 	if artist == "" {
+		return false, false
+	}
+	return strings.Contains(normalizeForMatch(r.Artist+" "+r.Title), artist), true
+}
+
+func lengthsAgree(t upgradeTrack, r discoverResult) (agree, known bool) {
+	if t.duration <= 0 || r.Duration <= 0 {
+		return true, false
+	}
+	return math.Abs(t.duration-r.Duration) <= 3, true
+}
+
+// sameRecording is the strict match used where a wrong pick is likely, such as
+// YouTube videos with intros: title, artist and a length within 3 seconds.
+func sameRecording(t upgradeTrack, r discoverResult) bool {
+	if !sameTitle(t, r) {
+		return false
+	}
+	agree, lengthKnown := lengthsAgree(t, r)
+	if !agree {
+		return false
+	}
+	match, artistKnown := sameArtist(t, r)
+	if !artistKnown {
 		return lengthKnown
 	}
-	return strings.Contains(normalizeForMatch(r.Artist+" "+r.Title), artist)
+	return match
+}
+
+// sameSong is the upgrade-scan match: title and artist only, so remasters and
+// other editions of different length are still found. Without an artist the
+// title alone is too loose, so it falls back to the length check.
+func sameSong(t upgradeTrack, r discoverResult) bool {
+	if !sameTitle(t, r) {
+		return false
+	}
+	match, artistKnown := sameArtist(t, r)
+	if artistKnown {
+		return match
+	}
+	agree, lengthKnown := lengthsAgree(t, r)
+	return agree && lengthKnown
 }
 
 func takeCandidate(trackID string) (UpgradeCandidate, bool) {
