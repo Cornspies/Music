@@ -24,6 +24,10 @@ const (
 	upgradeSearchHits = 6
 	upgradeFetchLimit = 5 * time.Minute
 	flacSizeRatio     = 0.6
+
+	recordingLengthSlack = 3.0
+	editionSlackSeconds  = 15.0
+	editionSlackShare    = 0.1
 )
 
 type audioQuality struct {
@@ -440,8 +444,6 @@ func leadArtist(artist string) string {
 	return strings.TrimSpace(a)
 }
 
-// sameTitle reports whether r carries the same song title as t: same core
-// title, same version tags (Live, Remix, ...) and no extra variant words.
 func sameTitle(t upgradeTrack, r discoverResult) bool {
 	want := coreTitle(t.title)
 	if want == "" {
@@ -465,8 +467,6 @@ func sameTitle(t upgradeTrack, r discoverResult) bool {
 	return true
 }
 
-// sameArtist reports whether r credits t's lead artist. known is false when
-// t has no usable artist to compare against.
 func sameArtist(t upgradeTrack, r discoverResult) (match, known bool) {
 	artist := leadArtist(dropPlaceholder(t.artist, "Unknown Artist"))
 	if artist == "" {
@@ -475,20 +475,18 @@ func sameArtist(t upgradeTrack, r discoverResult) (match, known bool) {
 	return strings.Contains(normalizeForMatch(r.Artist+" "+r.Title), artist), true
 }
 
-func lengthsAgree(t upgradeTrack, r discoverResult) (agree, known bool) {
+func lengthsAgree(t upgradeTrack, r discoverResult, slack float64) (agree, known bool) {
 	if t.duration <= 0 || r.Duration <= 0 {
 		return true, false
 	}
-	return math.Abs(t.duration-r.Duration) <= 3, true
+	return math.Abs(t.duration-r.Duration) <= slack, true
 }
 
-// sameRecording is the strict match used where a wrong pick is likely, such as
-// YouTube videos with intros: title, artist and a length within 3 seconds.
 func sameRecording(t upgradeTrack, r discoverResult) bool {
 	if !sameTitle(t, r) {
 		return false
 	}
-	agree, lengthKnown := lengthsAgree(t, r)
+	agree, lengthKnown := lengthsAgree(t, r, recordingLengthSlack)
 	if !agree {
 		return false
 	}
@@ -499,19 +497,21 @@ func sameRecording(t upgradeTrack, r discoverResult) bool {
 	return match
 }
 
-// sameSong is the upgrade-scan match: title and artist only, so remasters and
-// other editions of different length are still found. Without an artist the
-// title alone is too loose, so it falls back to the length check.
+func editionSlack(duration float64) float64 {
+	return math.Max(editionSlackSeconds, duration*editionSlackShare)
+}
+
 func sameSong(t upgradeTrack, r discoverResult) bool {
 	if !sameTitle(t, r) {
 		return false
 	}
 	match, artistKnown := sameArtist(t, r)
-	if artistKnown {
-		return match
+	if !artistKnown {
+		agree, lengthKnown := lengthsAgree(t, r, recordingLengthSlack)
+		return agree && lengthKnown
 	}
-	agree, lengthKnown := lengthsAgree(t, r)
-	return agree && lengthKnown
+	agree, _ := lengthsAgree(t, r, editionSlack(t.duration))
+	return match && agree
 }
 
 func takeCandidate(trackID string) (UpgradeCandidate, bool) {
