@@ -25,7 +25,7 @@ android {
         minSdk = 27
         targetSdk = 37
         versionCode = 1
-        versionName = "0.4.1"
+        versionName = "0.4.2"
 
         manifestPlaceholders["musicHost"] =
             (project.findProperty("musicHost") as String?)?.takeIf { it.isNotBlank() }

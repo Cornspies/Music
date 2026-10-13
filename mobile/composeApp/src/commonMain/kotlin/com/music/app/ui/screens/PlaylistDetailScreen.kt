@@ -1,10 +1,5 @@
 package com.music.app.ui.screens
 
-import com.music.app.ui.components.playlistAddMessage
-import com.music.app.ui.components.CoverImage
-import com.music.app.api.Track
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,11 +11,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -29,10 +24,10 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,15 +54,18 @@ import androidx.compose.ui.unit.dp
 import com.music.app.DeepLinks
 import com.music.app.LocalAppModel
 import com.music.app.Screen
-import com.music.app.plainTextClipEntry
 import com.music.app.api.PlaylistDetail
+import com.music.app.api.Track
 import com.music.app.api.friendlyError
 import com.music.app.api.toPlaylist
+import com.music.app.plainTextClipEntry
+import com.music.app.ui.components.CoverImage
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.ErrorState
 import com.music.app.ui.components.LoadingBox
 import com.music.app.ui.components.RefreshableContent
 import com.music.app.ui.components.TrackRow
+import com.music.app.ui.components.playlistAddMessage
 import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.Emerald
 import com.music.app.ui.theme.Zinc500
