@@ -37,9 +37,9 @@ type audioQuality struct {
 
 var codecWeight = map[string]float64{
 	"mp3":    1.0,
-	"aac":    1.3,
-	"vorbis": 1.3,
-	"opus":   1.5,
+	"aac":    1.1,
+	"vorbis": 1.1,
+	"opus":   1.25,
 }
 
 func (q audioQuality) lossless() bool { return q.Codec == "flac" || q.Codec == "wav" }
