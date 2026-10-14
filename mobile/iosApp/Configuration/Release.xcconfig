@@ -1,2 +1,6 @@
 #include? "../../composeApp/xcode/Release.xcconfig"
 TEAM_ID =
+
+// Your server's domain, without https://, e.g. music.example.com. It becomes
+// the app's default server and the domain shared links open in the app.
+MUSIC_HOST =

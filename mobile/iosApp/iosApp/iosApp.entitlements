@@ -13,7 +13,7 @@
 	-->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
-		<string>applinks:music.cornspies.com</string>
+		<string>applinks:$(MUSIC_HOST)</string>
 	</array>
 </dict>
 </plist>

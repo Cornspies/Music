@@ -35,25 +35,33 @@ running natively on both platforms:
 - **Xcode 15+** with an active command-line tools selection (iOS builds only).
   Simulator builds are Apple-silicon only (`iosSimulatorArm64`): Compose
   Multiplatform no longer ships `iosX64` artifacts.
-- The **Music Go backend running** (see `../mini-services/music-server`)
+- The **Music Go backend running** (see `../backend/music-server`)
 
 ## Configure the server URL
 
-A fresh installation points at `https://music.cornspies.com`; change it on
-the login screen and it is persisted per device. Point your own builds
-somewhere else by editing `defaultBaseUrl` in
-`composeApp/src/{androidMain,iosMain}/kotlin/com/music/app/TokenStore.*.kt`.
+A fresh installation has no server set: type the address on the login screen
+and it is persisted per device. To ship builds that start with yours filled
+in, set `musicHost` to its domain, without `https://` (for example
+`music.example.com`). The same value is the domain that shared links open in
+the app (see [Shared links](#shared-links)).
+
+- **Android:** `musicHost=music.example.com` in `~/.gradle/gradle.properties`
+  (it applies to every build on your machine and stays out of git), or
+  `-PmusicHost=music.example.com` on the command line.
+- **iOS:** `MUSIC_HOST` in `iosApp/Configuration/*.xcconfig`. The TestFlight
+  workflow reads it from the `MUSIC_HOST` repository variable (Settings →
+  Secrets and variables → Actions → Variables).
 
 | Environment | URL |
 |---|---|
-| Installed app | `https://music.cornspies.com` (default) |
+| Installed app | whatever you typed, or your `musicHost` |
 | Android emulator → server on this machine | `http://10.0.2.2:3001` |
 | iOS simulator → server on this machine | `http://localhost:3001` |
 | Physical device → server on this machine | `http://<YOUR-LAN-IP>:3001` (e.g. `http://192.168.1.20:3001`) |
 
 Enter the site's origin, **not** its API path — the app appends `/api/…`
-itself, so `https://music.cornspies.com` is right and
-`https://music.cornspies.com/api` would ask the server for `/api/api/…`.
+itself, so `https://music.example.com` is right and
+`https://music.example.com/api` would ask the server for `/api/api/…`.
 What you type is used as it stands, so a server that really does live under
 a path works too.
 
@@ -208,7 +216,7 @@ as `TEAM_ID` (the TestFlight workflow takes it from the provisioning profile).
 The app's capabilities are in `iosApp/iosApp/iosApp.entitlements`, and the App
 ID must have each of them (see [TestFlight](#testflight) step 1):
 
-- **Associated Domains** → `applinks:music.cornspies.com`, so shared links
+- **Associated Domains** → `applinks:$(MUSIC_HOST)`, so shared links
   (see [Shared links](#shared-links)) open the app. The `music://playlist/<id>`
   scheme used by the app's own share button needs nothing — it's registered
   in `Info.plist`.

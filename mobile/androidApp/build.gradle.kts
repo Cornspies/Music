@@ -16,6 +16,8 @@ fun signingValue(key: String): String? =
 
 val keystorePath = signingValue("storeFile")
 
+val musicHost = (project.findProperty("musicHost") as String?)?.trim().orEmpty()
+
 android {
     namespace = "com.music.app.android"
     compileSdk = 37
@@ -27,9 +29,8 @@ android {
         versionCode = 1
         versionName = "0.4.3"
 
-        manifestPlaceholders["musicHost"] =
-            (project.findProperty("musicHost") as String?)?.takeIf { it.isNotBlank() }
-                ?: "music.cornspies.com"
+        manifestPlaceholders["musicHost"] = musicHost.ifEmpty { "music.invalid" }
+        manifestPlaceholders["musicDefaultServer"] = if (musicHost.isEmpty()) "" else "https://$musicHost"
     }
 
     if (keystorePath != null) {

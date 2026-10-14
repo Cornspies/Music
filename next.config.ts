@@ -20,7 +20,7 @@ const securityHeaders = [
 
 const desktop = process.env.NEXT_PUBLIC_MUSIC_DESKTOP === "1";
 const webStatic = process.env.MUSIC_WEB_STATIC === "1";
-const DESKTOP_DEV_SERVER = process.env.MUSIC_DESKTOP_DEV_SERVER ?? "https://music.cornspies.com";
+const DESKTOP_DEV_SERVER = process.env.MUSIC_DESKTOP_DEV_SERVER ?? API_URL;
 
 const desktopConfig: NextConfig = {
   output: "export",

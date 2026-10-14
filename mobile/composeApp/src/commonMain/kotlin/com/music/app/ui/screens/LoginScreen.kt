@@ -69,6 +69,10 @@ fun LoginScreen() {
 
     fun submit() {
         if (busy) return
+        if (serverUrl.isBlank()) {
+            error = "Enter the address of your Music server."
+            return
+        }
         scope.launch {
             busy = true
             error = null
@@ -118,7 +122,7 @@ fun LoginScreen() {
             value = serverUrl,
             onValueChange = { serverUrl = it },
             label = { Text("Server URL") },
-            placeholder = { Text(defaultBaseUrl) },
+            placeholder = { Text(defaultBaseUrl.ifEmpty { "https://music.example.com" }) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -228,12 +232,14 @@ fun LoginScreen() {
             Text(if (registerMode) "Sign in" else "Create an account")
         }
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = { uriHandler.openUri(privacyPolicyUrl) }) {
-            Text(
-                "Privacy policy",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        privacyPolicyUrl(serverUrl)?.let { privacyUrl ->
+            TextButton(onClick = { uriHandler.openUri(privacyUrl) }) {
+                Text(
+                    "Privacy policy",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

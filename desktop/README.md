@@ -34,7 +34,7 @@ bun run build          # installers in src-tauri/target/release/bundle/
 ```
 
 In `bun run dev` the UI's API requests go through the Next dev server, which
-forwards them to `https://music.cornspies.com` or to the server set in
+forwards them to the local backend (`http://localhost:3001`) or to the server set in
 `MUSIC_DESKTOP_DEV_SERVER` (for example
 `MUSIC_DESKTOP_DEV_SERVER=http://localhost:8080 bun run dev`). The sign-in
 screen has no server field in this mode.
@@ -45,9 +45,13 @@ hand) builds both platforms and attaches the installers to the run.
 
 ## Server
 
-The app asks for the server's address on the sign-in screen and uses
-`https://music.cornspies.com` until another one is entered. Plain `http://` is
-only accepted without a warning for local network addresses.
+The app asks for the server's address on the sign-in screen. To ship a build
+with yours already filled in, set `NEXT_PUBLIC_MUSIC_DEFAULT_SERVER` when
+building, for example
+`NEXT_PUBLIC_MUSIC_DEFAULT_SERVER=https://music.example.com bun run build`.
+The Desktop workflow reads it from the `MUSIC_DEFAULT_SERVER` repository
+variable (Settings → Secrets and variables → Actions → Variables). Plain
+`http://` is only accepted without a warning for local network addresses.
 
 The server has to allow the app's origins (`tauri://localhost` on Linux,
 `http://tauri.localhost` on Windows) for cross-origin requests; servers from

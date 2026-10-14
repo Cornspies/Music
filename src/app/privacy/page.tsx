@@ -2,10 +2,9 @@ import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { AudioLines } from "lucide-react"
+import { CONTACT, OPERATOR, SERVER_HOST } from "@/lib/operator"
 
-const OPERATOR = "Cornspies"
-const CONTACT = "contact@cornspies.com"
-const SERVER = "music.cornspies.com"
+const SERVER = SERVER_HOST ? `the music server at ${SERVER_HOST}` : "this music server"
 const UPDATED = "8 October 2026"
 
 export const metadata: Metadata = {
@@ -46,7 +45,28 @@ function Mail() {
   )
 }
 
+function Unpublished() {
+  return (
+    <main className="min-h-dvh bg-zinc-950 px-4 pb-20 pt-10 text-[15px] leading-relaxed text-zinc-300 sm:pt-16">
+      <article className="mx-auto max-w-2xl">
+        <Link href="/" className="inline-flex items-center gap-2.5 font-semibold text-zinc-100">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-linear-to-br from-emerald-400 to-teal-600">
+            <AudioLines className="size-5 text-zinc-950" aria-hidden="true" />
+          </span>
+          Music
+        </Link>
+        <h1 className="mt-10 text-3xl font-bold tracking-tight text-zinc-50">Privacy policy</h1>
+        <p className="mt-6">
+          The person who runs this server hasn&apos;t published a privacy policy. Ask them what data the server
+          keeps and who can see it.
+        </p>
+      </article>
+    </main>
+  )
+}
+
 export default function PrivacyPage() {
+  if (!OPERATOR || !CONTACT) return <Unpublished />
   return (
     <main className="min-h-dvh bg-zinc-950 px-4 pb-20 pt-10 text-[15px] leading-relaxed text-zinc-300 sm:pt-16">
       <article className="mx-auto max-w-2xl">
@@ -61,8 +81,7 @@ export default function PrivacyPage() {
         <p className="mt-2 text-sm text-zinc-500">Last updated {UPDATED}</p>
 
         <p className="mt-6">
-          Music is a music player for iPhone, Android, Windows, Linux and the web, together with the music
-          server at {SERVER}.
+          Music is a music player for iPhone, Android, Windows, Linux and the web, together with {SERVER}.
           It&apos;s run by {OPERATOR}. This policy explains what data Music handles, why, who can see it, how
           long it&apos;s kept and what you can do about it.
         </p>
@@ -87,7 +106,7 @@ export default function PrivacyPage() {
             email <Mail />.
           </p>
           <p>
-            This policy covers the Music apps and the server at {SERVER}. The apps can also connect to a Music
+            This policy covers the Music apps and {SERVER}. The apps can also connect to a Music
             server run by someone else. On another server, its operator is responsible for the data stored
             there, and none of it reaches us.
           </p>

@@ -1,6 +1,8 @@
 package com.music.app.api
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -12,7 +14,19 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-internal actual val defaultBaseUrl: String = "https://music.cornspies.com"
+internal actual val defaultBaseUrl: String by lazy {
+    runCatching {
+        val pm = appContext.packageManager
+        val info = if (Build.VERSION.SDK_INT >= 33) {
+            val flags = PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong())
+            pm.getApplicationInfo(appContext.packageName, flags)
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getApplicationInfo(appContext.packageName, PackageManager.GET_META_DATA)
+        }
+        info.metaData?.getString("com.music.app.DEFAULT_SERVER").orEmpty().trim()
+    }.getOrDefault("")
+}
 
 actual class TokenStore {
     private val prefs = appContext.getSharedPreferences("music", Context.MODE_PRIVATE)

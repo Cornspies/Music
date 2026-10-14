@@ -132,6 +132,8 @@ jobs:
 
       # The run number is the build number, so every upload is higher than the last.
       - name: Archive
+        env:
+          MUSIC_HOST: ${{ vars.MUSIC_HOST }}
         run: |
           set -o pipefail
           xcodebuild archive \
@@ -142,6 +144,7 @@ jobs:
             -archivePath "$RUNNER_TEMP/Music.xcarchive" \
             -derivedDataPath build \
             TEAM_ID="$TEAM_ID" \
+            MUSIC_HOST="$MUSIC_HOST" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
