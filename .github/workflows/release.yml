@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v0.4.4
+        required: true
+        type: string
+      draft:
+        description: Create the release as a draft, to review before publishing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check the tag
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9][0-9A-Za-z._-]*$ ]]; then
+            echo "The tag must look like v1.2.3" >&2
+            exit 1
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "A release for $TAG already exists" >&2
+            exit 1
+          fi
+
+  desktop:
+    needs: check
+    uses: ./.github/workflows/desktop.yml
+
+  android:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: jetbrains
+          java-version: "21"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: Build the signed APK
+        working-directory: mobile
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MUSIC_HOST: ${{ vars.MUSIC_HOST }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "The ANDROID_KEYSTORE_BASE64 secret is not set" >&2
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          ./gradlew :androidApp:releaseApk --no-daemon \
+            -Pmusic.storeFile="$RUNNER_TEMP/release.jks" \
+            -Pmusic.storePassword="$STORE_PASSWORD" \
+            -Pmusic.keyAlias="$KEY_ALIAS" \
+            -Pmusic.keyPassword="$KEY_PASSWORD" \
+            -PmusicHost="$MUSIC_HOST"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Music-Android
+          path: mobile/dist/Music-*.apk
+          if-no-files-found: error
+
+  release:
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag }}
+      DRAFT: ${{ inputs.draft }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: release-files
+          merge-multiple: true
+      - name: Create the release
+        run: |
+          mapfile -d '' files < <(find release-files -type f -print0)
+          args=()
+          if [ "$DRAFT" = "true" ]; then args+=(--draft); fi
+          gh release create "$TAG" "${files[@]}" \
+            --target "$GITHUB_SHA" --title "$TAG" --generate-notes "${args[@]}"

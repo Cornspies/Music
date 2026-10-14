@@ -47,7 +47,8 @@ the app (see [Shared links](#shared-links)).
 
 - **Android:** `musicHost=music.example.com` in `~/.gradle/gradle.properties`
   (it applies to every build on your machine and stays out of git), or
-  `-PmusicHost=music.example.com` on the command line.
+  `-PmusicHost=music.example.com` on the command line. The Release workflow
+  reads the `MUSIC_HOST` repository variable.
 - **iOS:** `MUSIC_HOST` in `iosApp/Configuration/*.xcconfig`. The TestFlight
   workflow reads it from the `MUSIC_HOST` repository variable (Settings →
   Secrets and variables → Actions → Variables).
