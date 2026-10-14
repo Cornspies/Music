@@ -102,6 +102,8 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /api/auth/config", s.handleAuthConfig)
 	mux.HandleFunc("GET /api/auth/invite/{code}", s.handleCheckInvite)
+	mux.HandleFunc("GET /api/auth/reset/{code}", s.handleCheckPasswordReset)
+	mux.HandleFunc("POST /api/auth/reset", s.handleResetPassword)
 	mux.HandleFunc("POST /api/auth/register", s.handleRegister)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("GET /api/auth/me", s.requireAuth(s.handleMe))
@@ -188,6 +190,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/users", s.requireAdmin(s.handleAdminListUsers))
 	mux.HandleFunc("DELETE /api/admin/users/{id}", s.requireAdmin(s.handleAdminDeleteUser))
 	mux.HandleFunc("PATCH /api/admin/users/{id}", s.requireAdmin(s.handleAdminUpdateUser))
+	mux.HandleFunc("POST /api/admin/users/{id}/password-reset", s.requireAdmin(s.handleAdminCreatePasswordReset))
 	mux.HandleFunc("GET /api/admin/settings", s.requireAdmin(s.handleAdminGetSettings))
 	mux.HandleFunc("GET /api/admin/activity", s.requireAdmin(s.handleAdminActivity))
 	mux.HandleFunc("PATCH /api/admin/settings", s.requireAdmin(s.handleAdminUpdateSettings))
@@ -213,6 +216,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/playlists/{id}", s.requireAuth(s.handleDeletePlaylist))
 	mux.HandleFunc("POST /api/playlists/{id}/pin", s.requireAuth(s.handlePinPlaylist))
 	mux.HandleFunc("DELETE /api/playlists/{id}/pin", s.requireAuth(s.handleUnpinPlaylist))
+	mux.HandleFunc("GET /api/playlists/{id}/cover", s.requireMediaAuth(s.handlePlaylistCover))
+	mux.HandleFunc("POST /api/playlists/{id}/cover", s.requireAuth(s.handleUploadPlaylistCover))
+	mux.HandleFunc("DELETE /api/playlists/{id}/cover", s.requireAuth(s.handleDeletePlaylistCover))
 	mux.HandleFunc("POST /api/playlists/{id}/tracks", s.requireAuth(s.handleAddPlaylistTrack))
 	mux.HandleFunc("DELETE /api/playlists/{id}/tracks/{trackId}", s.requireAuth(s.handleRemovePlaylistTrack))
 

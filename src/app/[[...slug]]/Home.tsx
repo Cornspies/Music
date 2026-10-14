@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { AudioLines } from "lucide-react"
 import { api } from "@/lib/api"
 import type { User } from "@/lib/types"
@@ -9,6 +9,7 @@ import { usePlayerStore } from "@/stores/player"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { AuthView } from "@/components/music/AuthView"
+import { ResetPasswordView, resetCodeFromUrl } from "@/components/music/ResetPasswordView"
 import { AppShell } from "@/components/music/AppShell"
 import { SharePage } from "@/components/music/SharePage"
 import { OpenInAppBanner } from "@/components/music/OpenInAppBanner"
@@ -36,6 +37,7 @@ export function Home() {
   const token = useAuthStore((s) => s.token)
   const view = useUIStore((s) => s.view)
   const viewArg = useUIStore((s) => s.viewArg)
+  const [resetCode, setResetCode] = useState(resetCodeFromUrl)
   useRouteSync()
   useDesktopLinks()
   const mounted = useSyncExternalStore(
@@ -63,6 +65,7 @@ export function Home() {
   }, [mounted, token])
 
   if (!mounted) return <Splash />
+  if (resetCode !== null) return <ResetPasswordView code={resetCode} onDone={() => setResetCode(null)} />
   const sharePage = view === "share" && viewArg && !token && !isDesktop
   const page = sharePage ? <SharePage token={viewArg} /> : token ? <AppShell /> : <AuthView />
   return (

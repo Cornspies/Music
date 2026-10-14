@@ -23,11 +23,9 @@ var (
 	aesKey         = []byte("jo6aey6haid2Teih")
 	blowfishIV     = []byte{0, 1, 2, 3, 4, 5, 6, 7}
 
-	// ErrFileTooLarge is returned when a stream exceeds the maximum allowed byte limit.
 	ErrFileTooLarge = errors.New("file exceeds maximum allowed size")
 )
 
-// GetBlowfishKey derives the 16-byte Blowfish key for decrypting a Deezer track.
 func GetBlowfishKey(trackID string) []byte {
 	h := md5.Sum([]byte(trackID))
 	hexStr := fmt.Sprintf("%x", h)
@@ -38,7 +36,6 @@ func GetBlowfishKey(trackID string) []byte {
 	return key
 }
 
-// EncryptDownloadURL constructs Deezer's mobile CDN streaming URL for a track using AES-128-ECB.
 func EncryptDownloadURL(md5Origin string, qualityCode int, trackID, mediaVersion string) (string, error) {
 	if len(md5Origin) == 0 {
 		return "", errors.New("track unavailable (invalid MD5_ORIGIN)")
@@ -85,7 +82,6 @@ func EncryptDownloadURL(md5Origin string, qualityCode int, trackID, mediaVersion
 	return fmt.Sprintf("https://e-cdns-proxy-%s.dzcdn.net/mobile/1/%s", cdn, hexResult), nil
 }
 
-// DecryptBlowfishChunk decrypts a single 2048-byte chunk with Blowfish in CBC mode.
 func DecryptBlowfishChunk(chunk, key []byte) ([]byte, error) {
 	if len(chunk)%8 != 0 {
 		return nil, errors.New("chunk size must be a multiple of 8")
@@ -100,16 +96,25 @@ func DecryptBlowfishChunk(chunk, key []byte) ([]byte, error) {
 	return out, nil
 }
 
-// DecryptDeezerStream reads an encrypted stream from r, decrypts every 3rd 2048-byte chunk
-// (chunks 0, 3, 6, ...) using Blowfish CBC, and writes the decrypted stream to w.
-// If maxBytes > 0 and writing the next chunk would exceed maxBytes, reading and writing
-// stop immediately and ErrFileTooLarge is returned.
-// Any trailing partial chunk (< 2048 bytes) is left unencrypted.
+type errTrackingReader struct {
+	r   io.Reader
+	err error
+}
+
+func (e *errTrackingReader) Read(p []byte) (int, error) {
+	n, err := e.r.Read(p)
+	if err != nil && err != io.EOF && e.err == nil {
+		e.err = err
+	}
+	return n, err
+}
+
 func DecryptDeezerStream(r io.Reader, w io.Writer, key []byte, maxBytes int64) (int64, error) {
 	cipherBlock, err := newBlowfishCipher(key)
 	if err != nil {
 		return 0, err
 	}
+	src := &errTrackingReader{r: r}
 
 	const chunkSize = 2048
 	buf := make([]byte, chunkSize)
@@ -118,7 +123,7 @@ func DecryptDeezerStream(r io.Reader, w io.Writer, key []byte, maxBytes int64) (
 	chunkIndex := 0
 
 	for {
-		n, err := io.ReadFull(r, buf)
+		n, err := io.ReadFull(src, buf)
 		if n > 0 {
 			if maxBytes > 0 && totalWritten+int64(n) > maxBytes {
 				return totalWritten, ErrFileTooLarge
@@ -142,7 +147,6 @@ func DecryptDeezerStream(r io.Reader, w io.Writer, key []byte, maxBytes int64) (
 				}
 				chunkIndex++
 			} else {
-				// Trailing partial chunk (< 2048 bytes), written as-is
 				wn, werr := w.Write(buf[:n])
 				totalWritten += int64(wn)
 				if werr != nil {
@@ -152,6 +156,9 @@ func DecryptDeezerStream(r io.Reader, w io.Writer, key []byte, maxBytes int64) (
 		}
 
 		if err != nil {
+			if src.err != nil {
+				return totalWritten, src.err
+			}
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				break
 			}

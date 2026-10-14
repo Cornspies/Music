@@ -11,6 +11,7 @@ import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { CollectionHeader, HeaderMenuTrigger } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
+import { PlaylistCoverImage } from "@/components/music/PlaylistCover"
 import { AddSongsButton } from "@/components/music/AddSongsButton"
 import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -109,9 +110,10 @@ export function PlaylistView() {
         cover={
           <div
             aria-hidden="true"
-            className={`flex aspect-square w-full items-center justify-center rounded-lg bg-linear-to-br shadow-2xl ${hashGradient(detail.name)}`}
+            className={`relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-linear-to-br shadow-2xl ${hashGradient(detail.name)}`}
           >
             <Music4 className="size-16 text-zinc-400/70 md:size-20" />
+            <PlaylistCoverImage playlist={detail} />
           </div>
         }
         actions={

@@ -9,6 +9,7 @@ import { useLibraryStore } from "@/stores/library"
 import { usePlayerStore } from "@/stores/player"
 import { useUIStore } from "@/stores/ui"
 import { CoverArt } from "@/components/music/CoverArt"
+import { PlaylistCoverImage } from "@/components/music/PlaylistCover"
 import { EmptyState } from "@/components/music/EmptyState"
 import { TrackList } from "@/components/music/TrackList"
 import { TrackMenu } from "@/components/music/TrackMenu"
@@ -246,7 +247,13 @@ export function HomeView() {
       items.push({
         key: p.id,
         title: p.name,
-        art: <IconArt icon={ListMusic} seed={p.id} />,
+        art: p.coverVersion ? (
+          <div className="relative size-full">
+            <PlaylistCoverImage playlist={p} />
+          </div>
+        ) : (
+          <IconArt icon={ListMusic} seed={p.id} />
+        ),
         open: () => navigate("playlist", p.id),
       })
     }

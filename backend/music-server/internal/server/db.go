@@ -125,6 +125,7 @@ func migrate(db *sql.DB) error {
 		{"tracks.channels", `ALTER TABLE tracks ADD COLUMN channels INTEGER NOT NULL DEFAULT 0`},
 		{"tracks.bit_depth", `ALTER TABLE tracks ADD COLUMN bit_depth INTEGER NOT NULL DEFAULT 0`},
 		{"tracks.album_artist", `ALTER TABLE tracks ADD COLUMN album_artist TEXT NOT NULL DEFAULT ''`},
+		{"playlists.cover_version", `ALTER TABLE playlists ADD COLUMN cover_version TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, c := range addColumns {
 		if _, err := db.Exec(c.stmt); err != nil {
@@ -241,6 +242,14 @@ func migrate(db *sql.DB) error {
                         updated_at TEXT NOT NULL,
                         PRIMARY KEY (user_id, key)
                 )`,
+		`CREATE TABLE IF NOT EXISTS password_resets (
+                        code_hash  TEXT PRIMARY KEY,
+                        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL
+                )`,
+		`CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id)`,
 	}
 	for _, s := range later {
 		if _, err := db.Exec(s); err != nil {

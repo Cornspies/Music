@@ -20,14 +20,11 @@ import (
 
 const (
 	deezerPageSize = 25
+
+	deezerFallbackLengthSlack = 10.0
 )
 
-var (
-	deezerTrackLinkRe    = regexp.MustCompile(`deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?track/(\d+)`)
-	deezerAlbumLinkRe    = regexp.MustCompile(`deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?album/(\d+)`)
-	deezerPlaylistLinkRe = regexp.MustCompile(`deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?playlist/(\d+)`)
-	deezerIDRe           = regexp.MustCompile(`^\d{1,20}$`)
-)
+var deezerIDRe = regexp.MustCompile(`^\d{1,20}$`)
 
 type deezerSource struct {
 	client  *deezer.Client
@@ -42,6 +39,9 @@ func newDeezerSource(dataDir string, yt *ytdlpSource) *deezerSource {
 	client, err := deezer.NewClient(arl, quality)
 	if err != nil {
 		logErr("deezer init", err)
+	}
+	if client != nil && client.HasARL() && client.User() == nil {
+		logErr("deezer init", errors.New("MUSIC_DEEZER_ARL was not accepted by Deezer (expired or invalid?); continuing without an account, so downloads fall back to YouTube"))
 	}
 
 	return &deezerSource{
@@ -68,7 +68,7 @@ func (d *deezerSource) describe() string {
 	}
 
 	if d.client.HasARL() {
-		return fmt.Sprintf("Deezer enabled (%s, authenticated)", prefQuality)
+		return fmt.Sprintf("Deezer enabled (%s, ARL not accepted, anonymous)", prefQuality)
 	}
 
 	return fmt.Sprintf("Deezer enabled (%s, anonymous)", prefQuality)
@@ -98,20 +98,15 @@ func (d *deezerSource) playlistID(raw string) string {
 		return raw
 	}
 
-	if m := deezerPlaylistLinkRe.FindStringSubmatch(raw); m != nil {
-		return "playlist:" + m[1]
-	}
-	if m := deezerAlbumLinkRe.FindStringSubmatch(raw); m != nil {
-		return "album:" + m[1]
+	if kind, id, ok := deezer.MatchURL(raw); ok && (kind == "playlist" || kind == "album") {
+		return kind + ":" + id
 	}
 
-	// If numeric ID, treat as playlist ID
 	if deezerIDRe.MatchString(raw) {
 		return "playlist:" + raw
 	}
 
-	// Short links
-	if strings.Contains(raw, "deezer.page.link") || strings.Contains(raw, "link.deezer.com") {
+	if d.client != nil && (strings.Contains(raw, "deezer.page.link") || strings.Contains(raw, "link.deezer.com")) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if kind, id, err := d.client.ParseURL(ctx, raw); err == nil {
@@ -156,7 +151,6 @@ func (d *deezerSource) listPlaylist(ctx context.Context, id string) (catalogPlay
 	playlistID := strings.TrimPrefix(id, "playlist:")
 	pl, err := d.client.GetPlaylist(ctx, playlistID)
 	if err != nil {
-		// Fallback: maybe it was an album ID without prefix
 		if album, aerr := d.client.GetAlbum(ctx, playlistID); aerr == nil {
 			entries := make([]discoverResult, len(album.Tracks))
 			for i, t := range album.Tracks {
@@ -211,19 +205,17 @@ func (d *deezerSource) search(ctx context.Context, query string, page int) ([]di
 
 	trimmed := strings.TrimSpace(query)
 
-	// Check if query is a single track link
-	if m := deezerTrackLinkRe.FindStringSubmatch(trimmed); m != nil {
+	if kind, id, ok := deezer.MatchURL(trimmed); ok && kind == "track" {
 		if page > 1 {
 			return nil, false, nil
 		}
-		t, err := d.client.GetTrack(ctx, m[1])
+		t, err := d.client.GetTrack(ctx, id)
 		if err != nil {
 			return nil, false, err
 		}
 		return []discoverResult{deezerTrackToResult(*t)}, false, nil
 	}
 
-	// Check for short link or other Deezer URLs
 	if strings.Contains(trimmed, "deezer.com") || strings.Contains(trimmed, "deezer.page.link") {
 		kind, id, err := d.client.ParseURL(ctx, trimmed)
 		if err == nil {
@@ -261,7 +253,6 @@ func (d *deezerSource) search(ctx context.Context, query string, page int) ([]di
 		}
 	}
 
-	// Standard text search
 	index := (page - 1) * deezerPageSize
 	tracks, total, hasNext, err := d.client.SearchTracks(ctx, query, deezerPageSize, index)
 	if err != nil {
@@ -286,7 +277,6 @@ func (d *deezerSource) fetch(ctx context.Context, id string) (*sourceDownload, e
 		return nil, &statusError{http.StatusServiceUnavailable, "Deezer client is not configured"}
 	}
 
-	// 1. Direct native download from Deezer
 	dl, dlErr := d.fetchDirect(ctx, id)
 	if dlErr == nil {
 		return dl, nil
@@ -294,7 +284,6 @@ func (d *deezerSource) fetch(ctx context.Context, id string) (*sourceDownload, e
 
 	logErr("deezer direct download", dlErr)
 
-	// 2. Optional YouTube fallback if yt-dlp is available
 	if d.yt != nil {
 		ytDl, ytErr := d.fetchYTOldFallback(ctx, id)
 		if ytErr == nil {
@@ -303,9 +292,13 @@ func (d *deezerSource) fetch(ctx context.Context, id string) (*sourceDownload, e
 		logErr("deezer youtube fallback", ytErr)
 	}
 
+	msg := fmt.Sprintf("couldn't download from Deezer: %v", dlErr)
+	if d.client.User() == nil {
+		msg += " (not logged in to Deezer; MUSIC_DEEZER_ARL is missing, invalid or expired)"
+	}
 	return nil, &statusError{
 		code: http.StatusBadGateway,
-		msg:  fmt.Sprintf("couldn't download from Deezer: %v", dlErr),
+		msg:  msg,
 	}
 }
 
@@ -332,7 +325,6 @@ func (d *deezerSource) fetchDirect(ctx context.Context, id string) (*sourceDownl
 		return nil, err
 	}
 
-	// Tag the file using ffmpeg if available
 	bin := ffmpegBinary()
 	finalPath := filepath.Join(dir, "audio"+ext)
 	if bin != "" {
@@ -426,24 +418,46 @@ func (d *deezerSource) fetchYTOldFallback(ctx context.Context, id string) (*sour
 	want := upgradeTrack{title: track.Title, artist: track.Artist, duration: track.Duration}
 	var match *discoverResult
 
-	for _, query := range []string{track.Artist + " " + track.Title, track.Artist + " " + track.Title + " audio"} {
+	queries := []string{
+		track.Artist + " " + track.Title,
+		track.Artist + " " + track.Title + " audio",
+		track.Title + " " + track.Artist,
+	}
+
+	firstMatch := func(results []discoverResult, ok func(upgradeTrack, discoverResult) bool) *discoverResult {
+		for i := range results {
+			if i < upgradeSearchHits && ok(want, results[i]) {
+				return &results[i]
+			}
+		}
+		return nil
+	}
+
+	var searched [][]discoverResult
+	for _, query := range queries {
 		results, _, serr := d.yt.search(ctx, query, 1)
 		if serr != nil {
 			continue
 		}
-		for i := range results {
-			if i < upgradeSearchHits && sameRecording(want, results[i]) {
-				match = &results[i]
-				break
-			}
-		}
-		if match != nil {
+		searched = append(searched, results)
+		if match = firstMatch(results, sameRecording); match != nil {
 			break
 		}
 	}
 
+	relaxed := func(t upgradeTrack, r discoverResult) bool {
+		return sameSongWithin(t, r, deezerFallbackLengthSlack)
+	}
 	if match == nil {
-		return nil, errors.New("no matching recording on YouTube")
+		for _, results := range searched {
+			if match = firstMatch(results, relaxed); match != nil {
+				break
+			}
+		}
+	}
+
+	if match == nil {
+		return nil, fmt.Errorf("no matching recording on YouTube for %q by %q", track.Title, track.Artist)
 	}
 
 	dl, err := d.yt.fetch(ctx, match.ID)
@@ -470,7 +484,6 @@ func (d *deezerSource) fetchYTOldFallback(ctx context.Context, id string) (*sour
 	return dl, nil
 }
 
-// bestQuality implements qualityProber.
 func (d *deezerSource) bestQuality() audioQuality {
 	if d.client == nil {
 		return audioQuality{"mp3", 128}
@@ -485,7 +498,6 @@ func (d *deezerSource) bestQuality() audioQuality {
 	}
 }
 
-// probe implements qualityProber for Deezer tracks.
 func (d *deezerSource) probe(ctx context.Context, id string) (audioQuality, error) {
 	if !deezerIDRe.MatchString(id) {
 		return audioQuality{}, fmt.Errorf("not a Deezer track id")

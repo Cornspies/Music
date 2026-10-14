@@ -136,6 +136,10 @@ class ApiClient(private val store: TokenStore) {
     fun avatarUrl(userId: String): String =
         url("/api/users/$userId/avatar") + "?token=" + urlToken.encodeURLParameter()
 
+    fun playlistCoverUrl(playlistId: String, version: String): String =
+        url("/api/playlists/$playlistId/cover") + "?token=" + urlToken.encodeURLParameter() +
+            "&v=" + version.encodeURLParameter()
+
     suspend fun login(username: String, password: String): AuthResponse =
         postJson("/api/auth/login", AuthRequest(username, password))
 
@@ -300,10 +304,29 @@ class ApiClient(private val store: TokenStore) {
         mimeType: String,
         bytes: ByteArray,
         crop: AvatarCrop? = null,
-    ): User {
+    ): User = uploadImage("/api/auth/avatar", fileName, mimeType, bytes, crop)
+
+    suspend fun uploadPlaylistCover(
+        playlistId: String,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        crop: AvatarCrop? = null,
+    ): Playlist = uploadImage("/api/playlists/$playlistId/cover", fileName, mimeType, bytes, crop)
+
+    suspend fun deletePlaylistCover(playlistId: String): Playlist =
+        bodyOrError(client.delete(url("/api/playlists/$playlistId/cover")) { auth() })
+
+    private suspend inline fun <reified T> uploadImage(
+        path: String,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        crop: AvatarCrop?,
+    ): T {
         val safeName = fileName.replace("\"", "'").replace("\r", " ").replace("\n", " ")
         val response = client.submitFormWithBinaryData(
-            url = url("/api/auth/avatar"),
+            url = url(path),
             formData = formData {
                 append(
                     "file",

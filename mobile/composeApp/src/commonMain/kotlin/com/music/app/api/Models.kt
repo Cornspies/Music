@@ -210,6 +210,7 @@ data class Playlist(
     val owner: Uploader = Uploader(),
     val isMine: Boolean = true,
     val isPinned: Boolean = false,
+    val coverVersion: String = "",
 )
 
 @Serializable
@@ -223,6 +224,7 @@ data class PlaylistDetail(
     val owner: Uploader = Uploader(),
     val isMine: Boolean = true,
     val isPinned: Boolean = false,
+    val coverVersion: String = "",
     val tracks: List<Track> = emptyList(),
 )
 
@@ -236,6 +238,7 @@ fun PlaylistDetail.toPlaylist(): Playlist = Playlist(
     owner = owner,
     isMine = isMine,
     isPinned = isPinned,
+    coverVersion = coverVersion,
 )
 
 @Serializable

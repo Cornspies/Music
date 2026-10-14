@@ -18,7 +18,8 @@ export function useRouteSync() {
     applyRoute(view, arg)
     const canonical = routeToPath(view, arg)
     const authPath =
-      /^\/(login|register)\/?$/.test(window.location.pathname) && !useAuthStore.getState().token
+      (/^\/(login|register)\/?$/.test(window.location.pathname) && !useAuthStore.getState().token) ||
+      /^\/reset-password\/?$/.test(window.location.pathname)
     if (canonical !== window.location.pathname && !authPath) {
       window.history.replaceState({ view, viewArg: arg }, "", canonical)
     }

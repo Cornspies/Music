@@ -2,7 +2,20 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
-import { Globe, Link as LinkIcon, ListEnd, Lock, Pencil, Pin, PinOff, Play, Shuffle, Trash2 } from "lucide-react"
+import {
+  Globe,
+  ImageMinus,
+  ImagePlus,
+  Link as LinkIcon,
+  ListEnd,
+  Lock,
+  Pencil,
+  Pin,
+  PinOff,
+  Play,
+  Shuffle,
+  Trash2,
+} from "lucide-react"
 import { api } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
 import { publicUrl } from "@/lib/desktop"
@@ -11,6 +24,7 @@ import { useLibraryStore } from "@/stores/library"
 import { usePlayerStore } from "@/stores/player"
 import { useUIStore } from "@/stores/ui"
 import { inListenSession } from "@/stores/listen"
+import { clearPlaylistCover, pickPlaylistCover } from "@/components/music/PlaylistCover"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +37,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 
-type PlaylistInfo = Pick<Playlist, "id" | "name" | "isMine" | "isPublic" | "isPinned">
+type PlaylistInfo = Pick<Playlist, "id" | "name" | "isMine" | "isPublic" | "isPinned" | "coverVersion">
 
 export async function copyPlaylistLink(playlistId: string): Promise<void> {
   const url = publicUrl(`/playlists/${encodeURIComponent(playlistId)}`)
@@ -104,6 +118,14 @@ export function PlaylistManageItems({
       >
         <Pencil className="size-4" /> Rename
       </DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => pickPlaylistCover(playlist.id)}>
+        <ImagePlus className="size-4" /> {playlist.coverVersion ? "Change cover" : "Upload cover"}
+      </DropdownMenuItem>
+      {playlist.coverVersion ? (
+        <DropdownMenuItem onSelect={() => clearPlaylistCover(playlist.id)}>
+          <ImageMinus className="size-4" /> Remove cover
+        </DropdownMenuItem>
+      ) : null}
       <DropdownMenuItem onClick={togglePublic}>
         {playlist.isPublic ? (
           <>

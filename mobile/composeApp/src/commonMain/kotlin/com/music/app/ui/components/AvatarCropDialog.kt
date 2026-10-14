@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +43,7 @@ fun AvatarCropDialog(
     busy: Boolean,
     onCancel: () -> Unit,
     onConfirm: (AvatarCrop) -> Unit,
+    square: Boolean = false,
 ) {
     val bitmap: ImageBitmap? = remember(bytes) { decodeImageBitmap(bytes) }
 
@@ -72,7 +74,7 @@ fun AvatarCropDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onCancel() },
-        title = { Text("Position your picture") },
+        title = { Text(if (square) "Position the cover" else "Position your picture") },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (bitmap == null) {
@@ -86,7 +88,7 @@ fun AvatarCropDialog(
                         Modifier
                             .padding(top = 12.dp)
                             .size(240.dp)
-                            .clip(CircleShape)
+                            .clip(if (square) RoundedCornerShape(12.dp) else CircleShape)
                             .onSizeChanged { sz ->
                                 if (sz.width.toFloat() != frame) {
                                     frame = sz.width.toFloat()
@@ -106,7 +108,7 @@ fun AvatarCropDialog(
                     ) {
                         Image(
                             bitmap = bitmap,
-                            contentDescription = "Your new avatar",
+                            contentDescription = if (square) "New cover" else "Your new avatar",
                             contentScale = ContentScale.FillBounds,
                             modifier = Modifier
                                 .size(240.dp)
@@ -150,7 +152,7 @@ fun AvatarCropDialog(
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
-                    Text("Save picture")
+                    Text(if (square) "Save cover" else "Save picture")
                 }
             }
         },

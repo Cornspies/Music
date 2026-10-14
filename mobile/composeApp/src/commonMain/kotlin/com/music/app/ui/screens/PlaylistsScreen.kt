@@ -1,6 +1,5 @@
 package com.music.app.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
@@ -47,10 +45,10 @@ import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.ErrorState
 import com.music.app.ui.components.LoadingBox
 import com.music.app.ui.components.RefreshableContent
+import com.music.app.ui.components.PlaylistArt
 import com.music.app.ui.components.UserAvatar
 import com.music.app.ui.formatTotalDuration
 import com.music.app.ui.theme.Emerald
-import com.music.app.ui.theme.EmeraldDark
 import kotlinx.coroutines.launch
 
 @Composable
@@ -144,14 +142,7 @@ private fun PlaylistRow(playlist: Playlist) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier
-                    .size(48.dp)
-                    .background(EmeraldDark.copy(alpha = 0.25f), RoundedCornerShape(10.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = Emerald)
-            }
+            PlaylistArt(playlist.id, playlist.coverVersion, 48.dp)
             if (!playlist.isMine && playlist.owner.id.isNotEmpty()) {
                 Box(Modifier.align(Alignment.BottomEnd)) {
                     UserAvatar(

@@ -69,6 +69,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.removePlaylistCoversOf(id)
 	if err := s.removeTracksOf(id); err != nil {
 		s.internalErr(w, "delete user tracks", err)
 		return

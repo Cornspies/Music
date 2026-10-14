@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -31,6 +32,8 @@ func main() {
 		"directory for daily log files, deleted after 14 days; empty means <data>/logs (env: MUSIC_LOG_DIR)")
 	webDir := flag.String("web", cfg.WebDir,
 		"directory with the static web app (bun run build:static); empty means the web app isn't served (env: MUSIC_WEB_DIR)")
+	resetUser := flag.String("reset-password", "",
+		"print a one-time password reset link for this username and exit")
 	flag.Parse()
 
 	abs, err := filepath.Abs(*dataDir)
@@ -67,6 +70,15 @@ func main() {
 	srv, err := server.New(abs, server.Options{JWTSecret: cfg.JWTSecret, WebDir: web})
 	if err != nil {
 		log.Fatalf("init server: %v", err)
+	}
+	if *resetUser != "" {
+		reset, err := srv.CreatePasswordResetFor(*resetUser)
+		if err != nil {
+			log.Fatalf("reset password: %v", err)
+		}
+		fmt.Printf("Open this on your Music server within 24 hours to set a new password for %s:\n/reset-password?code=%s\n",
+			reset.Username, reset.Code)
+		return
 	}
 
 	if len(cfg.LoadedFiles) > 0 {

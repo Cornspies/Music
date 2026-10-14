@@ -291,7 +291,18 @@ export function AuthView() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="auth-password">Password</Label>
+              <div className="flex items-baseline justify-between gap-2">
+                <Label htmlFor="auth-password">Password</Label>
+                {mode === "login" ? (
+                  <button
+                    type="button"
+                    onClick={() => toast("Ask an admin of this server for a password reset link.")}
+                    className="text-xs text-zinc-500 hover:text-zinc-300 hover:underline focus-visible:underline focus-visible:outline-none"
+                  >
+                    Forgot password?
+                  </button>
+                ) : null}
+              </div>
               <Input
                 id="auth-password"
                 type="password"

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -60,6 +61,8 @@ import com.music.app.api.friendlyError
 import com.music.app.api.toPlaylist
 import com.music.app.plainTextClipEntry
 import com.music.app.ui.components.CoverImage
+import com.music.app.ui.components.PlaylistArt
+import com.music.app.ui.components.PlaylistCoverEditor
 import com.music.app.ui.components.EmptyState
 import com.music.app.ui.components.ErrorState
 import com.music.app.ui.components.LoadingBox
@@ -90,6 +93,14 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
         ) {
             IconButton(onClick = { model.pop() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            model.playlistDetail?.let { art ->
+                if (art.isMine) {
+                    PlaylistCoverEditor(art.id, art.coverVersion, 48.dp) { actionError = it }
+                } else {
+                    PlaylistArt(art.id, art.coverVersion, 48.dp)
+                }
+                Spacer(Modifier.width(12.dp))
             }
             Column(Modifier.weight(1f)) {
                 Text(

@@ -6,6 +6,8 @@ import type {
   HistoryResponse,
   Invite,
   MetadataCandidatesResponse,
+  PasswordReset,
+  Playlist,
   PlaybackState,
   Role,
   Track,
@@ -186,6 +188,26 @@ export async function uploadAvatar(file: File, crop?: AvatarCrop): Promise<User>
 
 export function removeAvatar(): Promise<User> {
   return api<User>("/api/auth/avatar", { method: "DELETE" })
+}
+
+export function playlistCoverUrl(playlist: Pick<Playlist, "id" | "coverVersion">): string | null {
+  if (!playlist.coverVersion) return null
+  return withToken(`/api/playlists/${playlist.id}/cover?v=${encodeURIComponent(playlist.coverVersion)}`)
+}
+
+export function uploadPlaylistCover(id: string, file: File, crop?: AvatarCrop): Promise<Playlist> {
+  const form = new FormData()
+  form.append("file", file)
+  if (crop) {
+    form.append("cropX", String(crop.x))
+    form.append("cropY", String(crop.y))
+    form.append("cropSize", String(crop.size))
+  }
+  return api<Playlist>(`/api/playlists/${id}/cover`, { method: "POST", body: form })
+}
+
+export function removePlaylistCover(id: string): Promise<Playlist> {
+  return api<Playlist>(`/api/playlists/${id}/cover`, { method: "DELETE" })
 }
 
 export function currentToken(): string | null {
@@ -596,6 +618,8 @@ export const admin = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }),
+  createPasswordReset: (id: string) =>
+    api<PasswordReset>(`/api/admin/users/${id}/password-reset`, { method: "POST" }),
   settings: () => api<AdminSettings>("/api/admin/settings"),
   updateSettings: (patch: { registrationOpen?: boolean; metadataLookupPaused?: boolean }) =>
     api<AdminSettings>("/api/admin/settings", {
@@ -662,6 +686,10 @@ export const listen = {
 
 export function listenLink(code: string): string {
   return publicUrl(`/listen/${encodeURIComponent(code)}`)
+}
+
+export function passwordResetLink(code: string): string {
+  return publicUrl(`/reset-password?code=${encodeURIComponent(code)}`)
 }
 
 export function inviteLink(code: string): string {
