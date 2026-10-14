@@ -57,6 +57,8 @@ bun run dev
 ```
 
 Open <http://localhost:3000> and create an account. It is the admin account.
+The server logs that `web/` has no `index.html`; that is expected while you
+develop, because the web app on port 3000 serves itself.
 
 The server reads `.env` from its working directory or any folder above it, so
 the one at the repository root serves both. Every option is documented in
@@ -65,7 +67,27 @@ the one at the repository root serves both. Every option is documented in
 ## Deploy it
 
 Put the server behind a reverse proxy that provides HTTPS (Caddy, nginx or
-Traefik all work). The lightest setup is one process:
+Traefik all work), and send everything, `/api` included, to the server's
+port.
+
+**From a release.** Download `Music-server-<version>-<os>-<arch>` for Linux
+(amd64 or arm64) or Windows (amd64) from the
+[Releases](https://github.com/Cornspies/music-player/releases) page, extract
+it, and start the server from inside that folder:
+
+```sh
+cp .env.example .env                # copy on Windows
+./music-server                      # music-server.exe on Windows
+```
+
+The archive holds the server, the web app in `web/` and `.env.example`, which
+already sets `MUSIC_WEB_DIR=web`. The server reads `.env` from the folder it
+is started in, so run it from there, or set the working directory when you
+use a service manager. The bundled web app is built without operator details,
+so its privacy page says that no policy has been published; build from source
+to add yours (see [Apps](#apps)).
+
+**From source.** One process serves both:
 
 ```sh
 bun run build:static                # writes the web app to out/
@@ -74,9 +96,9 @@ go build -o music-server .
 MUSIC_WEB_DIR=../../out ./music-server
 ```
 
-Send everything, `/api` included, to the server's port. The alternative is
-`bun run build` and `bun run start`, which runs the web app as a second
-process that forwards `/api` to the Go server.
+The alternative is `bun run build` and `bun run start`, which runs the web app
+as a second process that forwards `/api` to the Go server. Remove
+`MUSIC_WEB_DIR` from `.env` when you use it.
 
 The data folder (`MUSIC_DATA_DIR`) is the only thing to back up. A first
 session secret is generated into it; set `MUSIC_JWT_SECRET` if you rebuild
@@ -142,9 +164,10 @@ bun run typecheck && bun run lint
 cd mobile && ./gradlew :androidApp:assembleDebug
 ```
 
-To publish the apps, run **Actions → Release → Run workflow** and enter a tag
-such as `v0.4.4`. It builds the desktop installers and a signed Android APK
-and attaches them to a GitHub release, a draft by default. It needs the
+To publish a release, run **Actions → Release → Run workflow** and enter a tag
+such as `v0.4.4`. It builds the desktop installers, a signed Android APK and
+the server bundles (server plus web app) for Linux and Windows, and attaches
+them to a GitHub release, a draft by default. It needs the
 repository secrets `ANDROID_KEYSTORE_BASE64` (`base64 -w0` of your keystore),
 `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, and
 reads the repository variables `MUSIC_DEFAULT_SERVER` and `MUSIC_HOST`.
