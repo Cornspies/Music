@@ -502,6 +502,10 @@ func editionSlack(duration float64) float64 {
 }
 
 func sameSong(t upgradeTrack, r discoverResult) bool {
+	return sameSongWithin(t, r, editionSlack(t.duration))
+}
+
+func sameSongWithin(t upgradeTrack, r discoverResult, slack float64) bool {
 	if !sameTitle(t, r) {
 		return false
 	}
@@ -510,7 +514,7 @@ func sameSong(t upgradeTrack, r discoverResult) bool {
 		agree, lengthKnown := lengthsAgree(t, r, recordingLengthSlack)
 		return agree && lengthKnown
 	}
-	agree, _ := lengthsAgree(t, r, editionSlack(t.duration))
+	agree, _ := lengthsAgree(t, r, slack)
 	return match && agree
 }
 

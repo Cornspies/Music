@@ -3,6 +3,8 @@ package deezer
 import (
 	"bytes"
 	"crypto/cipher"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -16,7 +18,6 @@ func TestGetBlowfishKey(t *testing.T) {
 		t.Fatalf("expected key length 16, got %d", len(key))
 	}
 
-	// Key should be deterministic
 	key2 := GetBlowfishKey(trackID)
 	if !bytes.Equal(key, key2) {
 		t.Fatalf("expected deterministic key, got %v vs %v", key, key2)
@@ -52,18 +53,15 @@ func TestDecryptBlowfishChunk(t *testing.T) {
 		t.Fatalf("blowfish cipher init: %v", err)
 	}
 
-	// Prepare 2048 bytes of test data
 	plaintext := make([]byte, 2048)
 	for i := range plaintext {
 		plaintext[i] = byte(i % 256)
 	}
 
-	// Encrypt using CBC with blowfishIV
 	mode := cipher.NewCBCEncrypter(cipherBlock, blowfishIV)
 	ciphertext := make([]byte, len(plaintext))
 	mode.CryptBlocks(ciphertext, plaintext)
 
-	// Decrypt using DecryptBlowfishChunk
 	decrypted, err := DecryptBlowfishChunk(ciphertext, key)
 	if err != nil {
 		t.Fatalf("decryption failed: %v", err)
@@ -81,23 +79,17 @@ func TestDecryptDeezerStream(t *testing.T) {
 		t.Fatalf("blowfish cipher init: %v", err)
 	}
 
-	// Create 3 full chunks (2048 bytes each) + 500 trailing bytes
 	fullLen := 2048*3 + 500
 	originalData := make([]byte, fullLen)
 	for i := range originalData {
 		originalData[i] = byte((i * 17) % 256)
 	}
 
-	// Encrypt only every 3rd chunk (chunk 0, chunk 3, etc.)
 	encryptedStream := make([]byte, fullLen)
 	copy(encryptedStream, originalData)
 
-	// Chunk 0 (0..2048) should be encrypted
 	mode := cipher.NewCBCEncrypter(cipherBlock, blowfishIV)
 	mode.CryptBlocks(encryptedStream[0:2048], originalData[0:2048])
-
-	// Chunks 1 and 2 are untouched
-	// Trailing 500 bytes are untouched
 
 	var out bytes.Buffer
 	written, err := DecryptDeezerStream(bytes.NewReader(encryptedStream), &out, key, 0)
@@ -117,7 +109,6 @@ func TestDecryptDeezerStream(t *testing.T) {
 func TestDecryptDeezerStreamLimit(t *testing.T) {
 	key := GetBlowfishKey("11223344")
 
-	// 2048 * 2 = 4096 bytes
 	fullLen := 4096
 	data := make([]byte, fullLen)
 
@@ -129,5 +120,44 @@ func TestDecryptDeezerStreamLimit(t *testing.T) {
 	}
 	if written > limit {
 		t.Fatalf("expected written <= limit (%d), got %d", limit, written)
+	}
+}
+
+type endingReader struct {
+	data []byte
+	end  error
+}
+
+func (r *endingReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		return 0, r.end
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
+func TestDecryptDeezerStreamReadErrors(t *testing.T) {
+	key := GetBlowfishKey("42")
+	data := make([]byte, 2048*2+300)
+
+	var out bytes.Buffer
+	n, err := DecryptDeezerStream(&endingReader{data: data, end: io.EOF}, &out, key, 0)
+	if err != nil || n != int64(len(data)) {
+		t.Errorf("clean EOF: n = %d, err = %v; want %d, nil", n, err, len(data))
+	}
+
+	for _, size := range []int{len(data), 2048 * 2} {
+		out.Reset()
+		_, err = DecryptDeezerStream(&endingReader{data: data[:size], end: io.ErrUnexpectedEOF}, &out, key, 0)
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Errorf("cut after %d bytes: err = %v, want io.ErrUnexpectedEOF", size, err)
+		}
+	}
+
+	boom := errors.New("connection reset")
+	_, err = DecryptDeezerStream(&endingReader{data: data, end: boom}, &out, key, 0)
+	if !errors.Is(err, boom) {
+		t.Errorf("err = %v, want %v", err, boom)
 	}
 }

@@ -91,11 +91,24 @@ export interface Playlist {
   owner: Uploader
   isMine: boolean
   isPinned: boolean
+  coverVersion: string
 }
 
 export interface PlaylistAddResult {
   added: number
   skipped: number
+}
+
+export interface PasswordReset {
+  code: string
+  username: string
+  expiresAt: string
+}
+
+export interface PasswordResetCheck {
+  valid: boolean
+  username?: string
+  expiresAt?: string
 }
 
 export interface PlaylistDetail extends Playlist {

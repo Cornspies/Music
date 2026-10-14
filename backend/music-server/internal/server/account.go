@@ -140,6 +140,7 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.removePlaylistCoversOf(u.ID)
 	tx, err := s.db.Begin()
 	if err != nil {
 		s.internalErr(w, "begin", err)

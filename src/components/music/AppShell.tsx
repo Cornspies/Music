@@ -18,6 +18,7 @@ import { LyricsSidebar } from "@/components/music/LyricsSidebar"
 import { NowPlayingView } from "@/components/music/NowPlayingView"
 import { MetadataReviewDialog } from "@/components/music/MetadataReviewDialog"
 import { PlaylistDialog } from "@/components/music/PlaylistDialog"
+import { PlaylistCoverPicker } from "@/components/music/PlaylistCover"
 import { HomeView } from "@/components/music/views/HomeView"
 import { SearchView } from "@/components/music/views/SearchView"
 import { LibraryView } from "@/components/music/views/LibraryView"
@@ -334,6 +335,7 @@ export function AppShell() {
       <DeferredDialogs />
       <GlobalMetadataReview />
       <PlaylistDialog />
+      <PlaylistCoverPicker />
       <ListenTogetherDialog />
       <ListenInviteDialog />
     </div>

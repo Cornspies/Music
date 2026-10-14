@@ -58,6 +58,7 @@ fun LoginScreen() {
     var inviteCode by remember { mutableStateOf(linkedInvite ?: "") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var forgotHint by remember { mutableStateOf(false) }
     val insecureWarning = insecureServerWarning(serverUrl)
     var acceptInsecure by remember(serverUrl) { mutableStateOf(false) }
 
@@ -143,6 +144,29 @@ fun LoginScreen() {
             ),
             modifier = Modifier.fillMaxWidth(),
         )
+        if (!registerMode) {
+            if (forgotHint) {
+                Text(
+                    "Ask an admin of this server for a password reset link.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                )
+            } else {
+                TextButton(
+                    onClick = { forgotHint = true },
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(
+                        "Forgot password?",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         if (registerMode) {
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(

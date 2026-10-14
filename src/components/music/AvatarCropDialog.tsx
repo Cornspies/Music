@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, ZoomIn } from "lucide-react"
 import type { AvatarCrop } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -19,9 +20,11 @@ interface Props {
   busy: boolean
   onCancel: () => void
   onConfirm: (crop: AvatarCrop) => void
+  shape?: "circle" | "square"
 }
 
-export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
+export function AvatarCropDialog({ file, busy, onCancel, onConfirm, shape = "circle" }: Props) {
+  const square = shape === "square"
   const [url, setUrl] = useState<string | null>(null)
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -89,12 +92,12 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
     <Dialog open={file !== null} onOpenChange={(open) => !open && !busy && onCancel()}>
       <DialogContent aria-describedby={undefined} className="max-w-md gap-0 overflow-hidden border-zinc-800 bg-zinc-900 p-0 sm:max-w-md">
         <DialogHeader className="border-b border-zinc-800/80 px-5 py-4">
-          <DialogTitle className="text-base">Position your picture</DialogTitle>
+          <DialogTitle className="text-base">{square ? "Position the cover" : "Position your picture"}</DialogTitle>
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col items-center px-5 py-4">
           <div
-            className="relative overflow-hidden rounded-full bg-zinc-950 ring-1 ring-zinc-700"
+            className={cn("relative overflow-hidden bg-zinc-950 ring-1 ring-zinc-700", square ? "rounded-lg" : "rounded-full")}
             style={{ width: FRAME, height: FRAME, touchAction: "none" }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -104,7 +107,7 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
             {url ? (
               <img
                 src={url}
-                alt="Your new avatar"
+                alt={square ? "New cover" : "Your new avatar"}
                 draggable={false}
                 onLoad={(e) => {
                   const el = e.currentTarget
@@ -152,7 +155,7 @@ export function AvatarCropDialog({ file, busy, onCancel, onConfirm }: Props) {
             onClick={confirm}
             className="bg-emerald-500 font-semibold text-zinc-950 hover:bg-emerald-400"
           >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : "Save picture"}
+            {busy ? <Loader2 className="size-4 animate-spin" /> : square ? "Save cover" : "Save picture"}
           </Button>
         </DialogFooter>
       </DialogContent>

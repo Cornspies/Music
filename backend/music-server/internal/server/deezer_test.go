@@ -25,10 +25,15 @@ func TestDeezerPlaylistID(t *testing.T) {
 		{"playlist:556677", "playlist:556677"},
 		{"album:998877", "album:998877"},
 		{"12345", "playlist:12345"},
-		// Track URLs should NOT be identified as playlists
 		{"https://www.deezer.com/track/3135556", ""},
 		{"https://www.deezer.com/en/track/998877", ""},
 		{"random search text", ""},
+		{"my favourites: https://www.deezer.com/en/playlist/42 enjoy", "playlist:42"},
+		{"DEEZER.COM/ALBUM/7", "album:7"},
+		{"https://evildeezer.com/playlist/1", ""},
+		{"https://deezer.com.attacker.com/album/1", ""},
+		{"https://example.com/?u=deezer.com/playlist/9", ""},
+		{"https://deezer.page.link/abc", ""},
 	}
 
 	for _, tc := range cases {
@@ -55,7 +60,7 @@ func TestDeezerCoverAllowed(t *testing.T) {
 	}
 
 	disallowed := []string{
-		"http://e-cdns-images.dzcdn.net/image.jpg", // not https
+		"http://e-cdns-images.dzcdn.net/image.jpg",
 		"https://evil.com/cover.jpg",
 		"https://e-cdns-images.dzcdn.net.evil.com/image.jpg",
 	}

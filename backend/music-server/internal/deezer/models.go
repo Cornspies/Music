@@ -2,7 +2,6 @@ package deezer
 
 import "strings"
 
-// Audio quality presets.
 const (
 	QualityFLAC    = "FLAC"
 	QualityMP3_320 = "MP3_320"
@@ -10,7 +9,6 @@ const (
 	QualityMP3_128 = "MP3_128"
 )
 
-// UserInfo represents Deezer account information from gw-light deezer.getUserData.
 type UserInfo struct {
 	ID            uint64 `json:"id"`
 	Name          string `json:"name"`
@@ -18,7 +16,6 @@ type UserInfo struct {
 	IsFreeAccount bool   `json:"isFreeAccount"`
 }
 
-// Track represents track metadata from Deezer.
 type Track struct {
 	ID            int64   `json:"id"`
 	Title         string  `json:"title"`
@@ -39,7 +36,6 @@ type Track struct {
 	Preview       string  `json:"preview,omitempty"`
 }
 
-// BestCoverURL returns the highest resolution cover available.
 func (t *Track) BestCoverURL() string {
 	if t.CoverXL != "" {
 		return t.CoverXL
@@ -53,7 +49,6 @@ func (t *Track) BestCoverURL() string {
 	return t.CoverSmall
 }
 
-// Album represents album metadata from Deezer.
 type Album struct {
 	ID          int64   `json:"id"`
 	Title       string  `json:"title"`
@@ -69,7 +64,6 @@ type Album struct {
 	Tracks      []Track `json:"tracks,omitempty"`
 }
 
-// BestCoverURL returns the highest resolution cover available for the album.
 func (a *Album) BestCoverURL() string {
 	if a.CoverXL != "" {
 		return a.CoverXL
@@ -83,7 +77,6 @@ func (a *Album) BestCoverURL() string {
 	return a.CoverSmall
 }
 
-// Playlist represents playlist metadata from Deezer.
 type Playlist struct {
 	ID          int64   `json:"id"`
 	Title       string  `json:"title"`
@@ -96,7 +89,6 @@ type Playlist struct {
 	Tracks      []Track `json:"tracks,omitempty"`
 }
 
-// BestCoverURL returns the highest resolution cover available for the playlist.
 func (p *Playlist) BestCoverURL() string {
 	if p.CoverXL != "" {
 		return p.CoverXL
@@ -110,7 +102,6 @@ func (p *Playlist) BestCoverURL() string {
 	return p.CoverSmall
 }
 
-// Artist represents artist metadata from Deezer.
 type Artist struct {
 	ID            int64  `json:"id"`
 	Name          string `json:"name"`
@@ -122,7 +113,14 @@ type Artist struct {
 	NbFans        int    `json:"nbFans,omitempty"`
 }
 
-// QualityCode returns the internal Deezer numeric format code.
+func IsKnownQuality(quality string) bool {
+	switch strings.ToUpper(strings.TrimSpace(quality)) {
+	case QualityFLAC, QualityMP3_320, QualityMP3_256, QualityMP3_128:
+		return true
+	}
+	return false
+}
+
 func QualityCode(quality string) int {
 	switch strings.ToUpper(quality) {
 	case QualityFLAC:
@@ -138,7 +136,6 @@ func QualityCode(quality string) int {
 	}
 }
 
-// QualityExt returns the file extension for a quality code or name.
 func QualityExt(quality string) string {
 	switch strings.ToUpper(quality) {
 	case QualityFLAC:
@@ -148,12 +145,13 @@ func QualityExt(quality string) string {
 	}
 }
 
-// FallbackQualities returns the fallback order for a requested quality.
 func FallbackQualities(quality string) []string {
 	switch strings.ToUpper(quality) {
 	case QualityFLAC:
 		return []string{QualityMP3_320, QualityMP3_128}
 	case QualityMP3_320:
+		return []string{QualityMP3_128}
+	case QualityMP3_256:
 		return []string{QualityMP3_128}
 	default:
 		return nil

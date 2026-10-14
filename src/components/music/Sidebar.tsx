@@ -42,6 +42,7 @@ import { ArtistImage } from "@/components/music/ArtistImage"
 import { AvatarPicker } from "@/components/music/AvatarPicker"
 import { CoverArt } from "@/components/music/CoverArt"
 import { UserAvatar } from "@/components/music/UserAvatar"
+import { PlaylistCoverImage } from "@/components/music/PlaylistCover"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -415,11 +416,12 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
                     <div
                       aria-hidden="true"
                       className={cn(
-                        "flex items-center justify-center rounded-md bg-linear-to-br from-zinc-700 to-zinc-800",
+                        "relative flex items-center justify-center overflow-hidden rounded-md bg-linear-to-br from-zinc-700 to-zinc-800",
                         collapsed ? "size-9" : "size-8"
                       )}
                     >
                       <Music4 className="size-3.5 text-zinc-400" />
+                      <PlaylistCoverImage playlist={p} />
                     </div>
                     {!p.isMine && p.owner?.id ? (
                       <UserAvatar

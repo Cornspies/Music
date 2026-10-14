@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -19,6 +20,7 @@ type Playlist struct {
 	Owner         Uploader `json:"owner"`
 	IsMine        bool     `json:"isMine"`
 	IsPinned      bool     `json:"isPinned"`
+	CoverVersion  string   `json:"coverVersion"`
 }
 
 type playlistDetail struct {
@@ -28,7 +30,7 @@ type playlistDetail struct {
 
 var playlistSelect = `
 SELECT EXISTS(SELECT 1 FROM playlist_pins pp WHERE pp.user_id = ? AND pp.playlist_id = p.id),
-       p.id, p.name, p.created_at, p.is_public, p.user_id,
+       p.id, p.name, p.created_at, p.is_public, p.user_id, p.cover_version,
        COALESCE(u.username, ''), COALESCE(u.has_avatar, 0),
        (SELECT COUNT(1) FROM playlist_tracks pt JOIN tracks t ON t.id = pt.track_id
         WHERE pt.playlist_id = p.id AND ` + visibleTo("t.user_id") + `),
@@ -46,7 +48,7 @@ func scanPlaylist(scan func(dest ...any) error, viewerID string) (*Playlist, err
 		hasAvatar int
 		isPinned  int
 	)
-	if err := scan(&isPinned, &p.ID, &p.Name, &p.CreatedAt, &isPublic, &p.Owner.ID,
+	if err := scan(&isPinned, &p.ID, &p.Name, &p.CreatedAt, &isPublic, &p.Owner.ID, &p.CoverVersion,
 		&p.Owner.Username, &hasAvatar, &p.TrackCount, &p.TotalDuration); err != nil {
 		return nil, err
 	}
@@ -282,6 +284,7 @@ func (s *Server) handleDeletePlaylist(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "playlist not found")
 		return
 	}
+	os.Remove(s.playlistCoverPath(id))
 	writeNoContent(w)
 }
 

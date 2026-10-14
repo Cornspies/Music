@@ -11,14 +11,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
-	trackURLRe    = regexp.MustCompile(`deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?track/(\d+)`)
-	albumURLRe    = regexp.MustCompile(`deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?album/(\d+)`)
-	playlistURLRe = regexp.MustCompile(`deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?playlist/(\d+)`)
-	artistURLRe   = regexp.MustCompile(`deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?artist/(\d+)`)
-	numericIDRe   = regexp.MustCompile(`^\d{1,20}$`)
+	deezerItemRe = regexp.MustCompile(`(?i)(?:^|[\s"'<(]|https?://)(?:[a-z0-9-]+\.)*deezer\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(track|album|playlist|artist)/(\d+)`)
+	numericIDRe  = regexp.MustCompile(`^\d{1,20}$`)
 )
 
 type deezerAPIError struct {
@@ -77,7 +75,8 @@ func (c *Client) publicGet(ctx context.Context, endpoint string, q url.Values, o
 	return json.Unmarshal(body, out)
 }
 
-// collectPages follows Deezer catalog pagination links up to safety limits.
+var pageRetryDelay = 500 * time.Millisecond
+
 func (c *Client) collectPages(ctx context.Context, initialData []json.RawMessage, nextURL string) ([]json.RawMessage, error) {
 	entries := append([]json.RawMessage{}, initialData...)
 	visited := make(map[string]bool)
@@ -89,11 +88,14 @@ func (c *Client) collectPages(ctx context.Context, initialData []json.RawMessage
 		}
 
 		parsed, err := url.Parse(currentNext)
-		if err != nil || !strings.HasSuffix(strings.ToLower(parsed.Hostname()), "deezer.com") {
+		if err != nil {
 			break
 		}
 		parsed.Scheme = "https"
 		cleanURL := parsed.String()
+		if !IsAllowedDeezerURL(cleanURL) {
+			break
+		}
 
 		if visited[cleanURL] || len(visited) >= 1000 {
 			break
@@ -105,8 +107,16 @@ func (c *Client) collectPages(ctx context.Context, initialData []json.RawMessage
 			Next string            `json:"next"`
 		}
 
-		if err := c.publicGet(ctx, cleanURL, nil, &page); err != nil {
-			return nil, err
+		err = c.publicGet(ctx, cleanURL, nil, &page)
+		if err != nil && ctx.Err() == nil {
+			select {
+			case <-time.After(pageRetryDelay):
+				err = c.publicGet(ctx, cleanURL, nil, &page)
+			case <-ctx.Done():
+			}
+		}
+		if err != nil {
+			return entries, fmt.Errorf("page %d: %w", len(visited), err)
 		}
 
 		entries = append(entries, page.Data...)
@@ -161,7 +171,6 @@ func (r *rawAPITrack) toTrack() Track {
 	}
 }
 
-// SearchTracks searches Deezer tracks by query string with pagination.
 func (c *Client) SearchTracks(ctx context.Context, query string, limit, index int) ([]Track, int, bool, error) {
 	if limit <= 0 {
 		limit = 25
@@ -194,7 +203,6 @@ func (c *Client) SearchTracks(ctx context.Context, query string, limit, index in
 	return tracks, resp.Total, resp.Next != "", nil
 }
 
-// SearchAlbums searches Deezer albums by query string.
 func (c *Client) SearchAlbums(ctx context.Context, query string, limit, index int) ([]Album, int, bool, error) {
 	if limit <= 0 {
 		limit = 25
@@ -245,7 +253,6 @@ func (c *Client) SearchAlbums(ctx context.Context, query string, limit, index in
 	return albums, resp.Total, resp.Next != "", nil
 }
 
-// SearchPlaylists searches Deezer playlists by query string.
 func (c *Client) SearchPlaylists(ctx context.Context, query string, limit, index int) ([]Playlist, int, bool, error) {
 	if limit <= 0 {
 		limit = 25
@@ -294,8 +301,10 @@ func (c *Client) SearchPlaylists(ctx context.Context, query string, limit, index
 	return playlists, resp.Total, resp.Next != "", nil
 }
 
-// GetTrack retrieves full metadata for a track from public Deezer API.
 func (c *Client) GetTrack(ctx context.Context, id string) (*Track, error) {
+	if !IsNumericID(id) {
+		return nil, fmt.Errorf("invalid track id %q", id)
+	}
 	var raw rawAPITrack
 	if err := c.publicGet(ctx, "/track/"+id, nil, &raw); err != nil {
 		return nil, err
@@ -304,8 +313,10 @@ func (c *Client) GetTrack(ctx context.Context, id string) (*Track, error) {
 	return &t, nil
 }
 
-// GetAlbum retrieves an album and all of its tracks from Deezer API.
 func (c *Client) GetAlbum(ctx context.Context, id string) (*Album, error) {
+	if !IsNumericID(id) {
+		return nil, fmt.Errorf("invalid album id %q", id)
+	}
 	var albumData struct {
 		ID          int64  `json:"id"`
 		Title       string `json:"title"`
@@ -353,18 +364,13 @@ func (c *Client) GetAlbum(ctx context.Context, id string) (*Album, error) {
 		NbTracks:    albumData.NbTracks,
 	}
 
-	// Collect all album tracks (with pagination if > 300 tracks)
 	rawItems := make([]json.RawMessage, len(albumData.Tracks.Data))
 	for i, t := range albumData.Tracks.Data {
 		b, _ := json.Marshal(t)
 		rawItems[i] = b
 	}
 
-	allRaw, err := c.collectPages(ctx, rawItems, albumData.Tracks.Next)
-	if err != nil {
-		// Non-fatal, use whatever tracks we got
-		allRaw = rawItems
-	}
+	allRaw, _ := c.collectPages(ctx, rawItems, albumData.Tracks.Next)
 
 	tracks := make([]Track, 0, len(allRaw))
 	for _, raw := range allRaw {
@@ -376,6 +382,12 @@ func (c *Client) GetAlbum(ctx context.Context, id string) (*Album, error) {
 			}
 			if t.AlbumID == 0 {
 				t.AlbumID = album.ID
+			}
+			if t.ReleaseDate == "" {
+				t.ReleaseDate = album.ReleaseDate
+			}
+			if t.Genre == "" {
+				t.Genre = album.Genre
 			}
 			if t.CoverBig == "" {
 				t.CoverBig = album.CoverBig
@@ -390,8 +402,10 @@ func (c *Client) GetAlbum(ctx context.Context, id string) (*Album, error) {
 	return album, nil
 }
 
-// GetPlaylist retrieves a playlist and all of its tracks from Deezer API.
 func (c *Client) GetPlaylist(ctx context.Context, id string) (*Playlist, error) {
+	if !IsNumericID(id) {
+		return nil, fmt.Errorf("invalid playlist id %q", id)
+	}
 	var plData struct {
 		ID          int64  `json:"id"`
 		Title       string `json:"title"`
@@ -430,10 +444,7 @@ func (c *Client) GetPlaylist(ctx context.Context, id string) (*Playlist, error) 
 		rawItems[i] = b
 	}
 
-	allRaw, err := c.collectPages(ctx, rawItems, plData.Tracks.Next)
-	if err != nil {
-		allRaw = rawItems
-	}
+	allRaw, _ := c.collectPages(ctx, rawItems, plData.Tracks.Next)
 
 	tracks := make([]Track, 0, len(allRaw))
 	for _, raw := range allRaw {
@@ -446,45 +457,83 @@ func (c *Client) GetPlaylist(ctx context.Context, id string) (*Playlist, error) 
 	return pl, nil
 }
 
-// ParseURL examines a URL or string and returns its Deezer type ("track", "album", "playlist", "artist") and ID.
 func (c *Client) ParseURL(ctx context.Context, raw string) (kind, id string, err error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", "", errors.New("empty url")
 	}
 
-	// Check for short links (e.g. deezer.page.link)
-	if strings.Contains(trimmed, "deezer.page.link") || strings.Contains(trimmed, "link.deezer.com") {
-		req, rerr := http.NewRequestWithContext(ctx, http.MethodHead, trimmed, nil)
-		if rerr == nil {
-			// Don't follow redirect so we can read Location header or use client with CheckRedirect
-			resp, derr := c.http.Do(req)
-			if derr == nil {
-				resp.Body.Close()
-				if loc := resp.Header.Get("Location"); loc != "" {
-					trimmed = loc
-				}
-			}
-		}
+	if short, ok := shortLinkURL(trimmed); ok {
+		trimmed = c.resolveShortLink(ctx, short)
 	}
 
-	if m := trackURLRe.FindStringSubmatch(trimmed); m != nil {
-		return "track", m[1], nil
-	}
-	if m := albumURLRe.FindStringSubmatch(trimmed); m != nil {
-		return "album", m[1], nil
-	}
-	if m := playlistURLRe.FindStringSubmatch(trimmed); m != nil {
-		return "playlist", m[1], nil
-	}
-	if m := artistURLRe.FindStringSubmatch(trimmed); m != nil {
-		return "artist", m[1], nil
+	if kind, id, ok := MatchURL(trimmed); ok {
+		return kind, id, nil
 	}
 
 	return "", "", errors.New("not a recognized deezer url")
 }
 
-// IsNumericID returns true if s is a numeric Deezer ID.
+func MatchURL(s string) (kind, id string, ok bool) {
+	if m := deezerItemRe.FindStringSubmatch(s); m != nil {
+		return strings.ToLower(m[1]), m[2], true
+	}
+	return "", "", false
+}
+
+var shortLinkHosts = map[string]bool{"deezer.page.link": true, "link.deezer.com": true}
+
+func isShortLinkHost(u *url.URL) bool {
+	return shortLinkHosts[strings.ToLower(u.Hostname())]
+}
+
+func shortLinkURL(raw string) (string, bool) {
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !isShortLinkHost(u) {
+		return "", false
+	}
+	u.Scheme = "https"
+	return u.String(), true
+}
+
+const maxShortLinkHops = 5
+
+func (c *Client) resolveShortLink(ctx context.Context, link string) string {
+	hopClient := *c.http
+	hopClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	cur := link
+	for i := 0; i < maxShortLinkHops; i++ {
+		if _, _, ok := MatchURL(cur); ok {
+			return cur
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, cur, nil)
+		if err != nil {
+			return cur
+		}
+		req.Header.Set("User-Agent", userAgent)
+		resp, err := hopClient.Do(req)
+		if err != nil {
+			return cur
+		}
+		resp.Body.Close()
+
+		loc := resp.Header.Get("Location")
+		if loc == "" {
+			return cur
+		}
+		next, err := req.URL.Parse(loc)
+		if err != nil || next.Scheme != "https" || !(isShortLinkHost(next) || IsAllowedDeezerURL(next.String())) {
+			return cur
+		}
+		cur = next.String()
+	}
+	return cur
+}
+
 func IsNumericID(s string) bool {
 	return numericIDRe.MatchString(s)
 }

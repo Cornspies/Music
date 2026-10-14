@@ -7,6 +7,7 @@ import {
   Check,
   Copy,
   FlaskConical,
+  KeyRound,
   Link2,
   Loader2,
   LogOut,
@@ -20,7 +21,8 @@ import {
   Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { admin, inviteLink } from "@/lib/api"
+import { admin, inviteLink, passwordResetLink } from "@/lib/api"
+import { copyText } from "@/lib/clipboard"
 import { formatFileSize, formatRelativeDate, formatTimeUntil } from "@/lib/format"
 import type { AdminSettings, AdminShare, AdminUser, Invite, Role } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
@@ -449,6 +451,23 @@ export function AdminView() {
     }
   }
 
+  const resetPassword = async (u: AdminUser) => {
+    setBusy(u.id)
+    try {
+      const reset = await admin.createPasswordReset(u.id)
+      const url = passwordResetLink(reset.code)
+      if (await copyText(url)) {
+        toast.success(`Reset link for ${u.username} copied`, { description: "Works once, for 24 hours." })
+      } else {
+        toast(url, { duration: 30_000 })
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const remove = async (u: AdminUser) => {
     setBusy(u.id)
     try {
@@ -583,6 +602,9 @@ export function AdminView() {
                           </DropdownMenuItem>
                         </>
                       )}
+                      <DropdownMenuItem onClick={() => resetPassword(u)}>
+                        <KeyRound className="size-4" /> Copy password reset link
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => signOut(u)}>
                         <LogOut className="size-4" /> Sign out everywhere
                       </DropdownMenuItem>

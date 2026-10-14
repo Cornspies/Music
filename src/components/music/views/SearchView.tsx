@@ -9,6 +9,7 @@ import type { Album, Artist, Playlist, SearchResults } from "@/lib/types"
 import { useUIStore } from "@/stores/ui"
 import { ArtistImage } from "@/components/music/ArtistImage"
 import { CoverArt } from "@/components/music/CoverArt"
+import { PlaylistCoverImage } from "@/components/music/PlaylistCover"
 import { TrackList } from "@/components/music/TrackList"
 import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 import { Button } from "@/components/ui/button"
@@ -204,8 +205,9 @@ export function SearchView() {
                       onClick={() => navigate("playlist", playlist.id)}
                       className="flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-zinc-800/60"
                     >
-                      <span className="flex size-10 items-center justify-center rounded-md bg-linear-to-br from-zinc-700 to-zinc-800 text-zinc-400">
+                      <span className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-linear-to-br from-zinc-700 to-zinc-800 text-zinc-400">
                         <ListMusic className="size-4" aria-hidden="true" />
+                        <PlaylistCoverImage playlist={playlist} />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-zinc-200">

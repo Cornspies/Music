@@ -35,31 +35,12 @@ func (s *Server) avatarPath(userID string) string {
 func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 	u := userFrom(r)
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarUploadBytes)
-	if err := r.ParseMultipartForm(maxAvatarUploadBytes); err != nil {
-		writeErr(w, http.StatusBadRequest, "image is too large (8 MB maximum)")
-		return
-	}
-	defer func() {
-		if r.MultipartForm != nil {
-			_ = r.MultipartForm.RemoveAll()
-		}
-	}()
-
-	file, _, err := r.FormFile("file")
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "no image supplied")
-		return
-	}
-	defer file.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(file, maxAvatarUploadBytes))
-	if err != nil {
-		s.internalErr(w, "read avatar", err)
+	raw, ok := s.readUploadedImage(w, r)
+	if !ok {
 		return
 	}
 
-	square, err := decodeSquareJPEG(raw, parseCropRect(r))
+	square, err := decodeSquareJPEG(raw, parseCropRect(r), avatarSize)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "that file isn't a readable image (JPEG, PNG or GIF)")
 		return
@@ -86,6 +67,33 @@ func (s *Server) handleUploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeCurrentUser(w, u)
+}
+
+func (s *Server) readUploadedImage(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarUploadBytes)
+	if err := r.ParseMultipartForm(maxAvatarUploadBytes); err != nil {
+		writeErr(w, http.StatusBadRequest, "image is too large (8 MB maximum)")
+		return nil, false
+	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "no image supplied")
+		return nil, false
+	}
+	defer file.Close()
+
+	raw, err := io.ReadAll(io.LimitReader(file, maxAvatarUploadBytes))
+	if err != nil {
+		s.internalErr(w, "read image", err)
+		return nil, false
+	}
+	return raw, true
 }
 
 func (s *Server) handleDeleteAvatar(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +125,10 @@ func (s *Server) handleUserAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	serveJPEG(w, r, b)
+}
+
+func serveJPEG(w http.ResponseWriter, r *http.Request, b []byte) {
 	sum := sha1.Sum(b)
 	etag := `"` + hex.EncodeToString(sum[:]) + `"`
 	w.Header().Set("Content-Type", "image/jpeg")
@@ -172,7 +184,7 @@ func parseCropRect(r *http.Request) cropRect {
 	return cropRect{X: x, Y: y, Size: size}
 }
 
-func decodeSquareJPEG(raw []byte, crop cropRect) ([]byte, error) {
+func decodeSquareJPEG(raw []byte, crop cropRect, size int) ([]byte, error) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
@@ -222,14 +234,19 @@ func decodeSquareJPEG(raw []byte, crop cropRect) ([]byte, error) {
 		}
 	}
 
-	out := image.NewRGBA(image.Rect(0, 0, avatarSize, avatarSize))
-	draw.Draw(out, out.Bounds(), image.White, image.Point{}, draw.Src)
-
-	for y := 0; y < avatarSize; y++ {
-		srcY := offY + y*edge/avatarSize
-		for x := 0; x < avatarSize; x++ {
-			srcX := offX + x*edge/avatarSize
-			out.Set(x, y, src.At(srcX, srcY))
+	region := croppedImage{src, image.Rect(offX, offY, offX+edge, offY+edge)}
+	var out *image.RGBA
+	if edge > size {
+		out = downscale(region, size)
+	} else {
+		out = image.NewRGBA(image.Rect(0, 0, size, size))
+		draw.Draw(out, out.Bounds(), image.White, image.Point{}, draw.Src)
+		for y := 0; y < size; y++ {
+			srcY := offY + y*edge/size
+			for x := 0; x < size; x++ {
+				srcX := offX + x*edge/size
+				out.Set(x, y, src.At(srcX, srcY))
+			}
 		}
 	}
 
@@ -239,3 +256,10 @@ func decodeSquareJPEG(raw []byte, crop cropRect) ([]byte, error) {
 	}
 	return buf.Bytes(), nil
 }
+
+type croppedImage struct {
+	image.Image
+	rect image.Rectangle
+}
+
+func (c croppedImage) Bounds() image.Rectangle { return c.rect }

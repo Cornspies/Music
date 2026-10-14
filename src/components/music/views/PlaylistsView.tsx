@@ -7,6 +7,7 @@ import type { Playlist } from "@/lib/types"
 import { useLibraryStore } from "@/stores/library"
 import { useUIStore } from "@/stores/ui"
 import { EmptyState } from "@/components/music/EmptyState"
+import { PlaylistCoverImage } from "@/components/music/PlaylistCover"
 import { MenuAtPoint, useContextMenu } from "@/components/music/MenuAtPoint"
 import { DeletePlaylistDialog, PlaylistMenuContent } from "@/components/music/PlaylistMenu"
 import { UserAvatar } from "@/components/music/UserAvatar"
@@ -100,9 +101,10 @@ function PlaylistCard({
       >
         <div
           aria-hidden="true"
-          className={`relative flex aspect-square w-full items-center justify-center rounded-lg bg-linear-to-br shadow-lg ${hashGradient(playlist.name)}`}
+          className={`relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-lg bg-linear-to-br shadow-lg ${hashGradient(playlist.name)}`}
         >
           <Music4 className="size-8 text-zinc-400/70" />
+          <PlaylistCoverImage playlist={playlist} />
           <span className="absolute bottom-2 left-2 rounded-full bg-zinc-950/60 px-2 py-0.5 text-[10px] font-medium text-zinc-300">
             {playlist.trackCount}
           </span>

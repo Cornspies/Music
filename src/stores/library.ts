@@ -2,7 +2,15 @@
 
 import { create } from "zustand"
 import { toast } from "sonner"
-import { api, fetchHome, fetchTrackChanges, pins as pinsApi } from "@/lib/api"
+import type { AvatarCrop } from "@/lib/api"
+import {
+  api,
+  fetchHome,
+  fetchTrackChanges,
+  pins as pinsApi,
+  removePlaylistCover,
+  uploadPlaylistCover,
+} from "@/lib/api"
 import type { HomeFeed, LibraryPin, Playlist, PlaylistAddResult, Stats, Track, TrackPatch } from "@/lib/types"
 import { usePlayerStore } from "@/stores/player"
 import { useMediaTokenStore } from "@/stores/media-token"
@@ -40,6 +48,7 @@ interface LibraryState {
   publicPlaylists: Playlist[]
   fetchPublicPlaylists: () => Promise<void>
   setPlaylistPublic: (id: string, isPublic: boolean) => Promise<boolean>
+  setPlaylistCover: (id: string, file: File | null, crop?: AvatarCrop) => Promise<boolean>
   setPlaylistPinned: (id: string, pinned: boolean) => Promise<boolean>
   addTrackToPlaylist: (playlistId: string, trackId: string) => Promise<boolean>
   addTracksToPlaylist: (playlistId: string, trackIds: string[]) => Promise<PlaylistAddResult | null>
@@ -123,6 +132,20 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
       })
       set({
         playlists: get().playlists.map((p) => (p.id === id ? updated : p)),
+      })
+      return true
+    } catch (e) {
+      toast.error((e as Error).message)
+      return false
+    }
+  },
+
+  setPlaylistCover: async (id, file, crop) => {
+    try {
+      const updated = file ? await uploadPlaylistCover(id, file, crop) : await removePlaylistCover(id)
+      set({
+        playlists: get().playlists.map((p) => (p.id === id ? updated : p)),
+        playlistVersion: get().playlistVersion + 1,
       })
       return true
     } catch (e) {

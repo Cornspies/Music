@@ -710,6 +710,24 @@ class AppModel(
         if (playlistDetail?.id == id) loadPlaylistInternal(id)
     }
 
+    suspend fun setPlaylistCover(
+        id: String,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+        crop: AvatarCrop,
+    ) {
+        api.uploadPlaylistCover(id, fileName, mimeType, bytes, crop)
+        loadPlaylistsInternal()
+        if (playlistDetail?.id == id) loadPlaylistInternal(id)
+    }
+
+    suspend fun clearPlaylistCover(id: String) {
+        api.deletePlaylistCover(id)
+        loadPlaylistsInternal()
+        if (playlistDetail?.id == id) loadPlaylistInternal(id)
+    }
+
     suspend fun setPlaylistPublic(id: String, isPublic: Boolean) {
         api.setPlaylistPublic(id, isPublic)
         loadPlaylistsInternal()
