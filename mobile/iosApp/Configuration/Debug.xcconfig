@@ -6,3 +6,7 @@
 // Fill in once you have an Apple Developer account; leave empty for
 // simulator builds, which need no signing at all.
 TEAM_ID =
+
+// Your server's domain, without https://, e.g. music.example.com. It becomes
+// the app's default server and the domain shared links open in the app.
+MUSIC_HOST =

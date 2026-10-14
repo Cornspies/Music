@@ -18,6 +18,7 @@ import platform.CoreFoundation.kCFTypeDictionaryKeyCallBacks
 import platform.CoreFoundation.kCFTypeDictionaryValueCallBacks
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
+import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.create
@@ -38,7 +39,10 @@ import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
 import platform.posix.memcpy
 
-internal actual val defaultBaseUrl: String = "https://music.cornspies.com"
+internal actual val defaultBaseUrl: String by lazy {
+    val host = (NSBundle.mainBundle.objectForInfoDictionaryKey("MusicHost") as? String)?.trim().orEmpty()
+    if (host.isEmpty() || host.contains("$(")) "" else "https://$host"
+}
 
 @OptIn(ExperimentalForeignApi::class)
 actual class TokenStore {

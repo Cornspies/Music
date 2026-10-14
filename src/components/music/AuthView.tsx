@@ -6,7 +6,7 @@ import { AudioLines, Loader2, LogIn, Ticket, UserPlus, Users } from "lucide-reac
 import type { AuthConfig, InviteCheck } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import {
-  DEFAULT_SERVER,
+  SERVER_PLACEHOLDER,
   SERVER_REFUSES_APP,
   insecureServerWarning,
   isDesktop,
@@ -68,6 +68,7 @@ export function AuthView() {
   const normalizedServer = choosesServer ? normalizeServer(server) : null
   const insecureWarning = normalizedServer ? insecureServerWarning(normalizedServer) : null
   const viaLink = Boolean(initial.invite)
+  const privacyHref = isDesktop ? (activeServer ? `${activeServer}/privacy` : null) : "/privacy"
   const [listenInvite] = useState(
     () => typeof window !== "undefined" && (/^\/listen\/[^/]+/.test(window.location.pathname) || pendingListenInvite() !== null)
   )
@@ -88,7 +89,7 @@ export function AuthView() {
   }
 
   useEffect(() => {
-    if (!initial.invite) return
+    if (!initial.invite || (choosesServer && !activeServer)) return
     let cancelled = false
     fetch(`${activeServer}/api/auth/invite/${encodeURIComponent(initial.invite)}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -99,9 +100,10 @@ export function AuthView() {
     return () => {
       cancelled = true
     }
-  }, [initial.invite, activeServer])
+  }, [initial.invite, activeServer, choosesServer])
 
   useEffect(() => {
+    if (choosesServer && !activeServer) return
     let cancelled = false
     fetch(`${activeServer}/api/auth/config`)
       .then((r) => (r.ok ? r.json() : null))
@@ -118,7 +120,7 @@ export function AuthView() {
     return () => {
       cancelled = true
     }
-  }, [activeServer])
+  }, [activeServer, choosesServer])
 
   const minPassword = authConfig?.minPasswordLength ?? 8
   const linkValid = viaLink && inviteCheck?.valid !== false
@@ -254,7 +256,7 @@ export function AuthView() {
                   inputMode="url"
                   autoComplete="url"
                   spellCheck={false}
-                  placeholder={DEFAULT_SERVER}
+                  placeholder={SERVER_PLACEHOLDER}
                   value={server}
                   onChange={(e) => {
                     setServer(e.target.value)
@@ -388,14 +390,13 @@ export function AuthView() {
             )}
           </p>
 
-          <p className="mt-6 text-center text-xs">
-            <a
-              href={isDesktop ? `${DEFAULT_SERVER}/privacy` : "/privacy"}
-              className="text-zinc-500 hover:text-zinc-300 hover:underline"
-            >
-              Privacy policy
-            </a>
-          </p>
+          {privacyHref ? (
+            <p className="mt-6 text-center text-xs">
+              <a href={privacyHref} className="text-zinc-500 hover:text-zinc-300 hover:underline">
+                Privacy policy
+              </a>
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

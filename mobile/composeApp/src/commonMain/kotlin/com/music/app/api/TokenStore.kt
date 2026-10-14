@@ -12,4 +12,8 @@ expect class TokenStore() {
 
 internal expect val defaultBaseUrl: String
 
-internal val privacyPolicyUrl: String get() = "$defaultBaseUrl/privacy"
+internal fun privacyPolicyUrl(serverUrl: String): String? {
+    val base = serverUrl.trim().trimEnd('/')
+    if (base.isEmpty()) return null
+    return (if ("://" in base) base else "https://$base") + "/privacy"
+}

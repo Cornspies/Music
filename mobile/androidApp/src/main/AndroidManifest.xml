@@ -29,6 +29,10 @@
         android:usesCleartextTraffic="true"
         android:supportsRtl="true">
 
+        <meta-data
+            android:name="com.music.app.DEFAULT_SERVER"
+            android:value="${musicDefaultServer}" />
+
         <activity
             android:name="com.music.app.MainActivity"
             android:exported="true">

@@ -43,6 +43,8 @@ jobs:
         working-directory: desktop
       - run: bun run build
         working-directory: desktop
+        env:
+          NEXT_PUBLIC_MUSIC_DEFAULT_SERVER: ${{ vars.MUSIC_DEFAULT_SERVER }}
 
       - uses: actions/upload-artifact@v7
         with:

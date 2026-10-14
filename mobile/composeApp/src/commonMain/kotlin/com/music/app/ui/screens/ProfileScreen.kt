@@ -209,7 +209,7 @@ fun ProfileScreen() {
             SettingRow(
                 icon = Icons.Filled.PrivacyTip,
                 title = "Privacy policy",
-                onClick = { uriHandler.openUri(privacyPolicyUrl) },
+                onClick = { privacyPolicyUrl(model.api.baseUrl)?.let { uriHandler.openUri(it) } },
             )
             appVersionName()?.let { version ->
                 HorizontalDivider()

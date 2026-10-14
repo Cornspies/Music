@@ -4,7 +4,9 @@ export const isDesktop = process.env.NEXT_PUBLIC_MUSIC_DESKTOP === "1"
 
 export const usesDevProxy = isDesktop && process.env.NODE_ENV === "development"
 
-export const DEFAULT_SERVER = "https://music.cornspies.com"
+export const DEFAULT_SERVER = (process.env.NEXT_PUBLIC_MUSIC_DEFAULT_SERVER ?? "").trim().replace(/\/+$/, "")
+
+export const SERVER_PLACEHOLDER = DEFAULT_SERVER || "https://music.example.com"
 
 const SERVER_KEY = "music-server"
 
