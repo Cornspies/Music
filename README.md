@@ -1,5 +1,9 @@
 # Music
 
+> **Disclaimer:** this project was developed with the help of AI.
+
+> The iOS app is not on the App Store yet, but will be soon.
+
 A self-hosted music server with apps for the web, Windows, Linux, Android and
 iOS. You run one server, upload your own music, and listen from anywhere.
 
@@ -127,6 +131,9 @@ Set `MUSIC_DISABLE_DISCOVER=1` to remove Discover altogether, or
 `MUSIC_DISABLE_DEEZER=1` and `MUSIC_DISABLE_SOUNDCLOUD=1` to switch off
 individual sources.
 
+If you have the means, please consider buying the music you like from the
+artist or their label instead. It is the most direct way to support them.
+
 ## Develop
 
 ```sh
@@ -134,6 +141,12 @@ cd backend/music-server && go vet ./... && go test ./...
 bun run typecheck && bun run lint
 cd mobile && ./gradlew :androidApp:assembleDebug
 ```
+
+## Support the author
+
+If you like this project and want to support it, you can sponsor me on
+[GitHub Sponsors](https://github.com/sponsors/Cornspies). It is entirely
+optional.
 
 ## License
 
