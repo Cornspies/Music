@@ -142,6 +142,13 @@ bun run typecheck && bun run lint
 cd mobile && ./gradlew :androidApp:assembleDebug
 ```
 
+To publish the apps, run **Actions → Release → Run workflow** and enter a tag
+such as `v0.4.4`. It builds the desktop installers and a signed Android APK
+and attaches them to a GitHub release, a draft by default. It needs the
+repository secrets `ANDROID_KEYSTORE_BASE64` (`base64 -w0` of your keystore),
+`ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, and
+reads the repository variables `MUSIC_DEFAULT_SERVER` and `MUSIC_HOST`.
+
 ## Support the author
 
 If you like this project and want to support it, you can sponsor me on
