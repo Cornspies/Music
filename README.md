@@ -1,6 +1,6 @@
 # Music
 
-> **Disclaimer:** this project was developed with the help of AI.
+> **Disclaimer: this project was developed with the help of AI.**
 
 > The iOS app is not on the App Store yet, but will be soon.
 
@@ -131,8 +131,8 @@ Set `MUSIC_DISABLE_DISCOVER=1` to remove Discover altogether, or
 `MUSIC_DISABLE_DEEZER=1` and `MUSIC_DISABLE_SOUNDCLOUD=1` to switch off
 individual sources.
 
-If you have the means, please consider buying the music you like from the
-artist or their label instead. It is the most direct way to support them.
+**If you have the means, please consider buying the music you like from the
+artist or their label instead. It is the most direct way to support them.**
 
 ## Develop
 
