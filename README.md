@@ -37,7 +37,49 @@ the web app itself, so a whole installation is one process.
 - **Discover:** search other sources from the app and add tracks to your
   library. See [Third-party sources](#third-party-sources).
 
-## Run it
+## Quick install
+
+Download the server for your system from the
+[Releases](https://github.com/Cornspies/music-player/releases) page:
+`Music-server-<version>-linux-amd64.tar.gz`, `…-linux-arm64.tar.gz` (a
+Raspberry Pi, for example) or `…-windows-amd64.zip`.
+
+**Linux**
+
+```sh
+tar -xzf Music-server-*-linux-amd64.tar.gz
+cd Music-server-*-linux-amd64
+cp .env.example .env
+./music-server
+```
+
+**Windows:** extract the zip, open PowerShell in the extracted folder, then run:
+
+```powershell
+copy .env.example .env
+.\music-server.exe
+```
+
+Open <http://localhost:3001> and create an account. The first account is the
+admin. The folder holds the server, the web app (`web/`) and an `.env.example`
+that is ready to use as it is; every option in it is explained.
+
+- **Start it from this folder.** It reads `.env` from where it is started and
+  keeps everything it stores in `data/` there. Under a service manager such as
+  systemd, set the working directory to this folder.
+- **Other devices** use `http://<this machine's address>:3001`, which the apps
+  ask for when you sign in. To reach it over the internet, put it behind a
+  reverse proxy with HTTPS (see [Deploy it](#deploy-it)).
+- **ffmpeg** is optional. Install it for format conversion for iOS, loudness
+  analysis and waveforms.
+- **To update,** stop the server, back up `data/`, extract the new release and
+  move `.env` and `data/` into its folder. Set `MUSIC_DATA_DIR` to an absolute
+  path once and the data never has to move.
+- The web app in the release is built without operator details, so its privacy
+  page says that no policy has been published. Build from source to add yours
+  (see [Apps](#apps)).
+
+## Run from source
 
 You need [Go](https://go.dev/dl/) (the version in
 [go.mod](backend/music-server/go.mod)) and [Bun](https://bun.sh). Install
@@ -70,24 +112,7 @@ Put the server behind a reverse proxy that provides HTTPS (Caddy, nginx or
 Traefik all work), and send everything, `/api` included, to the server's
 port.
 
-**From a release.** Download `Music-server-<version>-<os>-<arch>` for Linux
-(amd64 or arm64) or Windows (amd64) from the
-[Releases](https://github.com/Cornspies/music-player/releases) page, extract
-it, and start the server from inside that folder:
-
-```sh
-cp .env.example .env                # copy on Windows
-./music-server                      # music-server.exe on Windows
-```
-
-The archive holds the server, the web app in `web/` and `.env.example`, which
-already sets `MUSIC_WEB_DIR=web`. The server reads `.env` from the folder it
-is started in, so run it from there, or set the working directory when you
-use a service manager. The bundled web app is built without operator details,
-so its privacy page says that no policy has been published; build from source
-to add yours (see [Apps](#apps)).
-
-**From source.** One process serves both:
+To build and serve everything from source, one process serves both:
 
 ```sh
 bun run build:static                # writes the web app to out/
