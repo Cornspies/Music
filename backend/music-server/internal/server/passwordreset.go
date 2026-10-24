@@ -134,9 +134,9 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if len(req.Password) < minPasswordLength || len(req.Password) > 128 {
+	if len(req.Password) < minPasswordLength || len(req.Password) > maxPasswordLength {
 		writeErr(w, http.StatusBadRequest,
-			fmt.Sprintf("password must be %d-128 characters", minPasswordLength))
+			fmt.Sprintf("password must be %d-%d characters", minPasswordLength, maxPasswordLength))
 		return
 	}
 	code := strings.TrimSpace(req.Code)

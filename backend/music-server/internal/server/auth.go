@@ -74,7 +74,10 @@ type authRequest struct {
 	InviteCode string `json:"inviteCode"`
 }
 
-const minPasswordLength = 8
+const (
+	minPasswordLength = 8
+	maxPasswordLength = 72
+)
 
 const settingRegistrationOpen = "registration_open"
 
@@ -376,9 +379,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "username must be 3-32 chars (letters, digits, _ - .)")
 		return
 	}
-	if len(req.Password) < minPasswordLength || len(req.Password) > 128 {
+	if len(req.Password) < minPasswordLength || len(req.Password) > maxPasswordLength {
 		writeErr(w, http.StatusBadRequest,
-			fmt.Sprintf("password must be %d-128 characters", minPasswordLength))
+			fmt.Sprintf("password must be %d-%d characters", minPasswordLength, maxPasswordLength))
 		return
 	}
 	if code := config.Value("MUSIC_INVITE_CODE"); code != "" && !usingLink {
@@ -566,8 +569,8 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("new password must be at least %d characters", minPasswordLength))
 		return
 	}
-	if len(req.NewPassword) > 128 {
-		writeErr(w, http.StatusBadRequest, "new password must be at most 128 characters")
+	if len(req.NewPassword) > maxPasswordLength {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("new password must be at most %d characters", maxPasswordLength))
 		return
 	}
 

@@ -27,6 +27,9 @@ export function ResetPasswordView({ code, onDone }: { code: string; onDone: () =
 
   useEffect(() => {
     if (!code) return
+    if (window.location.search) {
+      window.history.replaceState(null, "", "/reset-password")
+    }
     let cancelled = false
     fetch(apiUrl(`/api/auth/reset/${encodeURIComponent(code)}`))
       .then((r) => (r.ok ? r.json() : { valid: false }))

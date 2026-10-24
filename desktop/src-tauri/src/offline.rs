@@ -346,6 +346,19 @@ pub fn offline_clear(downloads: State<'_, Downloads>) -> Result<(), String> {
     Ok(())
 }
 
+fn safe_cover_mime(raw: &str) -> &'static str {
+    let base = raw.split(';').next().unwrap_or("").trim();
+    if base.eq_ignore_ascii_case("image/png") {
+        "image/png"
+    } else if base.eq_ignore_ascii_case("image/webp") {
+        "image/webp"
+    } else if base.eq_ignore_ascii_case("image/gif") {
+        "image/gif"
+    } else {
+        "image/jpeg"
+    }
+}
+
 pub fn cover(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
     let id = request.uri().path().trim_start_matches('/');
     let found = path(id, "cover").and_then(|file| fs::read(file).ok());
@@ -355,11 +368,12 @@ pub fn cover(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
             .body(Vec::new())
             .unwrap_or_default();
     };
-    let content_type = path(id, "covertype")
+    let stored_type = path(id, "covertype")
         .and_then(|file| fs::read_to_string(file).ok())
-        .unwrap_or_else(|| "image/jpeg".into());
+        .unwrap_or_default();
     Response::builder()
-        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_TYPE, safe_cover_mime(&stored_type))
+        .header("X-Content-Type-Options", "nosniff")
         .header(header::CACHE_CONTROL, "max-age=3600")
         .body(bytes)
         .unwrap_or_default()

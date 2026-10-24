@@ -382,9 +382,13 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	absPath := filepath.Join(s.dataDir, savedPath)
+	var fileSize int64
+	if fi, err := os.Stat(absPath); err == nil {
+		fileSize = fi.Size()
+	}
 	if quota := userQuotaBytes(); quota > 0 {
 		used, _ := s.bytesUsedBy(u.ID)
-		if fi, err := os.Stat(absPath); err == nil && used+fi.Size() > quota {
+		if used+fileSize > quota {
 			os.Remove(absPath)
 			writeErr(w, http.StatusInsufficientStorage,
 				fmt.Sprintf("this file would exceed your storage limit (%s of %s used)", humanBytes(used), humanBytes(quota)))
@@ -392,7 +396,7 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	up := &pendingUpload{savedPath: savedPath, fileName: fileName, mimeType: mimeType, clientDur: clientDur, userID: u.ID}
+	up := &pendingUpload{savedPath: savedPath, fileName: fileName, mimeType: mimeType, size: fileSize, clientDur: clientDur, userID: u.ID}
 	up.hash, _ = fileSHA256(absPath)
 	up.meta = readMetadata(absPath)
 
@@ -408,6 +412,7 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 
 type pendingUpload struct {
 	savedPath, fileName, mimeType string
+	size                          int64
 	clientDur                     float64
 	userID                        string
 	hash                          string
@@ -509,7 +514,7 @@ func userQuotaBytes() int64 {
 func (s *Server) bytesUsedBy(userID string) (int64, error) {
 	var used int64
 	err := s.db.QueryRow(`SELECT COALESCE(SUM(file_size + COALESCE(alt_size, 0)), 0) FROM tracks WHERE user_id = ?`, userID).Scan(&used)
-	return used, err
+	return used + pendingBytesFor(userID), err
 }
 
 func humanBytes(n int64) string {

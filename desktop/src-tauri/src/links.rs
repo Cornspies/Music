@@ -31,6 +31,10 @@ const HANDLER: &str = "music-desktop-handler.desktop";
 fn register_appimage(app: &AppHandle, appimage: &str) -> std::io::Result<()> {
     use std::process::Command;
 
+    if appimage.is_empty() || appimage.chars().any(|c| c.is_control()) {
+        return Ok(());
+    }
+
     let dir = app
         .path()
         .data_dir()
@@ -67,7 +71,7 @@ fn exec_path(path: &str) -> String {
         return path.to_string();
     }
     let mut quoted = String::from("\"");
-    for c in path.chars() {
+    for c in path.chars().filter(|c| !c.is_control()) {
         match c {
             '"' | '`' | '$' => {
                 quoted.push_str("\\\\");

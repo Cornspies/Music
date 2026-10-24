@@ -19,7 +19,9 @@ import (
 	"time"
 )
 
-type soundcloudSource struct{}
+type soundcloudSource struct {
+	dataDir string
+}
 
 const (
 	scAPIBase     = "https://api-v2.soundcloud.com"
@@ -480,7 +482,7 @@ func (soundcloudSource) search(ctx context.Context, query string, page int) ([]d
 	return results, out.NextHref != "" && page < scMaxPages, nil
 }
 
-func (soundcloudSource) fetch(ctx context.Context, id string) (*sourceDownload, error) {
+func (sc soundcloudSource) fetch(ctx context.Context, id string) (*sourceDownload, error) {
 	if !scTrackIDRe.MatchString(id) {
 		return nil, &statusError{http.StatusBadRequest, "not a SoundCloud track id"}
 	}
@@ -492,7 +494,7 @@ func (soundcloudSource) fetch(ctx context.Context, id string) (*sourceDownload, 
 		return nil, &statusError{http.StatusUnprocessableEntity, why}
 	}
 
-	dir, err := os.MkdirTemp("", "music-soundcloud-")
+	dir, err := makeTempDir(sc.dataDir, "music-soundcloud-")
 	if err != nil {
 		return nil, err
 	}

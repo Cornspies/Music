@@ -25,8 +25,9 @@ import (
 )
 
 type ytdlpSource struct {
-	bin   string
-	extra []string
+	bin     string
+	extra   []string
+	dataDir string
 
 	cookies       string
 	jar           string
@@ -60,7 +61,7 @@ func newYTDLPSource(dataDir string) (*ytdlpSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("MUSIC_YTDLP=%q: %w", raw, err)
 	}
-	y := &ytdlpSource{bin: bin, extra: strings.Fields(config.Value("MUSIC_YTDLP_ARGS"))}
+	y := &ytdlpSource{bin: bin, extra: strings.Fields(config.Value("MUSIC_YTDLP_ARGS")), dataDir: dataDir}
 	if cookies := config.Value("MUSIC_YTDLP_COOKIES"); cookies != "" {
 		y.cookies = cookies
 		y.jar = filepath.Join(dataDir, "ytdlp-cookies.txt")
@@ -451,7 +452,7 @@ func (y *ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, er
 		return nil, ctx.Err()
 	}
 
-	dir, err := os.MkdirTemp("", "music-ytdlp-")
+	dir, err := makeTempDir(y.dataDir, "music-ytdlp-")
 	if err != nil {
 		return nil, err
 	}

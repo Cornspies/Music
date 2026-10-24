@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -304,19 +305,56 @@ func firstWord(s string) string {
 	return s
 }
 
+const maxPendingPerUser = 10
+
 var pendingUploads = struct {
 	sync.Mutex
 	byID map[string]*pendingUpload
 }{byID: map[string]*pendingUpload{}}
+
+func pendingBytesFor(userID string) int64 {
+	pendingUploads.Lock()
+	defer pendingUploads.Unlock()
+	var total int64
+	for _, up := range pendingUploads.byID {
+		if up.userID == userID && time.Since(up.heldAt) <= pendingUploadTTL {
+			total += up.size
+		}
+	}
+	return total
+}
 
 func (s *Server) holdUpload(up *pendingUpload) string {
 	buf := make([]byte, 12)
 	_, _ = rand.Read(buf)
 	id := hex.EncodeToString(buf)
 	up.heldAt = time.Now()
+	var evicted []string
 	pendingUploads.Lock()
+	for {
+		count := 0
+		oldestID := ""
+		var oldest *pendingUpload
+		for k, existing := range pendingUploads.byID {
+			if existing.userID != up.userID {
+				continue
+			}
+			count++
+			if oldest == nil || existing.heldAt.Before(oldest.heldAt) {
+				oldestID, oldest = k, existing
+			}
+		}
+		if count < maxPendingPerUser || oldest == nil {
+			break
+		}
+		delete(pendingUploads.byID, oldestID)
+		evicted = append(evicted, filepath.Join(s.dataDir, oldest.savedPath))
+	}
 	pendingUploads.byID[id] = up
 	pendingUploads.Unlock()
+	for _, p := range evicted {
+		os.Remove(p)
+	}
 	return id
 }
 
@@ -368,9 +406,19 @@ func (s *Server) handleConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "that upload is no longer waiting — please upload the file again")
 		return
 	}
-	if _, err := os.Stat(filepath.Join(s.dataDir, up.savedPath)); err != nil {
+	absPath := filepath.Join(s.dataDir, up.savedPath)
+	fi, err := os.Stat(absPath)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "that upload is no longer waiting — please upload the file again")
 		return
+	}
+	if quota := userQuotaBytes(); quota > 0 {
+		if used, err := s.bytesUsedBy(u.ID); err == nil && used+fi.Size() > quota {
+			os.Remove(absPath)
+			writeErr(w, http.StatusInsufficientStorage,
+				fmt.Sprintf("this file would exceed your storage limit (%s of %s used)", humanBytes(used), humanBytes(quota)))
+			return
+		}
 	}
 	s.finalizeUpload(w, r, up)
 }
@@ -393,7 +441,9 @@ func (s *Server) handleReplaceWithUpload(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusNotFound, "that upload is no longer waiting — please upload the file again")
 		return
 	}
-	if _, err := os.Stat(filepath.Join(s.dataDir, up.savedPath)); err != nil {
+	absPath := filepath.Join(s.dataDir, up.savedPath)
+	fi, err := os.Stat(absPath)
+	if err != nil {
 		writeErr(w, http.StatusNotFound, "that upload is no longer waiting — please upload the file again")
 		return
 	}
@@ -406,6 +456,18 @@ func (s *Server) handleReplaceWithUpload(w http.ResponseWriter, r *http.Request)
 		s.returnPendingUpload(pendingID, up)
 		writeErr(w, http.StatusForbidden, "only the person who uploaded this track can replace it")
 		return
+	}
+	if quota := userQuotaBytes(); quota > 0 {
+		var oldBytes int64
+		if t.UploadedBy.ID == u.ID {
+			_ = s.db.QueryRow(`SELECT file_size + COALESCE(alt_size, 0) FROM tracks WHERE id = ?`, t.ID).Scan(&oldBytes)
+		}
+		if used, err := s.bytesUsedBy(u.ID); err == nil && used-oldBytes+fi.Size() > quota {
+			os.Remove(absPath)
+			writeErr(w, http.StatusInsufficientStorage,
+				fmt.Sprintf("this file would exceed your storage limit (%s of %s used)", humanBytes(used), humanBytes(quota)))
+			return
+		}
 	}
 	if err := s.replaceTrackAudio(t, oldRel, up); err != nil {
 		s.internalErr(w, "replace track audio", err)
