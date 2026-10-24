@@ -490,6 +490,21 @@ export interface SourceHealth {
   failingSince?: string
 }
 
+export interface TrimRule {
+  thresholdDb: number
+  minSeconds: number
+  marginSeconds: number
+}
+
+export interface AnalysisSettings {
+  rule: TrimRule
+  default: TrimRule
+  analysisEnabled: boolean
+  trimEnabled: boolean
+  tracks: number
+  manuallyTrimmed: number
+}
+
 export interface ActivityStatus {
   silence: { enabled: boolean; rule: string; total: number; pending: number; recentCuts: TrimEvent[] }
   analysis: { enabled: boolean; waiting: number; current: { id: string; title: string } | null }

@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import type { User } from "@/lib/types"
 import { SERVER_REFUSES_APP, apiUrl, isDesktop, serverAnswers, serverUrl } from "@/lib/desktop"
+import { serverDownFrom, serverDownMessage } from "@/stores/server-status"
 
 interface AuthResponse {
   token: string
@@ -32,6 +33,8 @@ async function authPost(
     data = (await res.json()) as typeof data
   } catch {}
   if (!res.ok || !data.token || !data.user) {
+    const down = serverDownFrom(res.status, data)
+    if (down) throw new Error(serverDownMessage(down))
     throw new Error(data.error || `Request failed (${res.status})`)
   }
   return { token: data.token, user: data.user }

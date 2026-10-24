@@ -40,6 +40,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -135,32 +138,36 @@ fun MetadataReviewDialog(
     val track = tracks.getOrNull(index) ?: return
     var sourceFilter by remember(track.id) { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(track.id, reloadKey) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(track.id, reloadKey, lifecycle) {
         loading = true
         error = null
         candidates = emptyList()
         pending = false
         var first = true
-        while (true) {
-            try {
-                val response = model.api.metadataCandidates(track.id)
-                candidates = response.candidates
-                lookupDisabled = response.lookupDisabled
-                pending = response.pending
-                queuePosition = response.queuePosition
-                attempts = response.attempts
-                retryAt = response.retryAt
-                partial = response.partial
-                paused = response.paused
-                error = null
-            } catch (e: Exception) {
-                if (first) error = friendlyError(e)
-            } finally {
-                loading = false
-                first = false
+        // Polls while a lookup is pending, and only while the app is visible.
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                try {
+                    val response = model.api.metadataCandidates(track.id)
+                    candidates = response.candidates
+                    lookupDisabled = response.lookupDisabled
+                    pending = response.pending
+                    queuePosition = response.queuePosition
+                    attempts = response.attempts
+                    retryAt = response.retryAt
+                    partial = response.partial
+                    paused = response.paused
+                    error = null
+                } catch (e: Exception) {
+                    if (first) error = friendlyError(e)
+                } finally {
+                    loading = false
+                    first = false
+                }
+                if (!pending) break
+                delay(2500.milliseconds)
             }
-            if (!pending) break
-            delay(2500.milliseconds)
         }
     }
 

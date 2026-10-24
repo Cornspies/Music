@@ -31,6 +31,7 @@ import { UserAvatar } from "@/components/music/UserAvatar"
 import { EmptyState } from "@/components/music/EmptyState"
 import { ActivityPanel } from "@/components/music/ActivityPanel"
 import { UpgradesSection } from "@/components/music/UpgradesSection"
+import { AnalysisSection } from "@/components/music/AnalysisSection"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -528,6 +529,7 @@ export function AdminView() {
         </section>
       ) : null}
 
+      <AnalysisSection />
       <UpgradesSection />
       <InvitesSection />
       <SharesSection />

@@ -16,7 +16,11 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
-	<!-- music://playlist/<id>: links shared from the app itself, host-independent. -->
+	<!--
+	  cornspies-music://open?url=<address>: links from any server, sent by
+	  its web app's "Open in the app" button (universal links only cover
+	  MUSIC_HOST).
+	-->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -24,7 +28,7 @@
 			<string>com.cornspies.music</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>music</string>
+				<string>cornspies-music</string>
 			</array>
 		</dict>
 	</array>

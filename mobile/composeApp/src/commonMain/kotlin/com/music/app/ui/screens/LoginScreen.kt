@@ -52,7 +52,12 @@ fun LoginScreen() {
 
     val linkedInvite = remember { DeepLinks.consumeInvite() }
     var registerMode by remember { mutableStateOf(linkedInvite != null) }
-    var serverUrl by remember { mutableStateOf(model.api.baseUrl) }
+    var serverUrl by remember { mutableStateOf(DeepLinks.linkServer ?: model.api.baseUrl) }
+    // A link opened while signed out names its server; sign in there.
+    val linkServer = DeepLinks.linkServer
+    LaunchedEffect(linkServer) {
+        if (linkServer != null) serverUrl = linkServer
+    }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var inviteCode by remember { mutableStateOf(linkedInvite ?: "") }

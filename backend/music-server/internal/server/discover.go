@@ -458,9 +458,9 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 	createdAt := nowRFC3339()
 	_, err = s.db.Exec(`INSERT INTO tracks
 		(id, user_id, title, artist, album, genre, year, track_no, duration,
-		 file_name, file_path, mime_type, file_size, has_cover, plays, created_at,
+		 file_name, file_path, mime_type, file_size, has_cover, created_at,
 		 alt_path, alt_mime, alt_size, updated_at, source, source_id, file_hash, cover_source, album_artist)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		id, u.ID, title, artist, album, genre, year, trackNo, duration,
 		sanitizeFilename(dl.FileName), rel, mimeType, n, hasCover, createdAt,
 		"", "", 0, createdAt, sourceKey, sourceID, hash, coverSource, albumArtistFor(meta.albumArtist, artist))

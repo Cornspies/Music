@@ -14,7 +14,14 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.AVFoundation.AVURLAsset
 import platform.CoreMedia.CMTimeGetSeconds
+import platform.Foundation.NSCalendar
 import platform.Foundation.NSData
+import platform.Foundation.NSDate
+import platform.Foundation.NSDateFormatter
+import platform.Foundation.NSDateFormatterMediumStyle
+import platform.Foundation.NSDateFormatterNoStyle
+import platform.Foundation.NSDateFormatterShortStyle
+import platform.Foundation.dateWithTimeIntervalSince1970
 import platform.Foundation.NSURL
 import platform.UIKit.UIApplication
 import platform.UIKit.UIDocumentPickerDelegateProtocol
@@ -162,4 +169,12 @@ internal actual suspend fun PickedImage.readBytes(): ByteArray {
     val image = handle as? UIImage ?: throw IllegalStateException("missing image reference")
     val data = UIImageJPEGRepresentation(image, 0.92) ?: throw IllegalStateException("cannot encode image")
     return data.toByteArray()
+}
+
+internal actual fun localTimeLabel(epochMs: Long): String {
+    val date = NSDate.dateWithTimeIntervalSince1970(epochMs / 1000.0)
+    val formatter = NSDateFormatter()
+    formatter.timeStyle = NSDateFormatterShortStyle
+    formatter.dateStyle = if (NSCalendar.currentCalendar.isDateInToday(date)) NSDateFormatterNoStyle else NSDateFormatterMediumStyle
+    return formatter.stringFromDate(date)
 }

@@ -18,12 +18,9 @@ import (
 )
 
 const (
-	trimTimeout         = 2 * time.Minute
-	silenceThresholdDB  = "-45dB"
-	silenceMinSeconds   = "0.3"
-	autoTrimThresholdDB = "-55dB"
-	autoTrimMinSeconds  = 0.5
-	autoTrimMargin      = 0.05
+	trimTimeout        = 2 * time.Minute
+	silenceThresholdDB = "-45dB"
+	silenceMinSeconds  = "0.3"
 )
 
 func autoTrimEnabled() bool {
@@ -235,17 +232,18 @@ func (s *Server) trimSilentEdges(ctx context.Context, id, rel string) (bool, err
 	if duration <= 0 {
 		return false, fmt.Errorf("couldn't read the length of %s", rel)
 	}
-	info, err := detectSilence(ctx, bin, abs, autoTrimThresholdDB, strconv.FormatFloat(autoTrimMinSeconds, 'f', -1, 64), duration)
+	rule := s.trimRule()
+	info, err := detectSilence(ctx, bin, abs, rule.ffmpegThreshold(), strconv.FormatFloat(rule.MinSeconds, 'f', -1, 64), duration)
 	if err != nil {
 		return false, err
 	}
 	duration = info.Duration
 	start, end := 0.0, duration
-	if info.LeadingEnd >= autoTrimMinSeconds {
-		start = info.LeadingEnd - autoTrimMargin
+	if info.LeadingEnd >= rule.MinSeconds {
+		start = info.LeadingEnd - rule.MarginSeconds
 	}
-	if duration-info.TrailingStart >= autoTrimMinSeconds {
-		end = info.TrailingStart + autoTrimMargin
+	if duration-info.TrailingStart >= rule.MinSeconds {
+		end = info.TrailingStart + rule.MarginSeconds
 	}
 	if start <= 0 && end >= duration {
 		return false, nil
@@ -306,32 +304,4 @@ func probeDuration(path string) float64 {
 
 func formatSeconds(v float64) string {
 	return strconv.FormatFloat(v, 'f', 3, 64)
-}
-
-func (s *Server) removeTrimBackups() {
-	dir := filepath.Join(s.dataDir, "uploads")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	var removed int
-	var freed int64
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".orig") {
-			continue
-		}
-		var size int64
-		if info, err := e.Info(); err == nil {
-			size = info.Size()
-		}
-		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
-			logErr("remove trim backup", err)
-			continue
-		}
-		removed++
-		freed += size
-	}
-	if removed > 0 {
-		log.Printf("trim: removed %d untrimmed backups (%.1f MB)", removed, float64(freed)/(1<<20))
-	}
 }

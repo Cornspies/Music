@@ -20,13 +20,15 @@ type HistoryResponse struct {
 }
 
 func (s *Server) recordPlay(userID, trackID string) {
-	if _, err := s.db.Exec(`INSERT INTO play_events (user_id, track_id, played_at, listened_seconds, reported) VALUES (?, ?, ?, 0, 1)`,
+	if _, err := s.db.Exec(`INSERT INTO play_events (user_id, track_id, played_at, listened_seconds) VALUES (?, ?, ?, 0)`,
 		userID, trackID, nowRFC3339()); err != nil {
 		logErr("record play", err)
+		return
 	}
+	playsTotal.Inc()
 }
 
-const listenedExpr = `CASE WHEN pe.reported = 1 THEN pe.listened_seconds ELSE t.duration END`
+const listenedExpr = `pe.listened_seconds`
 
 const maxListenReport = 15 * 60
 

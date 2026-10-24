@@ -132,6 +132,23 @@ the file through Apple's CDN when the app is installed or updated, so redeploy
 the web app first; `https://app-site-association.cdn-apple.com/a/v1/<musicHost>`
 shows the copy Apple has, which can lag a day behind.
 
+
+### Links from other servers
+
+Verified links only cover the one domain a build was made for. Everyone
+else's server works through the app scheme instead: on a shared page opened
+in the phone's browser, the web app shows **Open in the app**, which hands the
+page over as `cornspies-music://open?url=<page address>` (the desktop app
+uses the same scheme). The app then checks which server the link is for:
+
+- Signed out: the sign-in screen fills in that server, and the link opens
+  after signing in.
+- Signed in to that server: the link opens.
+- Signed in to another server: the app says which server the link is for and
+  leaves it.
+
+This needs nothing on the server or in the build.
+
 ## Build & run
 
 ### Android
@@ -218,9 +235,9 @@ The app's capabilities are in `iosApp/iosApp/iosApp.entitlements`, and the App
 ID must have each of them (see [TestFlight](#testflight) step 1):
 
 - **Associated Domains** → `applinks:$(MUSIC_HOST)`, so shared links
-  (see [Shared links](#shared-links)) open the app. The `music://playlist/<id>`
-  scheme used by the app's own share button needs nothing — it's registered
-  in `Info.plist`.
+  (see [Shared links](#shared-links)) open the app. The `cornspies-music://`
+  scheme for links from other servers needs nothing; it's registered in
+  `Info.plist`.
 
 The widget isn't part of the project yet: it needs **App Groups** →
 `group.com.cornspies.music` on both the app and a widget target, then

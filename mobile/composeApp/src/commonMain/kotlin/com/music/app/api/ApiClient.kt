@@ -2,6 +2,7 @@
 
 package com.music.app.api
 
+import com.music.app.localTimeLabel
 import com.music.app.ui.components.AvatarCrop
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -22,6 +23,7 @@ import io.ktor.client.request.prepareGet
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -48,10 +50,22 @@ class ApiException(
     val reason: String? = null,
 ) : Exception(message)
 
+// The reverse proxy answered instead of the server: a maintenance notice
+// (deploy/nginx/music.conf), or a 502/504 while the server is down. Not an
+// ApiException, so the app treats it like being offline.
+class ServerDownException(
+    val maintenance: Boolean,
+    val until: Instant? = null,
+    val note: String? = null,
+) : Exception(if (maintenance) "Music is down for maintenance." else "Can't reach the server right now.")
+
 class DuplicateException(val response: DuplicateResponse) : Exception(response.error)
 
 fun friendlyError(e: Throwable): String = when (e) {
     is ApiException -> e.message ?: "Request failed"
+    is ServerDownException -> e.until?.takeIf { e.maintenance && it > Clock.System.now() }
+        ?.let { "Music is down for maintenance, back around ${localTimeLabel(it.toEpochMilliseconds())}." }
+        ?: e.message!!
     else -> "Network error — is the server URL correct and the Music backend running?"
 }
 
@@ -156,7 +170,7 @@ class ApiClient(private val store: TokenStore) {
             headers.append(HttpHeaders.ContentType, "application/json")
             setBody(ChangePasswordRequest(current, new))
         }
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
         if (response.status == HttpStatusCode.NoContent) return
         val fresh = runCatching { response.body<TokenResponse>().token }.getOrNull()
         if (!fresh.isNullOrBlank()) store.saveToken(fresh)
@@ -168,7 +182,7 @@ class ApiClient(private val store: TokenStore) {
             headers.append(HttpHeaders.ContentType, "application/json")
             setBody(RenameAccountRequest(username, password))
         }
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
         val body = response.body<AuthResponse>()
         store.saveToken(body.token)
         return body.user
@@ -204,7 +218,7 @@ class ApiClient(private val store: TokenStore) {
         val response = client.get(url("/api/tracks/$trackId/waveform")) { auth() }
         noteRefreshedToken(response)
         if (response.status == HttpStatusCode.NotFound) return null
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
         return response.body<Waveform>().peaks
     }
 
@@ -214,7 +228,7 @@ class ApiClient(private val store: TokenStore) {
         if (response.status == HttpStatusCode.NotFound) {
             return runCatching { response.body<Lyrics>() }.getOrDefault(Lyrics())
         }
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
         return response.body<Lyrics>()
     }
 
@@ -359,7 +373,7 @@ class ApiClient(private val store: TokenStore) {
         }
         client.prepareGet(url(route)) { auth() }.execute { response ->
             noteRefreshedToken(response)
-            if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+            if (!response.status.isSuccess()) throw apiError(response)
             if (response.bodyAsChannel().copyToFile(path) == 0L) {
                 throw IllegalStateException("The server returned an empty file.")
             }
@@ -372,7 +386,7 @@ class ApiClient(private val store: TokenStore) {
             parameter("size", size)
         }
         noteRefreshedToken(response)
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
         return response.readRawBytes()
     }
 
@@ -382,7 +396,7 @@ class ApiClient(private val store: TokenStore) {
     suspend fun requestMetadataLookup(trackId: String) {
         val response = client.post(url("/api/tracks/$trackId/metadata/lookup")) { auth() }
         noteRefreshedToken(response)
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
     }
 
     suspend fun metadataQueue(): MetadataQueueStatus = getJson("/api/metadata/queue")
@@ -403,7 +417,7 @@ class ApiClient(private val store: TokenStore) {
         }
         noteRefreshedToken(response)
         if (response.status == HttpStatusCode.NoContent || response.status == HttpStatusCode.NotModified) return null
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
         return response.body()
     }
 
@@ -414,7 +428,7 @@ class ApiClient(private val store: TokenStore) {
             setBody(PlaybackRequest(trackId, position, queue))
         }
         noteRefreshedToken(response)
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
         return response.body<PlaybackSaved>().updatedAt
     }
 
@@ -475,7 +489,7 @@ class ApiClient(private val store: TokenStore) {
     suspend fun unpinPlaylist(id: String) {
         val response = client.delete(url("/api/playlists/$id/pin")) { auth() }
         noteRefreshedToken(response)
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
     }
 
     suspend fun deletePlaylist(id: String) {
@@ -600,14 +614,7 @@ class ApiClient(private val store: TokenStore) {
 
     private suspend inline fun <reified T> listenBody(response: HttpResponse, empty: Boolean = false): T {
         noteRefreshedToken(response)
-        if (!response.status.isSuccess()) {
-            val error = runCatching { response.body<ApiError>() }.getOrNull()
-            throw ApiException(
-                error?.error?.takeIf { it.isNotEmpty() } ?: "Request failed (HTTP ${response.status.value})",
-                status = response.status.value,
-                reason = error?.reason,
-            )
-        }
+        if (!response.status.isSuccess()) throw apiError(response)
         @Suppress("UNCHECKED_CAST")
         return if (empty) Unit as T else response.body()
     }
@@ -654,22 +661,33 @@ class ApiClient(private val store: TokenStore) {
 
     private suspend inline fun <reified T> bodyOrError(response: HttpResponse): T {
         noteRefreshedToken(response)
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
         return response.body()
     }
 
     private suspend fun expectNoContent(response: HttpResponse) {
         noteRefreshedToken(response)
-        if (!response.status.isSuccess()) throw ApiException(apiErrorMessage(response))
+        if (!response.status.isSuccess()) throw apiError(response)
     }
 
-    private suspend fun apiErrorMessage(response: HttpResponse): String {
-        val message = try {
-            response.body<ApiError>().error
-        } catch (_: Exception) {
-            null
+    private suspend fun apiError(response: HttpResponse): Exception {
+        val status = response.status.value
+        val error = runCatching { json.decodeFromString<ApiError>(response.bodyAsText()) }.getOrNull()
+        if (status == 503 && error?.maintenance == true) {
+            return ServerDownException(
+                maintenance = true,
+                until = error.until?.let { runCatching { Instant.parse(it) }.getOrNull() },
+                note = error.message?.takeIf { it.isNotBlank() },
+            )
         }
-        return if (message.isNullOrEmpty()) "Request failed (HTTP ${response.status.value})" else message
+        // The server sends 502 too, when a source it fetches from fails, but
+        // always with {"error"}; nginx's own 502 page isn't JSON.
+        if ((status == 502 || status == 504) && error == null) return ServerDownException(maintenance = false)
+        return ApiException(
+            error?.error?.takeIf { it.isNotEmpty() } ?: "Request failed (HTTP $status)",
+            status = status,
+            reason = error?.reason,
+        )
     }
 }
 

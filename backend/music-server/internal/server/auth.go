@@ -82,13 +82,8 @@ const (
 const settingRegistrationOpen = "registration_open"
 
 func (s *Server) registrationOpen() bool {
-	if raw := strings.ToLower(strings.TrimSpace(config.Value("MUSIC_ALLOW_REGISTRATION"))); raw != "" {
-		switch raw {
-		case "0", "false", "no", "off":
-			return false
-		default:
-			return true
-		}
+	if raw := config.Value("MUSIC_ALLOW_REGISTRATION"); raw != "" {
+		return raw == "1"
 	}
 	if v, ok := s.getSetting(settingRegistrationOpen); ok {
 		return v == "1"

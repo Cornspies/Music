@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import type { AvatarCrop } from "@/lib/api"
 import {
   api,
+  isUnreachable,
   fetchHome,
   fetchTrackChanges,
   pins as pinsApi,
@@ -16,10 +17,6 @@ import { usePlayerStore } from "@/stores/player"
 import { useMediaTokenStore } from "@/stores/media-token"
 import { useOfflineStore } from "@/stores/offline"
 import { loadUserPrefs } from "@/stores/ui"
-
-function isNetworkError(e: unknown): boolean {
-  return e instanceof Error && e.message.startsWith("Network error")
-}
 
 export type TrackSort = "created" | "title" | "artist" | "plays" | "recent"
 
@@ -86,7 +83,7 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
       loadUserPrefs(),
     ])
     const tracksFailed = results[0].status === "rejected" ? results[0].reason : null
-    if (tracksFailed && isNetworkError(tracksFailed)) {
+    if (tracksFailed && isUnreachable(tracksFailed)) {
       const offline = useOfflineStore.getState()
       offline.setOffline(true)
       if (get().tracks.length === 0) set({ tracks: offline.tracks })

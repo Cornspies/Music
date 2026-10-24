@@ -5,12 +5,10 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 const backdropSize = 32
@@ -85,39 +83,6 @@ func writeFileAtomic(path string, data []byte) error {
 		return cerr
 	}
 	return nil
-}
-
-func (s *Server) shrinkStoredCovers() {
-	defer logPanic("cover shrink")
-	paths, err := filepath.Glob(filepath.Join(s.covDir, "*.img"))
-	if err != nil {
-		return
-	}
-	shrunk := 0
-	for _, p := range paths {
-		if strings.Count(filepath.Base(p), ".") != 1 {
-			continue
-		}
-		f, err := os.Open(p)
-		if err != nil {
-			continue
-		}
-		cfg, _, err := image.DecodeConfig(f)
-		f.Close()
-		if err != nil || cfg.Width <= maxCoverEdge && cfg.Height <= maxCoverEdge {
-			continue
-		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		if small := shrinkCover(raw); !bytes.Equal(small, raw) && writeFileAtomic(p, small) == nil {
-			shrunk++
-		}
-	}
-	if shrunk > 0 {
-		log.Printf("covers: scaled %d oversized covers down to %dpx", shrunk, maxCoverEdge)
-	}
 }
 
 func backdropCover(raw []byte) []byte {

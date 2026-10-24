@@ -211,6 +211,7 @@ func (s *Server) runMetadataJobSafely(id string) {
 	defer func() {
 		if v := recover(); v != nil {
 			log.Printf("PANIC in metadata lookup for track %s (recovered): %v\n%s", id, v, debug.Stack())
+			errorsTotal.WithLabelValues("panic").Inc()
 			_, _ = s.db.Exec(`UPDATE metadata_jobs SET state = ?, not_before = '', finished_at = ?, last_error = ? WHERE track_id = ?`,
 				jobDone, nowRFC3339(), "the lookup failed", id)
 		}

@@ -40,12 +40,100 @@ object DeepLinks {
         return token
     }
 
+    /**
+     * The server a pending link came from, e.g. https://music.example.com, or
+     * null for links that don't name one. Links reach the app either as the
+     * server's own https address (verified app links, universal links) or
+     * wrapped as cornspies-music://open?url=<address>, which the web app's
+     * "Open in the app" button uses for servers the app can't be verified for.
+     */
+    var linkServer by mutableStateOf<String?>(null)
+        private set
+
     fun handle(url: String?) {
-        inviteCodeFrom(url)?.let { pendingInviteCode = it }
-        playlistIdFrom(url)?.let { pendingPlaylistId = it }
-        shareTokenFrom(url)?.let { pendingShareToken = it }
-        listenCodeFrom(url)?.let { pendingListenCode = it }
+        val target = unwrap(url) ?: return
+        val invite = inviteCodeFrom(target)
+        val playlist = playlistIdFrom(target)
+        val share = shareTokenFrom(target)
+        val listen = listenCodeFrom(target)
+        if (invite == null && playlist == null && share == null && listen == null) return
+        linkServer = serverOf(target)
+        invite?.let { pendingInviteCode = it }
+        playlist?.let { pendingPlaylistId = it }
+        share?.let { pendingShareToken = it }
+        listen?.let { pendingListenCode = it }
     }
+
+    /**
+     * Drops the pending links when they belong to a server other than
+     * [baseUrl], and returns that server's host so the caller can say so.
+     */
+    fun rejectForeign(baseUrl: String): String? {
+        val server = linkServer ?: return null
+        if (normalized(server) == normalized(baseUrl)) return null
+        pendingPlaylistId = null
+        pendingShareToken = null
+        pendingListenCode = null
+        pendingInviteCode = null
+        linkServer = null
+        return server.substringAfter("://").substringBefore('/')
+    }
+
+    private fun unwrap(url: String?): String? {
+        val raw = url?.trim().orEmpty()
+        if (!raw.startsWith("$APP_SCHEME://", ignoreCase = true)) return raw.ifEmpty { null }
+        val encoded = raw.substringAfter('?', "").substringBefore('#').split('&')
+            .firstOrNull { it.substringBefore('=') == "url" }
+            ?.substringAfter('=', "")
+            ?: return null
+        val target = percentDecode(encoded)
+        return target.takeIf { it.startsWith("https://", true) || it.startsWith("http://", true) }
+    }
+
+    /** The server's address: the link without the app route at its end, so a server under a path keeps it. */
+    private fun serverOf(url: String): String? {
+        if (!url.startsWith("https://", true) && !url.startsWith("http://", true)) return null
+        val scheme = url.substringBefore("://")
+        val rest = url.substringAfter("://").substringBefore('?').substringBefore('#')
+        val host = rest.substringBefore('/')
+        if (host.isEmpty()) return null
+        val segments = rest.substringAfter('/', "").split('/').filter { it.isNotEmpty() }
+        val route = segments.indexOfLast { it in ROUTE_ROOTS }
+        val base = if (route >= 0) segments.take(route) else segments
+        return (listOf("$scheme://$host") + base).joinToString("/")
+    }
+
+    private fun normalized(server: String): String {
+        val trimmed = server.trim().trimEnd('/')
+        val scheme = trimmed.substringBefore("://", "").lowercase()
+        val rest = trimmed.substringAfter("://")
+        var host = rest.substringBefore('/').lowercase()
+        if (scheme == "https") host = host.removeSuffix(":443") else if (scheme == "http") host = host.removeSuffix(":80")
+        val path = rest.substringAfter('/', "")
+        return if (path.isEmpty()) "$scheme://$host" else "$scheme://$host/$path"
+    }
+
+    private fun percentDecode(s: String): String {
+        val bytes = ArrayList<Byte>(s.length)
+        var i = 0
+        while (i < s.length) {
+            val c = s[i]
+            if (c == '%' && i + 2 <= s.lastIndex) {
+                val hex = s.substring(i + 1, i + 3).toIntOrNull(16)
+                if (hex != null) {
+                    bytes.add(hex.toByte())
+                    i += 3
+                    continue
+                }
+            }
+            if (c == '+') bytes.add(' '.code.toByte()) else c.toString().encodeToByteArray().forEach { bytes.add(it) }
+            i++
+        }
+        return bytes.toByteArray().decodeToString()
+    }
+
+    private const val APP_SCHEME = "cornspies-music"
+    private val ROUTE_ROOTS = setOf("playlists", "s", "listen", "register")
 
     fun listenCodeFrom(url: String?): String? {
         val raw = url?.trim().orEmpty()
@@ -97,7 +185,7 @@ object DeepLinks {
         val segments = path.split('/').filter { it.isNotBlank() }
         if (segments.isEmpty()) return null
 
-        val marker = segments.indexOfLast { it == "playlists" || it == "playlist" }
+        val marker = segments.indexOfLast { it == "playlists" }
         if (marker < 0 || marker == segments.lastIndex) return null
 
         val id = segments[marker + 1]

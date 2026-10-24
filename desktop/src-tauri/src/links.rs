@@ -3,7 +3,9 @@ use std::sync::Mutex;
 use tauri::{App, AppHandle, Emitter, Manager, State, Url};
 use tauri_plugin_deep_link::DeepLinkExt;
 
-const SCHEME: &str = "com.cornspies.music";
+// Every app gets a scheme of its own: iOS, Windows and Linux hand a scheme
+// to a single app.
+const SCHEME: &str = "cornspies-music";
 
 #[derive(Default)]
 pub struct Links(Mutex<Vec<String>>);

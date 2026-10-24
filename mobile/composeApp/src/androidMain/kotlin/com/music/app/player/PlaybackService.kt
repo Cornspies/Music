@@ -10,6 +10,7 @@ import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
@@ -34,8 +35,13 @@ class PlaybackService : MediaSessionService() {
                 true,
             )
             .setHandleAudioBecomingNoisy(true)
+            .setLoadControl(burstyLoadControl())
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+        exo.addListener(object : Player.Listener {
+            override fun onIsLoadingChanged(isLoading: Boolean) = updateWakeMode(exo)
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = updateWakeMode(exo)
+        })
         val player = SkipForwardingPlayer(exo)
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) = publishWidgetState(player)
@@ -54,6 +60,38 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    // ExoPlayer's default keeps exactly 50 s buffered, so it tops the buffer
+    // up every few seconds and the radio never gets to sleep. Audio is small:
+    // fill up to five minutes in one go, then load again once less than a
+    // minute is left. The byte cap keeps hi-res FLAC from using much memory.
+    @OptIn(UnstableApi::class)
+    private fun burstyLoadControl() = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+            60_000,
+            5 * 60_000,
+            DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+            DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
+        )
+        .setTargetBufferBytes(32 * 1024 * 1024)
+        .build()
+
+    private var wakeMode = C.WAKE_MODE_NETWORK
+
+    // The network wake mode holds a Wi-Fi lock that stops Wi-Fi power saving
+    // for as long as music plays. It is only needed while a track is still
+    // downloading, so downloaded tracks and fully buffered streams keep just
+    // the CPU awake.
+    @OptIn(UnstableApi::class)
+    private fun updateWakeMode(exo: ExoPlayer) {
+        val local = exo.currentMediaItem?.localConfiguration?.uri?.scheme == "file"
+        val buffered = !exo.isLoading && exo.bufferedPercentage >= 100
+        val mode = if (local || buffered) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NETWORK
+        if (mode != wakeMode) {
+            wakeMode = mode
+            exo.setWakeMode(mode)
+        }
+    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = session?.player

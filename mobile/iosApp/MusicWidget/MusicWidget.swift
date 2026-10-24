@@ -55,7 +55,7 @@ struct MusicWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding()
         .containerBackground(Color(red: 0.035, green: 0.035, blue: 0.043), for: .widget)
-        .widgetURL(URL(string: "music://nowplaying"))
+        .widgetURL(URL(string: "cornspies-music://nowplaying"))
     }
 }
 

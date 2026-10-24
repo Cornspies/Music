@@ -26,7 +26,8 @@ export function setServerUrl(url: string): void {
   } catch {}
 }
 
-export const LINK_SCHEME = "com.cornspies.music"
+// One scheme per app: iOS, Windows and Linux give a scheme to a single app.
+export const LINK_SCHEME = "cornspies-music"
 
 export function appLink(url: string): string {
   return `${LINK_SCHEME}://open?url=${encodeURIComponent(url)}`

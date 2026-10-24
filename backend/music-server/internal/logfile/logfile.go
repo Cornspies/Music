@@ -1,6 +1,7 @@
 package logfile
 
 import (
+	"bytes"
 	"io"
 	"log"
 	"os"
@@ -11,34 +12,50 @@ import (
 )
 
 const (
-	KeepDays  = 14
-	prefix    = "music-server-"
-	suffix    = ".log"
-	dayFormat = "2006-01-02"
+	KeepDays    = 14
+	prefix      = "music-server-"
+	errorPrefix = "music-server-errors-"
+	suffix      = ".log"
+	dayFormat   = "2006-01-02"
 )
+
+// Entries whose message starts with one of these also go to the error log.
+var errorMarkers = [][]byte{[]byte("ERROR "), []byte("PANIC "), []byte("FATAL ")}
 
 type Writer struct {
 	dir     string
 	console io.Writer
 	mu      sync.Mutex
-	day     string
-	file    *os.File
+	all     daily
+	errors  daily
+}
+
+type daily struct {
+	prefix string
+	day    string
+	file   *os.File
 }
 
 func Open(dir string) (*Writer, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
-	w := &Writer{dir: dir}
+	w := &Writer{dir: dir, all: daily{prefix: prefix}, errors: daily{prefix: errorPrefix}}
 	if isTerminal(os.Stderr) {
 		w.console = os.Stderr
 	}
-	if err := w.openDay(time.Now().Format(dayFormat)); err != nil {
+	w.mu.Lock()
+	err := w.all.open(dir, time.Now().Format(dayFormat))
+	w.mu.Unlock()
+	if err != nil {
 		return nil, err
 	}
 	go w.pruneDaily()
 	return w, nil
 }
+
+// ErrorFile is the name pattern of the error log, for the start-up message.
+func ErrorFile() string { return errorPrefix + "<date>" + suffix }
 
 func (w *Writer) Write(p []byte) (int, error) {
 	w.mu.Lock()
@@ -46,29 +63,49 @@ func (w *Writer) Write(p []byte) (int, error) {
 	if w.console != nil {
 		_, _ = w.console.Write(p)
 	}
-	if day := time.Now().Format(dayFormat); day != w.day {
-		if err := w.openDayLocked(day); err != nil && w.file == nil {
+	day := time.Now().Format(dayFormat)
+	if isError(p) {
+		// The error log is created on the first error of the day, so a quiet
+		// day leaves no empty file behind.
+		if w.errors.day != day {
+			_ = w.errors.open(w.dir, day)
+		}
+		if w.errors.file != nil {
+			_, _ = w.errors.file.Write(p)
+		}
+	}
+	if day != w.all.day {
+		if err := w.all.open(w.dir, day); err != nil && w.all.file == nil {
 			return 0, err
 		}
 	}
-	return w.file.Write(p)
+	return w.all.file.Write(p)
 }
 
-func (w *Writer) openDay(day string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.openDayLocked(day)
+// isError looks past the standard log timestamp ("2006/01/02 15:04:05 ") for
+// an error marker at the start of the message.
+func isError(p []byte) bool {
+	msg := p
+	if len(msg) > 20 && msg[4] == '/' && msg[7] == '/' && msg[10] == ' ' && msg[13] == ':' {
+		msg = msg[20:]
+	}
+	for _, m := range errorMarkers {
+		if bytes.HasPrefix(msg, m) {
+			return true
+		}
+	}
+	return false
 }
 
-func (w *Writer) openDayLocked(day string) error {
-	f, err := os.OpenFile(filepath.Join(w.dir, prefix+day+suffix), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+func (d *daily) open(dir, day string) error {
+	f, err := os.OpenFile(filepath.Join(dir, d.prefix+day+suffix), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
 	if err != nil {
 		return err
 	}
-	if w.file != nil {
-		_ = w.file.Close()
+	if d.file != nil {
+		_ = d.file.Close()
 	}
-	w.file, w.day = f, day
+	d.file, d.day = f, day
 	return nil
 }
 
@@ -84,7 +121,7 @@ func (w *Writer) pruneDaily() {
 func Prune(dir string, now time.Time) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		log.Printf("logs: read %s: %v", dir, err)
+		log.Printf("ERROR logs: read %s: %v", dir, err)
 		return
 	}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -95,12 +132,18 @@ func Prune(dir string, now time.Time) {
 		if e.IsDir() || !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
 			continue
 		}
-		day, err := time.ParseInLocation(dayFormat, strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix), now.Location())
+		stamp := strings.TrimSuffix(name, suffix)
+		if strings.HasPrefix(stamp, errorPrefix) {
+			stamp = strings.TrimPrefix(stamp, errorPrefix)
+		} else {
+			stamp = strings.TrimPrefix(stamp, prefix)
+		}
+		day, err := time.ParseInLocation(dayFormat, stamp, now.Location())
 		if err != nil || !day.Before(oldest) {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
-			log.Printf("logs: remove %s: %v", name, err)
+			log.Printf("ERROR logs: remove %s: %v", name, err)
 			continue
 		}
 		removed++

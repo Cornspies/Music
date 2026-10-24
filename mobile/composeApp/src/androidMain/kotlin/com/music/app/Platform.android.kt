@@ -6,6 +6,7 @@ import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -119,4 +120,10 @@ internal actual suspend fun PickedImage.readBytes(): ByteArray {
     val resolver = appContext.contentResolver
     return resolver.openInputStream(uri)?.use { it.readBytes() }
         ?: throw IllegalStateException("cannot read image")
+}
+
+internal actual fun localTimeLabel(epochMs: Long): String {
+    var flags = DateUtils.FORMAT_SHOW_TIME
+    if (!DateUtils.isToday(epochMs)) flags = flags or DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_SHOW_DATE
+    return DateUtils.formatDateTime(appContext, epochMs, flags)
 }

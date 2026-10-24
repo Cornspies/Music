@@ -98,22 +98,21 @@ fun App() {
     }
 
     val pendingLink = DeepLinks.pendingPlaylistId
-    LaunchedEffect(pendingLink, model.user) {
-        if (pendingLink != null && model.user != null) {
-            DeepLinks.consume()?.let { model.openSharedPlaylist(it) }
-        }
-    }
     val pendingShare = DeepLinks.pendingShareToken
-    LaunchedEffect(pendingShare, model.user) {
-        if (pendingShare != null && model.user != null) {
-            DeepLinks.consumeShareToken()?.let { model.openSharedTrack(it) }
-        }
-    }
     val pendingListen = DeepLinks.pendingListenCode
-    LaunchedEffect(pendingListen, model.user) {
-        if (pendingListen != null && model.user != null) {
-            DeepLinks.consumeListenCode()?.let { model.listenInvite = it }
+    val pendingInvite = DeepLinks.pendingInviteCode
+    LaunchedEffect(pendingLink, pendingShare, pendingListen, pendingInvite, model.user) {
+        if (model.user == null) return@LaunchedEffect
+        // One app, many self-hosted servers: a link from another server
+        // can't be opened with this account.
+        DeepLinks.rejectForeign(model.api.baseUrl)?.let { host ->
+            val current = model.api.baseUrl.substringAfter("://").substringBefore('/')
+            model.notify("That link is for $host. You're signed in to $current.")
+            return@LaunchedEffect
         }
+        DeepLinks.consume()?.let { model.openSharedPlaylist(it) }
+        DeepLinks.consumeShareToken()?.let { model.openSharedTrack(it) }
+        DeepLinks.consumeListenCode()?.let { model.listenInvite = it }
     }
 
     LifecycleResumeEffect(model) {

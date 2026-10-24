@@ -64,20 +64,50 @@ Open <http://localhost:3001> and create an account. The first account is the
 admin. The folder holds the server, the web app (`web/`) and an `.env.example`
 that is ready to use as it is; every option in it is explained.
 
-- **Start it from this folder.** It reads `.env` from where it is started and
-  keeps everything it stores in `data/` there. Under a service manager such as
-  systemd, set the working directory to this folder.
+- **It stays in its folder.** The server reads the `.env` next to it and keeps
+  everything it stores in `data/` beside it, wherever it is started from.
 - **Other devices** use `http://<this machine's address>:3001`, which the apps
   ask for when you sign in. To reach it over the internet, put it behind a
   reverse proxy with HTTPS (see [Deploy it](#deploy-it)).
 - **ffmpeg** is optional. Install it for format conversion for iOS, loudness
   analysis and waveforms.
-- **To update,** stop the server, back up `data/`, extract the new release and
-  move `.env` and `data/` into its folder. Set `MUSIC_DATA_DIR` to an absolute
-  path once and the data never has to move.
+- **To update,** stop the server, back up `data/`, delete `web/` and extract
+  the new release into the same folder (on Linux, `tar -xzf <file>
+  --strip-components=1 -C <folder>`). `.env` and `data/` aren't part of a
+  release, so they are kept.
 - The web app in the release is built without operator details, so its privacy
   page says that no policy has been published. Build from source to add yours
   (see [Apps](#apps)).
+
+### Run as a service (Linux)
+
+The Linux bundles include `music-server.service`, a hardened systemd unit for a
+server in `/opt/music` that runs as its own `music` user:
+
+```sh
+sudo useradd --system --home-dir /opt/music --shell /usr/sbin/nologin music
+sudo mkdir -p /opt/music
+sudo tar -xzf Music-server-*-linux-amd64.tar.gz --strip-components=1 -C /opt/music
+sudo cp /opt/music/.env.example /opt/music/.env
+sudo chmod 600 /opt/music/.env
+sudo chown -R music:music /opt/music
+sudo cp /opt/music/music-server.service /etc/systemd/system/
+sudo systemctl enable --now music-server
+```
+
+Logs are in `/opt/music/data/logs`: a full log per day and, on days with
+errors, a `music-server-errors-<date>.log` with only those. To update, run
+`sudo systemctl stop music-server`, back up `/opt/music/data`, delete
+`/opt/music/web`, repeat the `tar` and `chown` lines and start it again.
+
+### Monitoring
+
+Set `MUSIC_METRICS_ADDR` (for example `127.0.0.1:9464`) to serve Prometheus
+metrics at `/metrics` on a separate port: requests by route and status,
+latency, errors, plays, library size, background queues, and Go and process
+stats. Set `MUSIC_METRICS_TOKEN` as well when Prometheus scrapes from another
+machine. `/healthz` on the main port answers `{"status":"ok"}` for uptime
+checks.
 
 ## Run from source
 
@@ -110,7 +140,8 @@ the one at the repository root serves both. Every option is documented in
 
 Put the server behind a reverse proxy that provides HTTPS (Caddy, nginx or
 Traefik all work), and send everything, `/api` included, to the server's
-port.
+port. For nginx, [deploy/nginx/music.conf](deploy/nginx/music.conf) is a
+complete site with a maintenance switch (see [Maintenance](#maintenance)).
 
 To build and serve everything from source, one process serves both:
 
@@ -132,14 +163,53 @@ the folder and want existing sessions to survive.
 If you lock yourself out, `music-server -reset-password <username>` prints a
 one-time reset link for that account.
 
+### Maintenance
+
+With nginx in front, you can tell people when Music will be back while you
+work on the server. The files are in [deploy/nginx](deploy/nginx), and in the
+`nginx` folder of the Linux bundles. Set them up once:
+
+```sh
+sudo cp -r nginx/maintenance /var/www/music-maintenance
+sudo cp nginx/maintenance.sh /usr/local/bin/music-maintenance
+sudo cp nginx/music.conf /etc/nginx/conf.d/music.conf   # then set server_name and the certificates
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Then, before you stop the server:
+
+```sh
+sudo music-maintenance on 30m                          # or 2h, 1h30m
+sudo music-maintenance on 2h "Moving to a new disk."   # with a note for everyone
+sudo music-maintenance off                             # when you're done
+```
+
+It takes effect at once; nginx doesn't need a reload. While it's on, nginx
+answers every request itself:
+
+- The web app shows a banner, "Music is down for maintenance, back around
+  21:30", in each person's own time zone, with your note. Downloaded tracks
+  keep playing. Anyone who opens the site gets a maintenance page instead.
+- The desktop and mobile apps show the same banner and switch to their
+  downloads.
+- All of them check back every 30 to 60 seconds and pick up where they were
+  once you turn maintenance off. The maintenance page reloads itself.
+
+If the server stops without maintenance being on, the apps say they can't
+reach the server and keep checking back, and the site shows a "not
+responding" page. Nobody is signed out either way.
+
 ## Apps
 
 - [Desktop](desktop/README.md): installers for Windows and Linux.
 - [Android and iOS](mobile/README.md): build instructions, signing,
   TestFlight.
 
-The apps ask for your server's address on the sign-in screen. To hand out
-builds that already know it, and to fill in the details that belong to you:
+The apps work with any server: they ask for its address on the sign-in
+screen, and shared links from any server open in them through the web app's
+**Open in the app** button. Links open in the app directly, without the
+browser, only for the domain a build was made for. To hand out builds that
+already know your server, and to fill in the details that belong to you:
 
 | What | Setting |
 |---|---|

@@ -29,6 +29,7 @@ type Server struct {
 	avaDir  string
 	listen  *listenHub
 	web     *webApp
+	metrics *metrics
 }
 
 type Options struct {
@@ -80,6 +81,7 @@ func New(dataDir string, opts Options) (*Server, error) {
 	if opts.WebDir != "" {
 		srv.web = newWebApp(opts.WebDir)
 	}
+	srv.metrics = newMetrics(srv)
 	return srv, nil
 }
 
@@ -193,6 +195,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/users/{id}/password-reset", s.requireAdmin(s.handleAdminCreatePasswordReset))
 	mux.HandleFunc("GET /api/admin/settings", s.requireAdmin(s.handleAdminGetSettings))
 	mux.HandleFunc("GET /api/admin/activity", s.requireAdmin(s.handleAdminActivity))
+	mux.HandleFunc("GET /api/admin/analysis", s.requireAdmin(s.handleAdminAnalysis))
+	mux.HandleFunc("POST /api/admin/analysis", s.requireAdmin(s.handleAdminReanalyze))
 	mux.HandleFunc("PATCH /api/admin/settings", s.requireAdmin(s.handleAdminUpdateSettings))
 	mux.HandleFunc("GET /api/admin/upgrades", s.requireAdmin(s.handleUpgradeStatus))
 	mux.HandleFunc("POST /api/admin/upgrades/scan", s.requireAdmin(s.handleUpgradeScan))
@@ -262,8 +266,13 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		listenPoll := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/listen/") &&
 			strings.Count(r.URL.Path, "/") == 3 && sw.code < 400
 		webFile := !strings.HasPrefix(r.URL.Path, "/api/") && sw.code < 400
-		if r.URL.Path != "/healthz" && !positionSave && !listenPoll && !webFile {
-			log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, time.Since(start).Round(time.Millisecond))
+		elapsed := time.Since(start)
+		s.metrics.observe(r, sw.code, elapsed)
+		switch {
+		case sw.code >= 500:
+			log.Printf("ERROR %s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, elapsed.Round(time.Millisecond))
+		case r.URL.Path != "/healthz" && !positionSave && !listenPoll && !webFile:
+			log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, elapsed.Round(time.Millisecond))
 		}
 	})
 
@@ -346,12 +355,14 @@ func (u *User) IsAdmin() bool { return u != nil && u.Role == roleAdmin }
 
 func logErr(ctx string, err error) {
 	log.Printf("ERROR %s: %v", ctx, err)
+	errorsTotal.WithLabelValues("error").Inc()
 	noteError(ctx, err.Error())
 }
 
 func logPanic(task string) {
 	if v := recover(); v != nil {
 		log.Printf("PANIC in %s (recovered): %v\n%s", task, v, debug.Stack())
+		errorsTotal.WithLabelValues("panic").Inc()
 		noteError("panic in "+task, fmt.Sprint(v))
 	}
 }

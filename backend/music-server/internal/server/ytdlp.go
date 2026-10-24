@@ -50,11 +50,11 @@ var ytdlpProcs = make(chan struct{}, 4)
 
 func newYTDLPSource(dataDir string) (*ytdlpSource, error) {
 	raw := config.Value("MUSIC_YTDLP")
-	if raw == "" {
+	if raw == "" || raw == "0" {
 		return nil, nil
 	}
 	name := raw
-	if config.Flag("MUSIC_YTDLP") {
+	if raw == "1" {
 		name = "yt-dlp"
 	}
 	bin, err := exec.LookPath(name)
@@ -230,7 +230,7 @@ func (y *ytdlpSource) run(ctx context.Context, what string, args ...string) ([]b
 	}
 	if err != nil {
 		reason := ytdlpReason(stderr.String(), err)
-		log.Printf("yt-dlp %s failed: %s; the command was: %s %s", what, reason, y.bin, strings.Join(full, " "))
+		log.Printf("ERROR yt-dlp %s failed: %s; the command was: %s %s", what, reason, y.bin, strings.Join(full, " "))
 		return nil, fmt.Errorf("yt-dlp %s: %s", what, reason)
 	}
 	if warning := ytdlpLine(stderr.String(), "WARNING:"); warning != "" {

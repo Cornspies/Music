@@ -1,0 +1,35 @@
+# Runs a release bundle extracted to /opt/music as the "music" user. The
+# server finds its .env, web/ and data/ next to the executable, so no working
+# directory is needed. Install: README.md → Quick install → Run as a service.
+[Unit]
+Description=Music server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=music
+Group=music
+ExecStart=/opt/music/music-server
+Restart=on-failure
+RestartSec=5
+
+# Hardening. The server only writes inside /opt/music (data/ and its logs).
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/music
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# With YouTube through yt-dlp, its JavaScript runtime also needs:
+#   SystemCallFilter=@system-service pkey_alloc pkey_free pkey_mprotect
+#   MemoryDenyWriteExecute=no
+SystemCallFilter=@system-service
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

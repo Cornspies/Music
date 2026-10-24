@@ -45,9 +45,7 @@ pub struct Handoff {
     next_id: Option<u64>,
     next_index: Option<usize>,
     shuffle: bool,
-    #[serde(default)]
     shuffle_all: bool,
-    #[serde(default)]
     history: ShuffleHistory,
     repeat: String,
     sleep_ends_at: Option<f64>,
@@ -59,11 +57,8 @@ pub struct Handoff {
 #[derive(Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ShuffleHistory {
-    #[serde(default)]
     back: Vec<String>,
-    #[serde(default)]
     forward: Vec<String>,
-    #[serde(default)]
     played: Vec<String>,
 }
 

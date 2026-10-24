@@ -26,12 +26,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Works regardless of host, for links shared from the app itself. -->
+            <!-- Links from any server: its web app's "Open in the app"
+                 button wraps the page address as
+                 cornspies-music://open?url=<address>. The same scheme
+                 opens the desktop app. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="music" android:host="playlist" />
+                <data android:scheme="cornspies-music" android:host="open" />
             </intent-filter>
         </activity>
 
