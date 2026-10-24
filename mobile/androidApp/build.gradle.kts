@@ -27,8 +27,8 @@ android {
         applicationId = "com.cornspies.music"
         minSdk = 27
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.4.3"
+        versionCode = 2
+        versionName = "0.4.4"
 
         manifestPlaceholders["musicHost"] = musicHost.ifEmpty { "music.invalid" }
         manifestPlaceholders["musicDefaultServer"] = if (musicHost.isEmpty()) "" else "https://$musicHost"
