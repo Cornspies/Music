@@ -106,9 +106,20 @@ func (s *Server) initDiscoverSources() {
 	}
 	list = append(list, ncsSource{})
 	if !config.Flag("MUSIC_DISABLE_SOUNDCLOUD") {
-		list = append(list, soundcloudSource{})
+		list = append(list, soundcloudSource{dataDir: s.dataDir})
 	}
 	discoverSources = list
+}
+
+func makeTempDir(dataDir, prefix string) (string, error) {
+	tmpBase := ""
+	if dataDir != "" {
+		tmpBase = filepath.Join(dataDir, "tmp")
+		if err := os.MkdirAll(tmpBase, 0o755); err != nil {
+			return "", err
+		}
+	}
+	return os.MkdirTemp(tmpBase, prefix)
 }
 
 func discoverDisabled() bool { return config.Flag("MUSIC_DISABLE_DISCOVER") }

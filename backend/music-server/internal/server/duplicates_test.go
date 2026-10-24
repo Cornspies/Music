@@ -1,6 +1,11 @@
 package server
 
-import "testing"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestSameSongPairVariantTags(t *testing.T) {
 	track := func(title, artist string, duration float64) *Track {
@@ -65,5 +70,34 @@ func TestSameSongAllowsEditionLength(t *testing.T) {
 	noArtist := upgradeTrack{title: "Song", artist: "Unknown Artist", duration: 200}
 	if sameSong(noArtist, discoverResult{Title: "Song", Artist: "Anyone", Duration: 260}) {
 		t.Error("without an artist, a title-only match with a different length was accepted")
+	}
+}
+
+func TestPendingUploadsCountAgainstQuotaAndEvictOldest(t *testing.T) {
+	_, s := newTestClient(t)
+	userID := "quota-test-user"
+
+	var firstAbs string
+	for i := 0; i < maxPendingPerUser+2; i++ {
+		rel := filepath.Join("uploads", fmt.Sprintf("pending-%d.mp3", i))
+		abs := filepath.Join(s.dataDir, rel)
+		if err := os.WriteFile(abs, []byte("0123456789"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			firstAbs = abs
+		}
+		s.holdUpload(&pendingUpload{savedPath: rel, size: 10, userID: userID})
+	}
+
+	used, err := s.bytesUsedBy(userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(maxPendingPerUser * 10); used != want {
+		t.Fatalf("bytesUsedBy = %d, want %d", used, want)
+	}
+	if _, err := os.Stat(firstAbs); !os.IsNotExist(err) {
+		t.Fatalf("expected oldest pending upload file to be evicted and removed, got err=%v", err)
 	}
 }

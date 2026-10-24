@@ -303,14 +303,7 @@ func (d *deezerSource) fetch(ctx context.Context, id string) (*sourceDownload, e
 }
 
 func (d *deezerSource) fetchDirect(ctx context.Context, id string) (*sourceDownload, error) {
-	tmpBase := ""
-	if d.dataDir != "" {
-		tmpBase = filepath.Join(d.dataDir, "tmp")
-		if err := os.MkdirAll(tmpBase, 0o755); err != nil {
-			return nil, err
-		}
-	}
-	dir, err := os.MkdirTemp(tmpBase, "music-deezer-")
+	dir, err := makeTempDir(d.dataDir, "music-deezer-")
 	if err != nil {
 		return nil, err
 	}

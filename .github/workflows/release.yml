@@ -66,9 +66,6 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           ./gradlew :androidApp:releaseApk --no-daemon \
             -Pmusic.storeFile="$RUNNER_TEMP/release.jks" \
-            -Pmusic.storePassword="$STORE_PASSWORD" \
-            -Pmusic.keyAlias="$KEY_ALIAS" \
-            -Pmusic.keyPassword="$KEY_PASSWORD" \
             -PmusicHost="$MUSIC_HOST"
       - uses: actions/upload-artifact@v7
         with:

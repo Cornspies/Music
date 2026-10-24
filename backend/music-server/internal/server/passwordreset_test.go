@@ -115,6 +115,16 @@ func TestPasswordResetLink(t *testing.T) {
 	if code, _ := c.do("POST", "/api/auth/reset", "", map[string]string{"code": resetCode, "password": "short"}); code != http.StatusBadRequest {
 		t.Fatalf("short password accepted: %d", code)
 	}
+	tooLong := string(bytes.Repeat([]byte("a"), 73))
+	if code, _ := c.do("POST", "/api/auth/reset", "", map[string]string{"code": resetCode, "password": tooLong}); code != http.StatusBadRequest {
+		t.Fatalf("73-byte password not rejected with 400 on reset: %d", code)
+	}
+	if code, _ := c.do("POST", "/api/auth/register", "", map[string]string{"username": "longpass", "password": tooLong}); code != http.StatusBadRequest {
+		t.Fatalf("73-byte password not rejected with 400 on register: %d", code)
+	}
+	if code, _ := c.do("POST", "/api/auth/password", userToken, map[string]string{"currentPassword": "old-password", "newPassword": tooLong}); code != http.StatusBadRequest {
+		t.Fatalf("73-byte password not rejected with 400 on password change: %d", code)
+	}
 	code, out := c.do("POST", "/api/auth/reset", "", map[string]string{"code": resetCode, "password": "new-password"})
 	if code != http.StatusOK || out["token"] == nil {
 		t.Fatalf("reset: %d %v", code, out)

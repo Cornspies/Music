@@ -10,11 +10,12 @@ val keystoreProps = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
-fun signingValue(key: String): String? =
-    (project.findProperty("music.$key") as String?)?.takeIf { it.isNotBlank() }
+fun signingValue(key: String, envKey: String? = null): String? =
+    envKey?.let { System.getenv(it)?.takeIf { v -> v.isNotBlank() } }
+        ?: (project.findProperty("music.$key") as String?)?.takeIf { it.isNotBlank() }
         ?: keystoreProps.getProperty(key)?.takeIf { it.isNotBlank() }
 
-val keystorePath = signingValue("storeFile")
+val keystorePath = signingValue("storeFile", "ANDROID_STORE_FILE")
 
 val musicHost = (project.findProperty("musicHost") as String?)?.trim().orEmpty()
 
@@ -37,9 +38,9 @@ android {
         signingConfigs {
             create("release") {
                 storeFile = file(keystorePath)
-                storePassword = signingValue("storePassword")
-                keyAlias = signingValue("keyAlias")
-                keyPassword = signingValue("keyPassword") ?: signingValue("storePassword")
+                storePassword = signingValue("storePassword", "STORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "KEY_PASSWORD") ?: signingValue("storePassword", "STORE_PASSWORD")
             }
         }
     }
