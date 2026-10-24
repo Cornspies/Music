@@ -11,7 +11,9 @@ tauri-build = { version = "2.7.1", features = [] }
 [dependencies]
 tauri = { version = "2.12.1", features = ["tray-icon"] }
 tauri-plugin-opener = "2.7.0"
-tauri-plugin-deep-link = "2.6.1"
+# 2.6.2 doesn't build on Linux against rust-ini 0.21.3 (ParseOption gained
+# fields), and single-instance 2.5.4 requires it. Unpin once a fixed release is out.
+tauri-plugin-deep-link = "=2.6.1"
 tauri-plugin-single-instance = { version = "2.5.2", features = ["deep-link"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

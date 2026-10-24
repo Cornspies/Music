@@ -60,6 +60,7 @@ fn capped(timeout: NextTimeout) -> NextTimeout {
         NextTimeout {
             after: time::Duration::Exact(STALL_TIMEOUT),
             reason: timeout.reason,
+            ..timeout
         }
     } else {
         timeout
