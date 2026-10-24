@@ -54,3 +54,7 @@ fun mimeTypeForFile(name: String): String {
         else -> "application/octet-stream"
     }
 }
+
+// A time in the device's time zone and clock style: "21:30", or with the
+// day when it isn't today.
+internal expect fun localTimeLabel(epochMs: Long): String

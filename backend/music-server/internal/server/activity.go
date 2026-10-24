@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -192,7 +191,7 @@ func (s *Server) handleAdminActivity(w http.ResponseWriter, _ *http.Request) {
 	analysisOn := !config.Flag("MUSIC_DISABLE_ANALYSIS") && TranscodingAvailable()
 
 	st.Silence.Enabled = analysisOn && autoTrimEnabled()
-	st.Silence.Rule = fmt.Sprintf("%s for %gs", autoTrimThresholdDB, autoTrimMinSeconds)
+	st.Silence.Rule = s.trimRule().String()
 	_ = s.db.QueryRow(`SELECT COUNT(1), COALESCE(SUM(edges_checked = 0), 0) FROM tracks`).Scan(&st.Silence.Total, &st.Silence.Pending)
 	st.Silence.RecentCuts = recentCuts.newestFirst()
 

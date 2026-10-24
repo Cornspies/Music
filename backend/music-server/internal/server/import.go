@@ -133,6 +133,7 @@ func (s *Server) startImportWorker() {
 				defer func() {
 					if v := recover(); v != nil {
 						log.Printf("PANIC in playlist import %s (recovered): %v\n%s", job.ID, v, debug.Stack())
+						errorsTotal.WithLabelValues("panic").Inc()
 						job.finish(importFailed, "the import stopped unexpectedly")
 					}
 				}()

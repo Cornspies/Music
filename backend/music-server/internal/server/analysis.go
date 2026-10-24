@@ -46,14 +46,10 @@ func (s *Server) StartBackgroundWork() {
 	s.startImportWorker()
 	s.startShareCleanup()
 	s.startListenSweeper()
-	s.purgeStaleLyricsMisses()
 	go s.backfillCoverColors()
 	s.startMetadataWorker()
-	s.removeTrimBackups()
 	s.startPendingUploadSweeper()
-	go s.backfillFileHashes()
 	go s.repairMissingCovers()
-	go s.shrinkStoredCovers()
 	go s.backfillCompatibleCopies()
 	s.startAudioInfoWorker()
 	if config.Flag("MUSIC_DISABLE_ANALYSIS") {
@@ -67,28 +63,7 @@ func (s *Server) StartBackgroundWork() {
 	go s.analysisWorker()
 	go s.backfillAnalysis()
 	if autoTrimEnabled() {
-		s.recheckEdgesOnNewRule()
 		go s.backfillEdgeChecks()
-	}
-}
-
-const settingAutoTrimRule = "auto_trim_rule"
-
-func (s *Server) recheckEdgesOnNewRule() {
-	rule := autoTrimThresholdDB + " for " + strconv.FormatFloat(autoTrimMinSeconds, 'f', -1, 64) + "s"
-	if prev, _ := s.getSetting(settingAutoTrimRule); prev == rule {
-		return
-	}
-	res, err := s.db.Exec(`UPDATE tracks SET edges_checked = 0 WHERE edges_checked = 1`)
-	if err != nil {
-		logErr("silence trim rule", err)
-		return
-	}
-	if err := s.putSetting(settingAutoTrimRule, rule); err != nil {
-		logErr("silence trim rule", err)
-	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		log.Printf("trim: the silence rule is now %s — checking %d track(s) again", rule, n)
 	}
 }
 
@@ -111,9 +86,7 @@ func (s *Server) backfillEdgeChecks() {
 		return
 	}
 	log.Printf("trim: checking %d track(s) for silence at the start and end, in the background", len(ids))
-	for _, id := range ids {
-		analysisQueue <- id
-	}
+	feedAnalysis(ids)
 }
 
 func (s *Server) analysisWorker() {
@@ -147,9 +120,7 @@ func (s *Server) backfillAnalysis() {
 		return
 	}
 	log.Printf("analysis: %d track(s) to analyse in the background", len(ids))
-	for _, id := range ids {
-		analysisQueue <- id
-	}
+	feedAnalysis(ids)
 }
 
 func (s *Server) analyzeTrack(trackID string) {
@@ -159,12 +130,17 @@ func (s *Server) analyzeTrack(trackID string) {
 		Scan(&rel, &analyzedAt, &edgesChecked, &hash); err != nil {
 		return
 	}
+	trim := edgesChecked == 0 && autoTrimEnabled()
+	if analyzedAt != "" && !trim {
+		// Queued twice, e.g. by a re-check started while one was running.
+		return
+	}
 	abs := filepath.Join(s.dataDir, rel)
 
 	ctx, cancel := context.WithTimeout(context.Background(), analysisTimeout)
 	defer cancel()
 
-	if edgesChecked == 0 && autoTrimEnabled() {
+	if trim {
 		trimmed, err := s.trimSilentEdges(ctx, trackID, rel)
 		if err != nil {
 			logErr("trim silence", fmt.Errorf("track %s (checked again at the next start): %w", trackID, err))

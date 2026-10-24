@@ -125,18 +125,6 @@ func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (
 	return &fresh, nil
 }
 
-func (s *Server) purgeStaleLyricsMisses() {
-	const key = "lyrics_misses_purged"
-	if _, done := s.getSetting(key); done {
-		return
-	}
-	if _, err := s.db.Exec(`DELETE FROM lyrics WHERE source = ?`, lyricsSourceNone); err != nil {
-		logErr("purge lyrics misses", err)
-		return
-	}
-	_ = s.putSetting(key, nowRFC3339())
-}
-
 var lrclibBackoff struct {
 	sync.Mutex
 	until time.Time

@@ -31,6 +31,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -55,10 +58,16 @@ fun FavoritesScreen() {
     LaunchedEffect(model.favorites) {
         if (model.favorites == null) model.loadFavorites()
     }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(30_000.milliseconds)
-            if (model.user != null) model.loadFavorites()
+    // Only while the screen is visible: the playback service keeps the
+    // process alive in the background, and a poll there wakes the radio
+    // every 30 seconds for nothing.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(30_000.milliseconds)
+                if (model.user != null) model.loadFavorites()
+            }
         }
     }
 

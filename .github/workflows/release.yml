@@ -122,6 +122,7 @@ jobs:
           mkdir -p "dist/$name"
           cp -r web-build "dist/$name/web"
           cp .env.example LICENSE "dist/$name/"
+          if [ "$GOOS" = linux ]; then cp deploy/music-server.service "dist/$name/" && cp -r deploy/nginx "dist/$name/nginx"; fi
           (cd backend/music-server && go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/dist/$name/music-server$ext" .)
           cd dist
           if [ "$GOOS" = windows ]; then zip -qr "$name.zip" "$name"; else tar -czf "$name.tar.gz" "$name"; fi

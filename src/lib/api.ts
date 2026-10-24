@@ -33,6 +33,8 @@ import type {
   FileTagDiff,
   TagChange,
   UpgradeStatus,
+  AnalysisSettings,
+  TrimRule,
   HomeFeed,
   CatalogArtist,
   CatalogRelease,
@@ -48,6 +50,7 @@ import type {
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
 import { apiUrl, publicUrl } from "@/lib/desktop"
+import { type ServerDown, serverDownFrom, serverDownMessage, useServerStatusStore } from "@/stores/server-status"
 
 
 const REFRESHED_TOKEN_HEADER = "X-Refreshed-Token"
@@ -59,6 +62,29 @@ export class ApiError extends Error {
     readonly data: unknown,
   ) {
     super(message)
+  }
+}
+
+// The reverse proxy answered: the server is down for maintenance or not
+// responding. The banner shows it and checks back until the server answers.
+export class ServerDownError extends Error {
+  constructor(readonly down: ServerDown) {
+    super(serverDownMessage(down))
+  }
+}
+
+const NETWORK_ERROR = "Network error — could not reach the server."
+
+// No answer from the server: no network, or the proxy answering for it.
+export function isUnreachable(e: unknown): boolean {
+  return e instanceof ServerDownError || (e instanceof Error && e.message.startsWith("Network error"))
+}
+
+function noteServerDown(status: number, data: unknown): void {
+  const down = serverDownFrom(status, data)
+  if (down) {
+    useServerStatusStore.getState().setDown(down)
+    throw new ServerDownError(down)
   }
 }
 
@@ -79,7 +105,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   } catch (e) {
     const err = e as Error
     if (err?.name === "AbortError") throw err
-    throw new Error("Network error — could not reach the server.")
+    throw new Error(NETWORK_ERROR)
   }
   noteRefreshedToken(res)
 
@@ -100,8 +126,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     } catch (e) {
       if (e instanceof LyricsMissing) throw e
     }
+    noteServerDown(res.status, data)
     throw new ApiError(message, res.status, data)
   }
+  if (useServerStatusStore.getState().down) useServerStatusStore.getState().setDown(null)
   if (res.status === 204 || res.status === 304) return undefined as T
   return (await res.json()) as T
 }
@@ -293,14 +321,16 @@ async function postConfirmed<T>(path: string, body: unknown): Promise<T | undefi
       body: JSON.stringify(body),
     })
   } catch {
-    throw new Error("Network error — could not reach the server.")
+    throw new Error(NETWORK_ERROR)
   }
   if (!res.ok) {
     let message = `Request failed (${res.status})`
+    let data: { error?: string } | null = null
     try {
-      const data = (await res.json()) as { error?: string }
+      data = (await res.json()) as { error?: string }
       if (data.error) message = data.error
     } catch {}
+    noteServerDown(res.status, data)
     throw new Error(message)
   }
   if (res.status === 204) return undefined
@@ -641,6 +671,9 @@ export const admin = {
     api<Invite>(`/api/admin/invites/${encodeURIComponent(code)}/revoke`, { method: "POST" }),
   deleteInvite: (code: string) =>
     api<void>(`/api/admin/invites/${encodeURIComponent(code)}`, { method: "DELETE" }),
+  analysis: () => api<AnalysisSettings>("/api/admin/analysis"),
+  reanalyze: (body: { rule: TrimRule; trim: boolean; loudness: boolean }) =>
+    api<AnalysisSettings>("/api/admin/analysis", { method: "POST", ...jsonBody(body) }),
   upgrades: () => api<UpgradeStatus>("/api/admin/upgrades"),
   scanUpgrades: (source: string) =>
     api<UpgradeStatus>("/api/admin/upgrades/scan", { method: "POST", ...jsonBody({ source }) }),

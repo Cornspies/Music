@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,6 +37,24 @@ func main() {
 		"print a one-time password reset link for this username and exit")
 	flag.Parse()
 
+	if cfg.HomeDir != "" {
+		// Paths typed on the command line still mean the folder the server
+		// was started from; everything else resolves against the bundle.
+		flag.Visit(func(f *flag.Flag) {
+			switch f.Name {
+			case "data", "logs", "web":
+				if v := f.Value.String(); v != "" && !filepath.IsAbs(v) {
+					if p, err := filepath.Abs(v); err == nil {
+						_ = f.Value.Set(p)
+					}
+				}
+			}
+		})
+		if err := os.Chdir(cfg.HomeDir); err != nil {
+			log.Fatalf("config: switch to %s: %v", cfg.HomeDir, err)
+		}
+	}
+
 	abs, err := filepath.Abs(*dataDir)
 	if err != nil {
 		log.Fatalf("resolve data dir: %v", err)
@@ -51,7 +70,7 @@ func main() {
 	if w, err := logfile.Open(logs); err != nil {
 		log.Printf("music-server logs: %v; logging to stderr only", err)
 	} else {
-		log.Printf("music-server logs: writing to %s, kept for %d days", logs, logfile.KeepDays)
+		log.Printf("music-server logs: writing to %s (errors also to %s), kept for %d days", logs, logfile.ErrorFile(), logfile.KeepDays)
 		log.SetOutput(redact.Writer(w))
 	}
 
@@ -69,7 +88,7 @@ func main() {
 
 	srv, err := server.New(abs, server.Options{JWTSecret: cfg.JWTSecret, WebDir: web})
 	if err != nil {
-		log.Fatalf("init server: %v", err)
+		log.Fatalf("FATAL init server: %v", err)
 	}
 	if *resetUser != "" {
 		reset, err := srv.CreatePasswordResetFor(*resetUser)
@@ -83,6 +102,9 @@ func main() {
 
 	if len(cfg.LoadedFiles) > 0 {
 		log.Printf("music-server config: loaded %s", strings.Join(cfg.LoadedFiles, ", "))
+		if cfg.HomeDir != "" {
+			log.Printf("music-server config: running from %s, where that file is", cfg.HomeDir)
+		}
 		for _, f := range cfg.LoadedFiles {
 			if fi, err := os.Stat(f); err == nil && fi.Mode().Perm()&0o077 != 0 {
 				log.Printf("music-server config: WARNING %s can be read by other users on this machine and may hold secrets; run chmod 600 on it", f)
@@ -103,11 +125,40 @@ func main() {
 	addr := *bind + ":" + *port
 	log.Printf("music-server listening on %s (data: %s, logs: %s, pid: %d)", addr, abs, logs, os.Getpid())
 	srv.StartBackgroundWork()
+	if cfg.MetricsAddr != "" {
+		go serveMetrics(srv, cfg.MetricsAddr, cfg.MetricsToken)
+	}
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           srv.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
+		// net/http reports handler panics and connection errors here.
+		ErrorLog: log.New(log.Writer(), "ERROR ", log.LstdFlags|log.Lmsgprefix),
 	}
-	log.Fatal(httpServer.ListenAndServe())
+	log.Fatalf("FATAL music-server: %v", httpServer.ListenAndServe())
+}
+
+// serveMetrics runs the Prometheus endpoint on its own listener, so it never
+// passes through the reverse proxy that publishes the app.
+func serveMetrics(srv *server.Server, addr, token string) {
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", srv.MetricsHandler(token))
+	auth := "no token"
+	if token != "" {
+		auth = "bearer token required"
+	} else if host, _, err := net.SplitHostPort(addr); err == nil && !isLoopback(host) {
+		log.Printf("music-server metrics: WARNING %s is reachable from other machines without a token; set MUSIC_METRICS_TOKEN", addr)
+	}
+	log.Printf("music-server metrics: serving http://%s/metrics (%s)", addr, auth)
+	s := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	log.Printf("ERROR music-server metrics: %v", s.ListenAndServe())
+}
+
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

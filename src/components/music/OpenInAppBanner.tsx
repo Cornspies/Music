@@ -7,14 +7,22 @@ import { Button } from "@/components/ui/button"
 
 const PREF = "music-open-links-in-app"
 
-function landingLink(): string | null {
+type Landing = { link: string; phone: boolean }
+
+// The desktop, Android and iOS apps all register the app scheme, so any
+// server's links can open in them, not only the domain a build was verified
+// for.
+function landing(): Landing | null {
   if (isDesktop || typeof window === "undefined") return null
   const ua = navigator.userAgent
-  if (!/Windows NT|Linux/.test(ua) || /Android|CrOS/.test(ua)) return null
+  const ipad = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1
+  const phone = /Android|iPhone|iPod|iPad/.test(ua) || ipad
+  const desktop = /Windows NT|Linux/.test(ua) && !/Android|CrOS/.test(ua)
+  if (!phone && !desktop) return null
   const { pathname, search, href } = window.location
   const shared = /^\/(listen|s|playlists)\/[^/]+\/?$/.test(pathname)
   const invite = /^\/register\/?$/.test(pathname) && new URLSearchParams(search).has("invite")
-  return shared || invite ? appLink(href) : null
+  return shared || invite ? { link: appLink(href), phone } : null
 }
 
 function launch(link: string) {
@@ -45,8 +53,12 @@ function writePref(value: string | null) {
 }
 
 export function OpenInAppBanner() {
-  const [link] = useState(landingLink)
-  const [auto] = useState(() => link !== null && readPref() === "always")
+  const [target] = useState(landing)
+  const link = target?.link ?? null
+  const phone = target?.phone ?? false
+  // Phone browsers only follow an app link from a tap, and can't tell
+  // whether the app opened, so they always ask.
+  const [auto] = useState(() => link !== null && !phone && readPref() === "always")
   const [state, setState] = useState<"ask" | "opened" | null>(() => {
     if (!link || readPref() === "never") return null
     return auto ? "opened" : "ask"
@@ -59,6 +71,10 @@ export function OpenInAppBanner() {
   if (!state || !link) return null
 
   const open = () => {
+    if (phone) {
+      window.location.href = link
+      return
+    }
     writePref("always")
     launch(link)
     setState("opened")
@@ -80,7 +96,7 @@ export function OpenInAppBanner() {
         {state === "ask" ? (
           <Button size="sm" variant="ghost" onClick={open} className="rounded-full text-zinc-100 hover:bg-zinc-800">
             <AppWindow className="size-4 text-emerald-400" />
-            Open in the desktop app
+            {phone ? "Open in the app" : "Open in the desktop app"}
           </Button>
         ) : (
           <>

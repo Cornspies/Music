@@ -549,26 +549,3 @@ func (s *Server) handleDiscardUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	writeNoContent(w)
 }
-
-func (s *Server) backfillFileHashes() {
-	rows, err := s.db.Query(`SELECT id, file_path FROM tracks WHERE COALESCE(file_hash, '') = ''`)
-	if err != nil {
-		return
-	}
-	type row struct{ id, path string }
-	var todo []row
-	for rows.Next() {
-		var r row
-		if rows.Scan(&r.id, &r.path) == nil {
-			todo = append(todo, r)
-		}
-	}
-	rows.Close()
-	for _, r := range todo {
-		h, err := fileSHA256(filepath.Join(s.dataDir, r.path))
-		if err != nil {
-			continue
-		}
-		_, _ = s.db.Exec(`UPDATE tracks SET file_hash = ? WHERE id = ?`, h, r.id)
-	}
-}

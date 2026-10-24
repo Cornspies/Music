@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Music: maintenance</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #09090b; color: #e4e4e7;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 28rem; padding: 2rem 1.5rem; text-align: center; }
+  h1 { margin: 0 0 .5rem; font-size: 1.375rem; color: #34d399; }
+  p { margin: .5rem 0; color: #a1a1aa; }
+  #until { color: #e4e4e7; }
+  #message { white-space: pre-line; }
+  small { display: block; margin-top: 1.5rem; color: #71717a; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Music isn't responding</h1>
+  <p id="until">Trying again every minute.</p>
+  <p id="message" hidden></p>
+  <small>This page reloads when Music is back.</small>
+</main>
+<script>
+  // nginx serves this page while maintenance.json exists (see music.conf),
+  // and also when the server is down without maintenance being on.
+  const show = (id, text) => {
+    const el = document.getElementById(id)
+    el.textContent = text
+    el.hidden = !text
+  }
+
+  function back(until) {
+    const at = new Date(until)
+    if (isNaN(at)) return ""
+    const sameDay = at.toDateString() === new Date().toDateString()
+    const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    const when = sameDay ? time : at.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }) + ", " + time
+    return at > Date.now() ? "Back around " + when + "." : "Should be back any moment."
+  }
+
+  async function check() {
+    let res
+    try {
+      res = await fetch("/maintenance.json", { cache: "no-store" })
+    } catch {
+      return
+    }
+    if (res.ok) {
+      const m = await res.json().catch(() => ({}))
+      document.title = "Music: down for maintenance"
+      show("title", "Down for maintenance")
+      show("until", back(m.until) || "Back soon.")
+      show("message", m.message || "")
+      return
+    }
+    // Maintenance is off: reload once the server answers again.
+    const probe = await fetch("/api/auth/config", { cache: "no-store" }).catch(() => null)
+    if (probe && probe.ok) location.reload()
+    else {
+      document.title = "Music isn't responding"
+      show("title", "Music isn't responding")
+      show("until", "Trying again every minute.")
+      show("message", "")
+    }
+  }
+
+  check()
+  setInterval(check, 60000)
+</script>
+</body>
+</html>

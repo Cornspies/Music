@@ -10,7 +10,7 @@
     ["worker-src", "'self'", "blob:"],
     ["manifest-src", "'self'"],
     ["object-src", "'none'"],
-    ["frame-src", "'self'", "com.cornspies.music:"],
+    ["frame-src", "'self'", "cornspies-music:"],
     ["base-uri", "'self'"],
     ["form-action", "'self'"],
     ["frame-ancestors", "'none'"]

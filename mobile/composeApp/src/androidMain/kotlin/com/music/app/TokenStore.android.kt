@@ -32,7 +32,6 @@ actual class TokenStore {
     private val prefs = appContext.getSharedPreferences("music", Context.MODE_PRIVATE)
 
     actual fun loadToken(): String? {
-        migrateLegacyToken()
         val stored = prefs.getString(KEY_TOKEN_ENCRYPTED, null) ?: return null
         return runCatching { decrypt(stored) }.getOrElse {
             prefs.edit { remove(KEY_TOKEN_ENCRYPTED) }
@@ -42,7 +41,6 @@ actual class TokenStore {
 
     actual fun saveToken(token: String?) {
         prefs.edit {
-            remove(KEY_TOKEN_LEGACY)
             if (token == null) {
                 remove(KEY_TOKEN_ENCRYPTED)
             } else {
@@ -55,12 +53,6 @@ actual class TokenStore {
 
     actual fun saveBaseUrl(url: String) {
         prefs.edit { putString("baseUrl", url) }
-    }
-
-    private fun migrateLegacyToken() {
-        val legacy = prefs.getString(KEY_TOKEN_LEGACY, null) ?: return
-        runCatching { saveToken(legacy) }
-        prefs.edit { remove(KEY_TOKEN_LEGACY) }
     }
 
     private fun key(): SecretKey {
@@ -107,6 +99,5 @@ actual class TokenStore {
         const val KEY_ALIAS = "music.session"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val KEY_TOKEN_ENCRYPTED = "token.enc"
-        const val KEY_TOKEN_LEGACY = "token"
     }
 }

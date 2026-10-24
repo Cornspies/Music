@@ -140,7 +140,7 @@ build produced, for example `Music_0.2.0_amd64.AppImage`. The version is
 
 Shared links (playlists, tracks, Listen Together and sign-up invites) are web
 addresses, and Linux and Windows always give those to the browser. So the app
-registers its own `com.cornspies.music://` scheme: when one of those pages
+registers its own `cornspies-music://` scheme: when one of those pages
 opens in a browser on Linux or Windows, it offers **Open in the desktop app**,
 and after the first time it opens the app by itself (the same banner turns
 that off again). A link to a different server than the one the app uses shows

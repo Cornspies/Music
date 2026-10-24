@@ -79,7 +79,7 @@
     "deep-link": {
       "desktop": {
         "schemes": [
-          "com.cornspies.music"
+          "cornspies-music"
         ]
       }
     }

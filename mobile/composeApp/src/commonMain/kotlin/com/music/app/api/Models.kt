@@ -514,6 +514,10 @@ data class ApplyMetadataRequest(
 data class ApiError(
     val error: String = "",
     val reason: String? = null,
+    // Set by the maintenance notice nginx sends (deploy/nginx/maintenance.sh).
+    val maintenance: Boolean = false,
+    val until: String? = null,
+    val message: String? = null,
 )
 
 @Serializable

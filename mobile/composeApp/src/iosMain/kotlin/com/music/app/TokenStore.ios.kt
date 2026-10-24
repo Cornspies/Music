@@ -48,13 +48,9 @@ internal actual val defaultBaseUrl: String by lazy {
 actual class TokenStore {
     private val defaults = NSUserDefaults.standardUserDefaults
 
-    actual fun loadToken(): String? {
-        migrateLegacyToken()
-        return keychainRead()
-    }
+    actual fun loadToken(): String? = keychainRead()
 
     actual fun saveToken(token: String?) {
-        defaults.removeObjectForKey(LEGACY_KEY)
         keychainDelete()
         if (token != null) keychainWrite(token)
     }
@@ -64,12 +60,6 @@ actual class TokenStore {
 
     actual fun saveBaseUrl(url: String) {
         defaults.setObject(url, forKey = "baseUrl")
-    }
-
-    private fun migrateLegacyToken() {
-        val legacy = defaults.stringForKey(LEGACY_KEY) ?: return
-        if (keychainRead() == null) keychainWrite(legacy)
-        defaults.removeObjectForKey(LEGACY_KEY)
     }
 
     private fun baseQuery(): CFMutableDictionaryRef? {
@@ -120,7 +110,6 @@ actual class TokenStore {
     private companion object {
         const val SERVICE = "com.music.app.session"
         const val ACCOUNT = "jwt"
-        const val LEGACY_KEY = "token"
     }
 }
 

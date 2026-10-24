@@ -32,6 +32,7 @@ import com.music.app.api.toPlaylist
 import com.music.app.api.TokenStore
 import com.music.app.api.Track
 import com.music.app.api.User
+import com.music.app.api.ServerDownException
 import com.music.app.api.friendlyError
 import com.music.app.offline.DownloadManager
 import com.music.app.offline.DownloadState
@@ -72,6 +73,7 @@ private const val HOME_RETRY_MS = 5_000L
 private const val KEY_UPDATE_DISMISSED = "update.dismissed"
 private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 private const val CHANGE_CHECK_INTERVAL_MS = 30_000L
+private const val RECONNECT_CHECK_INTERVAL_MS = 60_000L
 private const val PLAYBACK_SYNC_INTERVAL_MS = 5L * 60_000L
 private const val SHUFFLE_HISTORY_MAX = 500
 private const val DEFAULT_LIBRARY_SORT = "created"
@@ -169,6 +171,11 @@ class AppModel(
     fun updateDownloadUrl(): String? = availableUpdate?.let { api.appDownloadUrl(it.fileName) }
 
     var offlineMode by mutableStateOf(false)
+        private set
+
+    // Why the server can't be reached, when the proxy said so: maintenance
+    // (with a return time) or the server not responding. Only set in offline mode.
+    var serverDown by mutableStateOf<ServerDownException?>(null)
         private set
 
     var reconnecting by mutableStateOf(false)
@@ -327,12 +334,15 @@ class AppModel(
                     downloads.cacheUser(user!!)
                     onAuthenticated()
                 } catch (e: Exception) {
-                    val cached = if (e is ApiException) null else downloads.cachedUser()
+                    // Only a refused token signs out: a server that's down or
+                    // failing gets the downloads and a retry instead.
+                    val signedOut = e is ApiException && e.status == 401
+                    val cached = if (signedOut) null else downloads.cachedUser()
                     if (cached != null) {
                         user = cached
-                        offlineMode = true
+                        noteFailure(e as? ServerDownException ?: Exception(e))
                         onAuthenticated()
-                    } else {
+                    } else if (signedOut) {
                         store.saveToken(null)
                     }
                 } finally {
@@ -427,6 +437,7 @@ class AppModel(
         api.clearMediaToken()
         downloads.clearForLogout()
         offlineMode = false
+        serverDown = null
         user = null
         player.pause()
         listening = null
@@ -559,6 +570,7 @@ class AppModel(
     private fun noteOnline() {
         if (!offlineMode) return
         offlineMode = false
+        serverDown = null
         refreshMediaTokenIfDue()
     }
 
@@ -570,27 +582,48 @@ class AppModel(
     private fun noteFailure(e: Exception): Boolean {
         if (e is ApiException) return false
         offlineMode = true
+        serverDown = e as? ServerDownException
+        watchForReconnect()
         return true
     }
 
-    fun reconnect() {
-        scope.launch {
-            reconnecting = true
-            try {
-                user = api.me()
-                downloads.cacheUser(user!!)
-                offlineMode = false
-                runCatching { api.refreshMediaToken() }
-                refreshAll()
-            } catch (e: Exception) {
-                if (e is ApiException) {
-                    logout()
-                } else {
-                    noteFailure(e)
-                }
-            } finally {
-                reconnecting = false
+    private var foreground = true
+    private var reconnectWatch: Job? = null
+
+    // Checks back every minute while offline and on screen, so the app is
+    // online again by itself once maintenance is over.
+    private fun watchForReconnect() {
+        if (reconnectWatch?.isActive == true) return
+        reconnectWatch = scope.launch {
+            while (offlineMode && user != null) {
+                delay(RECONNECT_CHECK_INTERVAL_MS.milliseconds)
+                if (foreground && offlineMode && user != null && !reconnecting) reconnectNow()
             }
+        }
+    }
+
+    fun reconnect() {
+        scope.launch { reconnectNow() }
+    }
+
+    private suspend fun reconnectNow() {
+        if (reconnecting) return
+        reconnecting = true
+        try {
+            user = api.me()
+            downloads.cacheUser(user!!)
+            offlineMode = false
+            serverDown = null
+            runCatching { api.refreshMediaToken() }
+            refreshAll()
+        } catch (e: Exception) {
+            if (e is ApiException && e.status == 401) {
+                logout()
+            } else {
+                noteFailure(e)
+            }
+        } finally {
+            reconnecting = false
         }
     }
 
@@ -1497,7 +1530,10 @@ class AppModel(
         savePlayback()
     }
 
-    fun onBackground() = syncProgress()
+    fun onBackground() {
+        foreground = false
+        syncProgress()
+    }
 
     private var lastSavedTrackId: String? = null
     private var lastSavedPosition = 0.0
@@ -1546,6 +1582,8 @@ class AppModel(
     }
 
     fun onForeground() {
+        foreground = true
+        if (user != null && offlineMode && !reconnecting) reconnect()
         refreshMediaTokenIfDue()
         if (nowMs() - lastUpdateCheckMs > UPDATE_CHECK_INTERVAL_MS) checkForUpdate()
         if (user != null && !offlineMode && nowMs() - lastChangeCheckMs > CHANGE_CHECK_INTERVAL_MS) {

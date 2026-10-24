@@ -14,6 +14,8 @@ kotlin {
         compileSdk = 37
         minSdk = 27
         androidResources.enable = true
+        // commonTest runs on the JVM: ./gradlew :composeApp:testAndroidHostTest
+        withHostTestBuilder {}
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
         }
@@ -47,6 +49,9 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor3)
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
