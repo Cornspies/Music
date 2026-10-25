@@ -427,6 +427,8 @@ export interface AuthConfig {
   registrationOpen: boolean
   inviteRequired: boolean
   minPasswordLength: number
+  operator?: string
+  contact?: string
 }
 
 export interface Invite {

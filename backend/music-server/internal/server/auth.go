@@ -335,6 +335,9 @@ type AuthConfig struct {
 	RegistrationOpen  bool `json:"registrationOpen"`
 	InviteRequired    bool `json:"inviteRequired"`
 	MinPasswordLength int  `json:"minPasswordLength"`
+	// Who runs the server, for the privacy page.
+	Operator string `json:"operator,omitempty"`
+	Contact  string `json:"contact,omitempty"`
 }
 
 func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
@@ -342,6 +345,8 @@ func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		RegistrationOpen:  s.registrationOpen(),
 		InviteRequired:    config.Value("MUSIC_INVITE_CODE") != "",
 		MinPasswordLength: minPasswordLength,
+		Operator:          config.Value("MUSIC_OPERATOR"),
+		Contact:           config.Value("MUSIC_CONTACT"),
 	})
 }
 
