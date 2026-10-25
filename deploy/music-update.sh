@@ -11,7 +11,9 @@
 # server and web app and starts it again. If the server doesn't come back, it
 # goes back to the old release and the database from before. .env and data/
 # are kept. With the nginx maintenance page set up (music-maintenance), users
-# see "down for maintenance" in the meantime.
+# see "down for maintenance" in the meantime. When .env sets MUSIC_APK_DIR,
+# it also puts the release's Windows installer in that folder, where the
+# server offers it for download and as the desktop app's update.
 #
 # Settings, as environment variables: MUSIC_DIR (default /opt/music),
 # MUSIC_SERVICE (music-server), MUSIC_REPO (Cornspies/Music) and
@@ -48,9 +50,11 @@ need_root() {
 }
 
 work=
+partial=
 locked=0
 cleanup() {
 	if [ -n "$work" ]; then rm -rf "$work"; fi
+	if [ -n "$partial" ]; then rm -f "$partial"; fi
 	if [ "$locked" = 1 ]; then rmdir "$dir/.update-lock" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
@@ -69,13 +73,22 @@ env_value() {
 		sed -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
 }
 
+# A folder from .env; the server resolves relative ones against its own folder.
+env_dir() {
+	case $1 in
+	'' | /*) echo "$1" ;;
+	*) echo "$dir/$1" ;;
+	esac
+}
+
 data_dir() {
 	d=$(env_value MUSIC_DATA_DIR)
-	d=${d:-data}
-	case $d in
-	/*) echo "$d" ;;
-	*) echo "$dir/$d" ;;
-	esac
+	env_dir "${d:-data}"
+}
+
+# The app folder, only when .env names it; empty otherwise.
+apps_dir() {
+	env_dir "$(env_value MUSIC_APK_DIR)"
 }
 
 health_url() {
@@ -117,6 +130,11 @@ release_json() {
 
 json_tag() {
 	awk -F'"' '$2 == "tag_name" { print $4; exit }'
+}
+
+# The first of the release's files whose name matches an awk regex.
+asset_matching() {
+	awk -F'"' -v want="$1" '$2 == "name" && $4 ~ want { print $4; exit }'
 }
 
 # The SHA-256 GitHub lists for one of the release's files.
@@ -207,6 +225,62 @@ refresh_helpers() {
 	fi
 }
 
+# Puts the Windows installer from a release (its JSON in $1, its tag in $2) in
+# the app folder and removes older ones. A file of the same name with other
+# contents is kept: that's a build of your own. Problems only print a note, as
+# the server itself is up to date by then.
+fetch_windows_app() {
+	apps=$(apps_dir)
+	[ -n "$apps" ] || return 0
+	app=$(printf '%s\n' "$1" | asset_matching '^Music_[0-9A-Za-z.+-]+_x64-setup[.]exe$')
+	if [ -z "$app" ]; then
+		echo "Release $2 has no Windows installer; $apps is unchanged."
+		return 0
+	fi
+	app_sum=$(printf '%s\n' "$1" | asset_digest "$app")
+	if [ ! -d "$apps" ]; then
+		mkdir -p "$apps"
+		chown "$(stat -c %u:%g "$dir/music-server")" "$apps"
+	fi
+	if [ -f "$apps/$app" ]; then
+		if printf '%s  %s\n' "$app_sum" "$apps/$app" | sha256sum -c --quiet - >/dev/null 2>&1; then
+			echo "The Windows installer $app is in $apps."
+		else
+			echo "Keeping $apps/$app, which differs from the one in $2 (your own build?)."
+		fi
+		return 0
+	fi
+	echo "Downloading the Windows installer $app to $apps"
+	partial=$apps/.$app.$$
+	if ! curl -fL --progress-bar -o "$partial" "https://github.com/$repo/releases/download/$2/$app"; then
+		rm -f "$partial"
+		partial=
+		echo "Couldn't download $app; run music-update again to retry." >&2
+		return 0
+	fi
+	if ! printf '%s  %s\n' "$app_sum" "$partial" | sha256sum -c --quiet - >/dev/null 2>&1; then
+		rm -f "$partial"
+		partial=
+		echo "$app doesn't match its checksum on GitHub, so it wasn't added." >&2
+		return 0
+	fi
+	chmod 644 "$partial"
+	chown "$(stat -c %u:%g "$apps")" "$partial"
+	mv -f "$partial" "$apps/$app"
+	partial=
+	v=${app#Music_}
+	v=${v%_x64-setup.exe}
+	for f in "$apps"/Music_*_x64-setup.exe; do
+		[ -f "$f" ] && [ "$f" != "$apps/$app" ] || continue
+		fv=${f##*/Music_}
+		fv=${fv%_x64-setup.exe}
+		if [ "$(printf '%s\n%s\n' "$fv" "$v" | sort -V | head -n 1)" = "$fv" ]; then
+			rm -f "$f"
+			echo "Removed the older ${f##*/}."
+		fi
+	done
+}
+
 install_release() {
 	src=$1
 	lock
@@ -214,6 +288,7 @@ install_release() {
 	work=$(mktemp -d "$dir/.update.XXXXXX")
 	bundle=$work/bundle.tar.gz
 	tag=
+	json=
 
 	if [ -f "$src" ]; then
 		cp "$src" "$bundle"
@@ -229,6 +304,7 @@ install_release() {
 		[ -n "$tag" ] || die "couldn't read the release from GitHub."
 		if [ "$src" = latest ] && [ "$tag" = "$old" ]; then
 			echo "Already on $tag, the latest release."
+			fetch_windows_app "$json" "$tag"
 			return 0
 		fi
 		asset=Music-server-$tag-linux-$arch.tar.gz
@@ -287,6 +363,7 @@ install_release() {
 		echo "Updated to $tag. The database from before is in $backup."
 		if [ "$old" = unknown ]; then old="the release before"; fi
 		echo "music-update rollback switches back to $old."
+		if [ -n "$json" ]; then fetch_windows_app "$json" "$tag"; fi
 		return 0
 	fi
 
@@ -336,6 +413,15 @@ status() {
 		echo "Server:    running"
 	else
 		echo "Server:    not answering at $(health_url)"
+	fi
+	apps=$(apps_dir)
+	if [ -n "$apps" ]; then
+		exe=$(ls -1 "$apps"/Music_*_x64-setup.exe 2>/dev/null | sort -V | tail -n 1)
+		if [ -n "$exe" ]; then
+			echo "Windows:   ${exe##*/} in $apps"
+		else
+			echo "Windows:   no installer in $apps"
+		fi
 	fi
 }
 
