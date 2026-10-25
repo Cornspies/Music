@@ -74,10 +74,10 @@ that is ready to use as it is; every option in it is explained.
 - **To update,** stop the server, back up `data/`, delete `web/` and extract
   the new release into the same folder (on Linux, `tar -xzf <file>
   --strip-components=1 -C <folder>`). `.env` and `data/` aren't part of a
-  release, so they are kept.
-- The web app in the release is built without operator details, so its privacy
-  page says that no policy has been published. Build from source to add yours
-  (see [Apps](#apps)).
+  release, so they are kept. Run as a Linux service, `music-update` does all
+  of this for you (see [Updates](#updates)).
+- The privacy page says no policy has been published until you set
+  `MUSIC_OPERATOR` and `MUSIC_CONTACT` in `.env` (see [Apps](#apps)).
 
 ### Run as a service (Linux)
 
@@ -92,13 +92,47 @@ sudo cp /opt/music/.env.example /opt/music/.env
 sudo chmod 600 /opt/music/.env
 sudo chown -R music:music /opt/music
 sudo cp /opt/music/music-server.service /etc/systemd/system/
+sudo cp /opt/music/music-update.sh /usr/local/bin/music-update
 sudo systemctl enable --now music-server
 ```
 
 Logs are in `/opt/music/data/logs`: a full log per day and, on days with
-errors, a `music-server-errors-<date>.log` with only those. To update, run
-`sudo systemctl stop music-server`, back up `/opt/music/data`, delete
-`/opt/music/web`, repeat the `tar` and `chown` lines and start it again.
+errors, a `music-server-errors-<date>.log` with only those.
+
+### Updates
+
+`music-update` updates a server installed as above:
+
+```sh
+sudo music-update              # the latest release
+sudo music-update v0.1.3       # a particular release
+sudo music-update rollback     # back to the release before
+music-update status            # what's installed and what's available
+```
+
+It downloads the bundle for your machine from GitHub and checks it against
+the SHA-256 GitHub lists for it. Then it stops the server, copies the database
+to `/opt/music/backups` (the last five are kept), swaps in the new server and
+web app, and starts it again. If the new server doesn't answer `/healthz`
+within two minutes, it goes back to the old release and the database from
+before on its own. `.env`, `data/` and your systemd unit stay as they are; if a
+release changes the unit, it tells you. With the [maintenance
+page](#maintenance) set up, users see "down for maintenance" while it runs,
+and the script keeps the page and `music-maintenance` up to date.
+
+`rollback` keeps the current database and switches between the two most
+recent releases, so running it again returns to the newer one. To install a
+bundle you downloaded yourself, pass its file instead of a version. Set
+`MUSIC_DIR` or `MUSIC_SERVICE` when the server lives elsewhere or its service
+has another name.
+
+On a server that predates the script, install it once from GitHub:
+
+```sh
+sudo curl -fsSL -o /usr/local/bin/music-update \
+  https://raw.githubusercontent.com/Cornspies/Music/main/deploy/music-update.sh
+sudo chmod 755 /usr/local/bin/music-update
+```
 
 ### Monitoring
 
@@ -213,15 +247,16 @@ already know your server, and to fill in the details that belong to you:
 
 | What | Setting |
 |---|---|
-| Web and desktop: default server | `NEXT_PUBLIC_MUSIC_DEFAULT_SERVER` at build time |
-| Privacy policy page | `NEXT_PUBLIC_MUSIC_OPERATOR` and `NEXT_PUBLIC_MUSIC_CONTACT` at build time |
+| Privacy policy page | `MUSIC_OPERATOR` and `MUSIC_CONTACT` in the server's `.env` |
+| Desktop: default server | `NEXT_PUBLIC_MUSIC_DEFAULT_SERVER` at build time |
 | Android: default server and link domain | `musicHost` in `~/.gradle/gradle.properties` |
 | iOS: default server and link domain | `MUSIC_HOST` in `mobile/iosApp/Configuration/*.xcconfig` |
 
-Leave the privacy settings empty and the page says the operator hasn't
-published a policy. The text that appears once you set them is written for a
-server in the EU under the GDPR; read it and adapt it to your situation
-before you publish it.
+The server reads the privacy settings, so release builds work for any
+operator. Leave them empty and the page says the operator hasn't published a
+policy. The text that appears once you set them is written for a server in
+the EU under the GDPR; read it and adapt it to your situation before you
+publish it.
 
 The application ID `com.cornspies.music`, the Apple team ID in
 `public/.well-known/apple-app-site-association` and the signing fingerprints
