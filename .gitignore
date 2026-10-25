@@ -20,7 +20,9 @@ node_modules
 
 # production
 /build
+/desktop/build.sh
 /desktop/src-tauri/target/
+/desktop/dist/
 /desktop/src-tauri/gen/
 
 # misc
