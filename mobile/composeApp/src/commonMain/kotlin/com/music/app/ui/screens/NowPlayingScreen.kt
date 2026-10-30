@@ -103,11 +103,6 @@ fun NowPlayingScreen() {
 private fun NowPlayingContent(track: Track) {
     val model = LocalAppModel.current
     val isPlaying by model.player.isPlaying.collectAsState()
-    val position by model.player.positionSec.collectAsStateWithLifecycle()
-
-    var dragValue by remember { mutableStateOf<Double?>(null) }
-    val duration = track.duration
-    val shownPosition = dragValue ?: position
 
     LaunchedEffect(track.id, track.hasWaveform) { model.loadWaveform(track) }
     val waveform = model.waveformFor(track)
@@ -236,7 +231,7 @@ private fun NowPlayingContent(track: Track) {
         }
 
         if (lyrics != null) {
-            LyricsStrip(lyrics, position = position, onClick = { lyricsOpen = true })
+            LyricsStrip(lyrics, onClick = { lyricsOpen = true })
             Spacer(Modifier.height(10.dp))
         }
 
@@ -281,22 +276,7 @@ private fun NowPlayingContent(track: Track) {
 
         Spacer(Modifier.height(8.dp))
 
-        SeekBar(
-            waveform = waveform,
-            expectWaveform = track.hasWaveform,
-            position = shownPosition,
-            duration = duration,
-            onPreview = { dragValue = it },
-            onSeek = {
-                model.seekTo(it)
-                dragValue = null
-            },
-        )
-        Row(Modifier.fillMaxWidth()) {
-            Text(formatDuration(shownPosition), style = MaterialTheme.typography.labelSmall, color = Zinc400)
-            Spacer(Modifier.weight(1f))
-            Text(formatDuration(duration), style = MaterialTheme.typography.labelSmall, color = Zinc400)
-        }
+        SeekSection(track, waveform)
 
         Spacer(Modifier.height(8.dp))
 
@@ -389,6 +369,34 @@ private fun NowPlayingContent(track: Track) {
 }
 
 private val PLACEHOLDER_PEAKS: List<Int> = List(200) { 6 }
+
+// Reads the playback position here rather than in NowPlayingContent, so only the seek bar
+// and the time redraw on every position tick, not the whole screen.
+@Composable
+private fun SeekSection(track: Track, waveform: List<Int>?) {
+    val model = LocalAppModel.current
+    val position by model.player.positionSec.collectAsStateWithLifecycle()
+    var dragValue by remember { mutableStateOf<Double?>(null) }
+    val duration = track.duration
+    val shownPosition = dragValue ?: position
+
+    SeekBar(
+        waveform = waveform,
+        expectWaveform = track.hasWaveform,
+        position = shownPosition,
+        duration = duration,
+        onPreview = { dragValue = it },
+        onSeek = {
+            model.seekTo(it)
+            dragValue = null
+        },
+    )
+    Row(Modifier.fillMaxWidth()) {
+        Text(formatDuration(shownPosition), style = MaterialTheme.typography.labelSmall, color = Zinc400)
+        Spacer(Modifier.weight(1f))
+        Text(formatDuration(duration), style = MaterialTheme.typography.labelSmall, color = Zinc400)
+    }
+}
 
 @Composable
 private fun SeekBar(

@@ -679,7 +679,7 @@ func (s *Server) handleUpdateTrack(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "update track", err)
 		return
 	}
-	s.forgetLookedUpLyrics(id)
+	s.forgetLyricsMiss(id)
 	t, _, _, ok := s.getTrack(w, r, u.ID, id)
 	if !ok {
 		return

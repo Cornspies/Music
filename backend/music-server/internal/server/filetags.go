@@ -74,7 +74,7 @@ func (s *Server) restoreFileTags(t *Track, filePath string, only map[string]bool
 		return nil, err
 	}
 	if title != t.Title || artist != t.Artist {
-		s.forgetLookedUpLyrics(t.ID)
+		s.forgetLyricsMiss(t.ID)
 	}
 	return restored, nil
 }

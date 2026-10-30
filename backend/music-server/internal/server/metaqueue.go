@@ -335,7 +335,7 @@ func (s *Server) autoApplyCandidate(ctx context.Context, t *Track, meta fileMeta
 	}
 	log.Printf("metadata queue: filled %s for %q from %s match %q by %q (confidence %.2f)",
 		strings.Join(filled, ", "), t.Title, best.source, best.title, best.artist, best.score)
-	s.forgetLookedUpLyrics(t.ID)
+	s.forgetLyricsMiss(t.ID)
 	if coverReplaced || (hasCover && !t.HasCover) {
 		go s.updateCoverColor(t.ID)
 	}

@@ -64,7 +64,7 @@ import com.music.app.ui.theme.lyricsSurface
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-private fun activeIndex(lines: List<LyricLine>, position: Double): Int {
+internal fun activeIndex(lines: List<LyricLine>, position: Double): Int {
     var idx = -1
     for ((i, l) in lines.withIndex()) {
         if (l.t <= position + 0.15) idx = i else break
