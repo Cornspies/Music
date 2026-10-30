@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -84,9 +85,34 @@ func (s *Server) writeLyricsRow(trackID string, row lyricsRow) error {
 	return err
 }
 
-func (s *Server) forgetLookedUpLyrics(trackID string) {
-	_, _ = s.db.Exec(`DELETE FROM lyrics WHERE track_id = ? AND source IN (?, ?)`,
-		trackID, lyricsSourceLRCLIB, lyricsSourceNone)
+// forgetLyricsMiss lets a track with no lyrics be looked up again, e.g. after its
+// title changed. Lyrics a track already has are kept, so it isn't looked up again.
+func (s *Server) forgetLyricsMiss(trackID string) {
+	_, _ = s.db.Exec(`DELETE FROM lyrics WHERE track_id = ? AND source = ?`, trackID, lyricsSourceNone)
+}
+
+// lyricsForNewAudio runs after a track's file is replaced: lyrics embedded in the new
+// file take over; otherwise the track keeps what it has.
+func (s *Server) lyricsForNewAudio(trackID, filePath string) {
+	text := embeddedLyrics(filePath)
+	if text == "" {
+		s.forgetLyricsMiss(trackID)
+		return
+	}
+	if err := s.writeLyricsRow(trackID, embeddedLyricsRow(text)); err != nil {
+		logErr("lyrics from new audio", err)
+	}
+}
+
+func embeddedLyricsRow(text string) lyricsRow {
+	row := lyricsRow{source: lyricsSourceEmbedded}
+	if lines := parseLRC(text); len(lines) > 0 {
+		row.synced = text
+		row.plain = plainFromLines(lines)
+	} else {
+		row.plain = text
+	}
+	return row
 }
 
 func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (*lyricsRow, error) {
@@ -102,17 +128,15 @@ func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (
 
 	fresh := lyricsRow{source: lyricsSourceNone}
 	if text := embeddedLyrics(filePath); text != "" {
-		fresh.source = lyricsSourceEmbedded
-		if lines := parseLRC(text); len(lines) > 0 {
-			fresh.synced = text
-			fresh.plain = plainFromLines(lines)
-		} else {
-			fresh.plain = text
-		}
+		fresh = embeddedLyricsRow(text)
 	} else if !lyricsLookupDisabled() {
 		hit, err := lrclibLookup(ctx, t)
 		if err != nil {
-			logErr("lyrics lookup", err)
+			// Busy or paused lrclib and requests the listener abandoned are retried
+			// on the next request; only other failures are worth reporting.
+			if !errors.Is(err, errLRCLIBPaused) && ctx.Err() == nil {
+				logErr("lyrics lookup", err)
+			}
 			return &fresh, nil
 		}
 		if hit != nil {
@@ -125,12 +149,22 @@ func (s *Server) resolveLyrics(ctx context.Context, t *Track, filePath string) (
 	return &fresh, nil
 }
 
+// errLRCLIBPaused means lrclib is busy or unreachable and lookups are paused for a while.
+var errLRCLIBPaused = errors.New("lrclib is paused")
+
 var lrclibBackoff struct {
 	sync.Mutex
 	until time.Time
+	next  time.Duration
 }
 
-const lrclibDefaultBackoff = 2 * time.Minute
+// lrclib asks for a retry within seconds when it is overloaded; waiting at least a
+// minute, and longer each time it is still busy, keeps a downloading phone from
+// hammering it.
+const (
+	lrclibMinBackoff = time.Minute
+	lrclibMaxBackoff = 30 * time.Minute
+)
 
 func lrclibAvailable() bool {
 	lrclibBackoff.Lock()
@@ -138,14 +172,34 @@ func lrclibAvailable() bool {
 	return time.Now().After(lrclibBackoff.until)
 }
 
-func lrclibPause(retryAfter string) {
-	d := lrclibDefaultBackoff
-	if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && secs > 0 {
-		d = time.Duration(secs) * time.Second
-	}
+// lrclibPause starts a pause unless one is running, returning how long it lasts (0 if one was).
+func lrclibPause(retryAfter string) time.Duration {
 	lrclibBackoff.Lock()
+	defer lrclibBackoff.Unlock()
+	if time.Now().Before(lrclibBackoff.until) {
+		return 0
+	}
+	d := max(lrclibBackoff.next, lrclibMinBackoff)
+	if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil {
+		d = max(d, time.Duration(secs)*time.Second)
+	}
+	d = min(d, lrclibMaxBackoff)
 	lrclibBackoff.until = time.Now().Add(d)
+	lrclibBackoff.next = min(2*d, lrclibMaxBackoff)
+	return d
+}
+
+func lrclibResume() {
+	lrclibBackoff.Lock()
+	lrclibBackoff.next = 0
 	lrclibBackoff.Unlock()
+}
+
+func lrclibPaused(why string, retryAfter string) error {
+	if d := lrclibPause(retryAfter); d > 0 {
+		log.Printf("lyrics lookup: %s, pausing lrclib lookups for %s", why, d)
+	}
+	return errLRCLIBPaused
 }
 
 func embeddedLyrics(path string) string {
@@ -177,7 +231,7 @@ func lrclibLookup(ctx context.Context, t *Track) (*lyricsRow, error) {
 		return nil, nil
 	}
 	if !lrclibAvailable() {
-		return nil, errors.New("lrclib is unavailable, waiting before asking again")
+		return nil, errLRCLIBPaused
 	}
 	q := url.Values{}
 	q.Set("track_name", t.Title)
@@ -185,8 +239,9 @@ func lrclibLookup(ctx context.Context, t *Track) (*lyricsRow, error) {
 	if t.Album != "" {
 		q.Set("album_name", t.Album)
 	}
-	if t.Duration > 0 {
-		q.Set("duration", strconv.Itoa(int(math.Round(t.Duration))))
+	// lrclib rejects durations outside 1–3600 s; longer mixes are looked up without one.
+	if d := int(math.Round(t.Duration)); d >= 1 && d <= 3600 {
+		q.Set("duration", strconv.Itoa(d))
 	}
 	var rec lrclibRecord
 	found, err := lrclibGet(ctx, "/get?"+q.Encode(), &rec)
@@ -255,17 +310,20 @@ func lrclibGet(ctx context.Context, pathAndQuery string, out any) (found bool, e
 	req.Header.Set("Accept", "application/json")
 	resp, err := metadataLookupClient.Do(req)
 	if err != nil {
-		lrclibPause("")
-		return false, err
+		if ctx.Err() != nil {
+			return false, err
+		}
+		return false, lrclibPaused(err.Error(), "")
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusOK:
+		lrclibResume()
 	case http.StatusNotFound:
+		lrclibResume()
 		return false, nil
 	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		lrclibPause(resp.Header.Get("Retry-After"))
-		return false, fmt.Errorf("lrclib: status %d (paused)", resp.StatusCode)
+		return false, lrclibPaused(fmt.Sprintf("lrclib answered %d", resp.StatusCode), resp.Header.Get("Retry-After"))
 	default:
 		return false, fmt.Errorf("lrclib: status %d", resp.StatusCode)
 	}

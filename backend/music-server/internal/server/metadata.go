@@ -295,7 +295,7 @@ func (s *Server) applyChosenCandidate(ctx context.Context, track *Track, chosen 
 	}
 
 	_, _ = s.db.Exec(`UPDATE metadata_jobs SET applied_id = ? WHERE track_id = ?`, chosen.id, id)
-	s.forgetLookedUpLyrics(id)
+	s.forgetLyricsMiss(id)
 	if len(meta.picture) > 0 && hasCover {
 		go s.updateCoverColor(id)
 	}

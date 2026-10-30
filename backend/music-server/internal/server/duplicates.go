@@ -525,7 +525,7 @@ func (s *Server) replaceTrackAudio(t *Track, oldRel string, up *pendingUpload) e
 	if altRel != "" && altRel != newRel {
 		os.Remove(filepath.Join(s.dataDir, altRel))
 	}
-	_, _ = s.db.Exec(`DELETE FROM lyrics WHERE track_id = ? AND source <> ?`, id, lyricsSourceManual)
+	s.lyricsForNewAudio(id, newAbs)
 
 	if !t.HasCover && len(up.meta.picture) > 0 && safeCoverBytes(up.meta.picture) {
 		if err := os.WriteFile(s.coverPath(id), shrinkCover(up.meta.picture), 0o644); err == nil {
