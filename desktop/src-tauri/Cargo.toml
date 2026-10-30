@@ -1,28 +1,26 @@
 [package]
 name = "music-desktop"
-version = "0.2.4"
+version = "0.3.0"
 description = "Music desktop app"
 edition = "2024"
 publish = false
 
 [build-dependencies]
-tauri-build = { version = "2.7.1", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2.12.1", features = ["tray-icon"] }
-tauri-plugin-opener = "2.7.0"
-# 2.6.2 doesn't build on Linux against rust-ini 0.21.3 (ParseOption gained
-# fields), and single-instance 2.5.4 requires it. Unpin once a fixed release is out.
-tauri-plugin-deep-link = "=2.6.1"
-tauri-plugin-single-instance = { version = "2.5.2", features = ["deep-link"] }
+tauri = { version = "2.12.5", features = ["tray-icon"] }
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-deep-link = "2.6.3"
+tauri-plugin-single-instance = { version = "2.5.5", features = ["deep-link"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 symphonia = { version = "0.6.1", features = ["mp3", "aac", "isomp4", "alac", "aiff"] }
 cpal = "0.18.2"
 rubato = "5.0.1"
-rtrb = "0.4.0"
-ureq = { version = "3.4.2", default-features = false, features = ["rustls", "platform-verifier"] }
-souvlaki = "0.8.3"
+rtrb = "0.4.1"
+ureq = { version = "3.5.0", default-features = false, features = ["rustls", "platform-verifier"] }
+souvlaki = "0.9.3"
 crossbeam-channel = "0.5.17"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
