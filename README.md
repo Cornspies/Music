@@ -122,10 +122,13 @@ and the script keeps the page and `music-maintenance` up to date.
 
 When `.env` sets `MUSIC_APK_DIR`, it also downloads the release's Windows
 installer into that folder (checked the same way), so the server offers it
-under "Other platforms" and desktop apps on Windows update to it. Older
-Windows installers there are removed; one of the same name but different
-contents, such as your own build, is kept. Running `music-update` when you're
-already on the latest release fetches it if it's missing.
+under "Other platforms" and desktop apps on Windows update to it. Set
+`MUSIC_UPDATE_APPS` in `.env` to fetch other builds as well: `android`,
+`appimage`, `deb`, `rpm` and `windows`, separated by commas, or `all` or
+`none`. Older builds of the same kind there are removed; one of the same name
+but different contents, such as your own build, is kept. Running
+`music-update` when you're already on the latest release fetches what's
+missing.
 
 `rollback` keeps the current database and switches between the two most
 recent releases, so running it again returns to the newer one. To install a

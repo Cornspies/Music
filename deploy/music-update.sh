@@ -12,8 +12,10 @@
 # goes back to the old release and the database from before. .env and data/
 # are kept. With the nginx maintenance page set up (music-maintenance), users
 # see "down for maintenance" in the meantime. When .env sets MUSIC_APK_DIR,
-# it also puts the release's Windows installer in that folder, where the
-# server offers it for download and as the desktop app's update.
+# it also puts the release's app builds in that folder, where the server
+# offers them for download and as the apps' update: the Windows installer, or
+# the kinds named in MUSIC_UPDATE_APPS in .env (android, appimage, deb, rpm,
+# windows, separated by commas; all; or none).
 #
 # Settings, as environment variables: MUSIC_DIR (default /opt/music),
 # MUSIC_SERVICE (music-server), MUSIC_REPO (Cornspies/Music) and
@@ -144,6 +146,29 @@ asset_digest() {
 		$2 == "digest" && name == want { sub(/^sha256:/, "", $4); print $4; exit }'
 }
 
+# Whether a file has the given SHA-256.
+sum_matches() {
+	printf '%s  %s\n' "$1" "$2" | sha256sum -c --quiet - >/dev/null 2>&1
+}
+
+# The app builds a release holds: the kind, an awk regex for its file in the
+# release, and the pattern of that kind's files in the app folder.
+app_kinds='android ^Music-[0-9A-Za-z._+-]+[.]apk$ Music-*.apk
+appimage ^Music_[0-9A-Za-z.+-]+_(amd64|x86_64)[.]AppImage$ Music_*.AppImage
+deb ^Music_[0-9A-Za-z.+-]+_amd64[.]deb$ Music_*.deb
+rpm ^Music-[0-9A-Za-z.+]+-[0-9]+[.]x86_64[.]rpm$ Music-*.rpm
+windows ^Music_[0-9A-Za-z.+-]+_x64-setup[.]exe$ Music_*_x64-setup.exe'
+
+# The kinds to keep in the app folder, from MUSIC_UPDATE_APPS in .env.
+wanted_apps() {
+	w=$(env_value MUSIC_UPDATE_APPS)
+	case ${w:-windows} in
+	all) echo "android appimage deb rpm windows" ;;
+	none) ;;
+	*) echo "$w" | tr ',' ' ' ;;
+	esac
+}
+
 maintenance_set=0
 maintenance_on() {
 	if ! command -v music-maintenance >/dev/null 2>&1 || [ ! -d "$maintenance_dir" ]; then return 0; fi
@@ -225,60 +250,79 @@ refresh_helpers() {
 	fi
 }
 
-# Puts the Windows installer from a release (its JSON in $1, its tag in $2) in
-# the app folder and removes older ones. A file of the same name with other
-# contents is kept: that's a build of your own. Problems only print a note, as
-# the server itself is up to date by then.
-fetch_windows_app() {
+# Puts one of a release's files (the release's JSON in $1, its tag in $2, the
+# file's name in $3) in the app folder. Fails when it isn't there afterwards:
+# a file of the same name with other contents is kept, as that's a build of
+# your own, and a download that fails or doesn't match its checksum is dropped.
+fetch_app() {
+	app_sum=$(printf '%s\n' "$1" | asset_digest "$3")
+	if [ -f "$apps/$3" ]; then
+		if sum_matches "$app_sum" "$apps/$3"; then
+			echo "$3 is in $apps."
+			return 0
+		fi
+		echo "Keeping $apps/$3, which differs from the one in $2 (your own build?)."
+		return 1
+	fi
+	echo "Downloading $3 to $apps"
+	partial=$apps/.$3.$$
+	if ! curl -fL --progress-bar -o "$partial" "https://github.com/$repo/releases/download/$2/$3"; then
+		rm -f "$partial"
+		partial=
+		echo "Couldn't download $3; run music-update again to retry." >&2
+		return 1
+	fi
+	if ! sum_matches "$app_sum" "$partial"; then
+		rm -f "$partial"
+		partial=
+		echo "$3 doesn't match its checksum on GitHub, so it wasn't added." >&2
+		return 1
+	fi
+	chmod 644 "$partial"
+	chown "$(stat -c %u:%g "$apps")" "$partial"
+	mv -f "$partial" "$apps/$3"
+	partial=
+}
+
+# Puts a release's app builds (its JSON in $1, its tag in $2) in the app
+# folder and removes older ones of the same kind. Problems only print a note,
+# as the server itself is up to date by then.
+fetch_apps() {
 	apps=$(apps_dir)
 	[ -n "$apps" ] || return 0
-	app=$(printf '%s\n' "$1" | asset_matching '^Music_[0-9A-Za-z.+-]+_x64-setup[.]exe$')
-	if [ -z "$app" ]; then
-		echo "Release $2 has no Windows installer; $apps is unchanged."
-		return 0
-	fi
-	app_sum=$(printf '%s\n' "$1" | asset_digest "$app")
+	wanted=$(wanted_apps)
+	[ -n "$wanted" ] || return 0
+	for kind in $wanted; do
+		case " android appimage deb rpm windows " in
+		*" $kind "*) ;;
+		*) echo "MUSIC_UPDATE_APPS names $kind, which isn't a kind of app (see .env.example)." >&2 ;;
+		esac
+	done
 	if [ ! -d "$apps" ]; then
 		mkdir -p "$apps"
 		chown "$(stat -c %u:%g "$dir/music-server")" "$apps"
 	fi
-	if [ -f "$apps/$app" ]; then
-		if printf '%s  %s\n' "$app_sum" "$apps/$app" | sha256sum -c --quiet - >/dev/null 2>&1; then
-			echo "The Windows installer $app is in $apps."
-		else
-			echo "Keeping $apps/$app, which differs from the one in $2 (your own build?)."
+	while read -r kind regex glob; do
+		case " $wanted " in
+		*" $kind "*) ;;
+		*) continue ;;
+		esac
+		app=$(printf '%s\n' "$1" | asset_matching "$regex")
+		if [ -z "$app" ]; then
+			echo "Release $2 has no $kind app; $apps keeps what it has."
+			continue
 		fi
-		return 0
-	fi
-	echo "Downloading the Windows installer $app to $apps"
-	partial=$apps/.$app.$$
-	if ! curl -fL --progress-bar -o "$partial" "https://github.com/$repo/releases/download/$2/$app"; then
-		rm -f "$partial"
-		partial=
-		echo "Couldn't download $app; run music-update again to retry." >&2
-		return 0
-	fi
-	if ! printf '%s  %s\n' "$app_sum" "$partial" | sha256sum -c --quiet - >/dev/null 2>&1; then
-		rm -f "$partial"
-		partial=
-		echo "$app doesn't match its checksum on GitHub, so it wasn't added." >&2
-		return 0
-	fi
-	chmod 644 "$partial"
-	chown "$(stat -c %u:%g "$apps")" "$partial"
-	mv -f "$partial" "$apps/$app"
-	partial=
-	v=${app#Music_}
-	v=${v%_x64-setup.exe}
-	for f in "$apps"/Music_*_x64-setup.exe; do
-		[ -f "$f" ] && [ "$f" != "$apps/$app" ] || continue
-		fv=${f##*/Music_}
-		fv=${fv%_x64-setup.exe}
-		if [ "$(printf '%s\n%s\n' "$fv" "$v" | sort -V | head -n 1)" = "$fv" ]; then
-			rm -f "$f"
-			echo "Removed the older ${f##*/}."
-		fi
-	done
+		fetch_app "$1" "$2" "$app" || continue
+		for f in "$apps"/$glob; do
+			[ -f "$f" ] && [ "$f" != "$apps/$app" ] || continue
+			if [ "$(printf '%s\n%s\n' "${f##*/}" "$app" | sort -V | head -n 1)" = "${f##*/}" ]; then
+				rm -f "$f"
+				echo "Removed the older ${f##*/}."
+			fi
+		done
+	done <<KINDS
+$app_kinds
+KINDS
 }
 
 install_release() {
@@ -304,7 +348,7 @@ install_release() {
 		[ -n "$tag" ] || die "couldn't read the release from GitHub."
 		if [ "$src" = latest ] && [ "$tag" = "$old" ]; then
 			echo "Already on $tag, the latest release."
-			fetch_windows_app "$json" "$tag"
+			fetch_apps "$json" "$tag"
 			return 0
 		fi
 		asset=Music-server-$tag-linux-$arch.tar.gz
@@ -313,7 +357,7 @@ install_release() {
 		echo "Downloading $asset"
 		curl -fL --progress-bar -o "$bundle" "https://github.com/$repo/releases/download/$tag/$asset" ||
 			die "the download failed; nothing was changed."
-		printf '%s  %s\n' "$sum" "$bundle" | sha256sum -c --quiet - >/dev/null 2>&1 ||
+		sum_matches "$sum" "$bundle" ||
 			die "$asset doesn't match its checksum on GitHub; nothing was changed."
 	fi
 
@@ -363,7 +407,10 @@ install_release() {
 		echo "Updated to $tag. The database from before is in $backup."
 		if [ "$old" = unknown ]; then old="the release before"; fi
 		echo "music-update rollback switches back to $old."
-		if [ -n "$json" ]; then fetch_windows_app "$json" "$tag"; fi
+		if [ -n "$json" ]; then
+			echo "What's new: https://github.com/$repo/releases/tag/$tag"
+			fetch_apps "$json" "$tag"
+		fi
 		return 0
 	fi
 
@@ -406,6 +453,10 @@ status() {
 	latest=$(release_json latest 2>/dev/null | json_tag || true)
 	if [ -z "$latest" ]; then latest="unknown, GitHub didn't answer"; fi
 	echo "Latest:    $latest"
+	case $latest in
+	unknown* | "$(installed)") ;;
+	*) echo "           sudo music-update installs it" ;;
+	esac
 	if [ -x "$dir/previous/music-server" ]; then
 		echo "Previous:  $(head -n 1 "$dir/previous/RELEASE" 2>/dev/null || echo unknown) (music-update rollback)"
 	fi
@@ -416,12 +467,16 @@ status() {
 	fi
 	apps=$(apps_dir)
 	if [ -n "$apps" ]; then
-		exe=$(ls -1 "$apps"/Music_*_x64-setup.exe 2>/dev/null | sort -V | tail -n 1)
-		if [ -n "$exe" ]; then
-			echo "Windows:   ${exe##*/} in $apps"
-		else
-			echo "Windows:   no installer in $apps"
-		fi
+		label="Apps:     "
+		while read -r kind regex glob; do
+			newest=$(ls -1 "$apps"/$glob 2>/dev/null | sort -V | tail -n 1)
+			[ -n "$newest" ] || continue
+			echo "$label ${newest##*/}"
+			label="          "
+		done <<KINDS
+$app_kinds
+KINDS
+		if [ "$label" = "Apps:     " ]; then echo "$label none in $apps"; fi
 	fi
 }
 
