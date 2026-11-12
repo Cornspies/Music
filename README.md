@@ -306,7 +306,7 @@ To publish a release, push a tag:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-The Release workflow tests the server, builds the desktop installers, a
+The Release workflow builds the desktop installers, a
 signed Android APK and the server bundles (server plus web app) for Linux and
 Windows, and publishes them as a GitHub release. The notes are the tagged
 commit's message, or GitHub's generated notes when it has no body; a tag with
