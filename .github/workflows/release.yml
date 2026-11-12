@@ -1,16 +1,22 @@
+# Pushing a tag like v0.2.0 checks the server and the web app, builds
+# everything that ships and publishes a GitHub release with the files: the
+# server bundles (server plus web app) for Linux and Windows, the desktop
+# installers for Linux and Windows, and the signed Android APK. The release
+# notes are the tagged commit's message, or GitHub's generated notes when the
+# message has no body. A tag with a hyphen (v0.2.0-rc1) becomes a pre-release.
+#
+# It needs the repository secrets ANDROID_KEYSTORE_BASE64 (base64 -w0 of the
+# keystore), ANDROID_STORE_PASSWORD, ANDROID_KEY_ALIAS and
+# ANDROID_KEY_PASSWORD, and reads the repository variables
+# MUSIC_DEFAULT_SERVER and MUSIC_HOST.
+#
+# The actions are pinned to commits (the tag is in the comment), so a tag
+# that's moved later can't change what builds a release.
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag, for example v0.4.4
-        required: true
-        type: string
-      draft:
-        description: Create the release as a draft, to review before publishing
-        type: boolean
-        default: true
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -18,70 +24,37 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ inputs.tag }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GH_REPO: ${{ github.repository }}
     steps:
-      - name: Check the tag
-        run: |
-          if ! [[ "$TAG" =~ ^v[0-9][0-9A-Za-z._-]*$ ]]; then
-            echo "The tag must look like v1.2.3" >&2
-            exit 1
-          fi
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "A release for $TAG already exists" >&2
-            exit 1
-          fi
-
-  desktop:
-    needs: check
-    uses: ./.github/workflows/desktop.yml
-
-  android:
-    needs: check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
-        with:
-          distribution: jetbrains
-          java-version: "21"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-      - name: Build the signed APK
-        working-directory: mobile
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check the Android signing secret
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          MUSIC_HOST: ${{ vars.MUSIC_HOST }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "The ANDROID_KEYSTORE_BASE64 secret is not set" >&2
+            echo "::error::The ANDROID_KEYSTORE_BASE64 secret is not set"
             exit 1
           fi
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
-          ./gradlew :androidApp:releaseApk --no-daemon \
-            -Pmusic.storeFile="$RUNNER_TEMP/release.jks" \
-            -PmusicHost="$MUSIC_HOST"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          name: Music-Android
-          path: mobile/dist/Music-*.apk
-          if-no-files-found: error
+          go-version-file: backend/music-server/go.mod
+          cache-dependency-path: backend/music-server/go.sum
+      - name: Server tests
+        working-directory: backend/music-server
+        run: go vet ./... && go test ./...
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      - name: Web type check
+        run: bunx tsc --noEmit
 
   web:
     needs: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
-      - run: bun run build:static
-      - uses: actions/upload-artifact@v7
+      - run: bun run build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: static-web
           path: out
@@ -100,12 +73,12 @@ jobs:
           - goos: windows
             goarch: amd64
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: backend/music-server/go.mod
           cache-dependency-path: backend/music-server/go.sum
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: static-web
           path: web-build
@@ -114,20 +87,19 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-          TAG: ${{ inputs.tag }}
         run: |
-          name="Music-server-$TAG-$GOOS-$GOARCH"
+          name="Music-server-$GITHUB_REF_NAME-$GOOS-$GOARCH"
           ext=""
           if [ "$GOOS" = windows ]; then ext=".exe"; fi
           mkdir -p "dist/$name"
           cp -r web-build "dist/$name/web"
           cp .env.example LICENSE "dist/$name/"
-          echo "$TAG" > "dist/$name/RELEASE"
+          echo "$GITHUB_REF_NAME" > "dist/$name/RELEASE"
           if [ "$GOOS" = linux ]; then cp deploy/music-server.service deploy/music-update.sh "dist/$name/" && cp -r deploy/nginx "dist/$name/nginx"; fi
           (cd backend/music-server && go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/dist/$name/music-server$ext" .)
           cd dist
           if [ "$GOOS" = windows ]; then zip -qr "$name.zip" "$name"; else tar -czf "$name.tar.gz" "$name"; fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: Music-server-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -135,26 +107,105 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
+  desktop:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: Linux
+          - os: windows-latest
+            name: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Install system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libasound2-dev libdbus-1-dev build-essential file patchelf
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: desktop-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: desktop
+      - run: bun run build
+        working-directory: desktop
+        env:
+          NEXT_PUBLIC_MUSIC_DEFAULT_SERVER: ${{ vars.MUSIC_DEFAULT_SERVER }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: Music-desktop-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/rpm/*.rpm
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+
+  android:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # gradle/gradle-daemon-jvm.properties asks for JetBrains Runtime 21,
+      # whose installer finds the version through the GitHub API.
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: jetbrains
+          java-version: "21"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # v5, not v6: v6 moved caching into a proprietary component under Gradle's terms of use.
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: Build the signed APK
+        working-directory: mobile
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MUSIC_HOST: ${{ vars.MUSIC_HOST }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          ./gradlew :androidApp:releaseApk --no-daemon \
+            -Pmusic.storeFile="$RUNNER_TEMP/release.jks" \
+            -PmusicHost="$MUSIC_HOST"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: Music-Android
+          path: mobile/dist/Music-*.apk
+          if-no-files-found: error
+
   release:
-    needs: [desktop, android, server]
+    needs: [server, desktop, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      TAG: ${{ inputs.tag }}
-      DRAFT: ${{ inputs.draft }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: Music-*
-          path: release-files
+          path: dist
           merge-multiple: true
-      - name: Create the release
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          mapfile -d '' files < <(find release-files -type f -print0)
-          args=()
-          if [ "$DRAFT" = "true" ]; then args+=(--draft); fi
-          gh release create "$TAG" "${files[@]}" \
-            --target "$GITHUB_SHA" --title "$TAG" --generate-notes "${args[@]}"
+          mapfile -d '' files < <(find dist -type f -print0)
+          git log -1 --format=%b "$GITHUB_REF_NAME^{commit}" > notes.md
+          notes=(--generate-notes)
+          if grep -q '[^[:space:]]' notes.md; then notes=(--notes-file notes.md); fi
+          prerelease=
+          case "$GITHUB_REF_NAME" in *-*) prerelease=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+            --title "$GITHUB_REF_NAME" "${notes[@]}" --verify-tag $prerelease

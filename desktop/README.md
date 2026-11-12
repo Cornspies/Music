@@ -40,8 +40,9 @@ forwards them to the local backend (`http://localhost:3001`) or to the server se
 screen has no server field in this mode.
 
 On Linux the build makes a `.deb`, an `.rpm` and an AppImage; on Windows an
-NSIS installer (`.exe`). The **Desktop** workflow in GitHub Actions (run by
-hand) builds both platforms and attaches the installers to the run.
+NSIS installer (`.exe`). The **Release** workflow in GitHub Actions builds
+both platforms when a tag is pushed and attaches the installers to the
+release.
 
 ## Server
 
@@ -49,7 +50,7 @@ The app asks for the server's address on the sign-in screen. To ship a build
 with yours already filled in, set `NEXT_PUBLIC_MUSIC_DEFAULT_SERVER` when
 building, for example
 `NEXT_PUBLIC_MUSIC_DEFAULT_SERVER=https://music.example.com bun run build`.
-The Desktop workflow reads it from the `MUSIC_DEFAULT_SERVER` repository
+The Release workflow reads it from the `MUSIC_DEFAULT_SERVER` repository
 variable (Settings → Secrets and variables → Actions → Variables). Plain
 `http://` is only accepted without a warning for local network addresses.
 

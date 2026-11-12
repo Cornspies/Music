@@ -43,6 +43,10 @@ func (r trimRule) ffmpegThreshold() string {
 	return strconv.FormatFloat(r.ThresholdDB, 'f', -1, 64) + "dB"
 }
 
+func (r trimRule) ffmpegMinSeconds() string {
+	return strconv.FormatFloat(r.MinSeconds, 'f', -1, 64)
+}
+
 func (s *Server) trimRule() trimRule {
 	raw, ok := s.getSetting(settingTrimRule)
 	if !ok {

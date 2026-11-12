@@ -488,12 +488,19 @@ func (y *ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, er
 	}
 	ext := strings.ToLower(filepath.Ext(matches[0]))
 
-	title, artist := strings.TrimSpace(info.Track), joinArtists(info.Artists)
-	artist = trimDefault(artist, info.Artist)
-	if title == "" || artist == "" {
-		a, t := parseYouTubeTitle(info.Title, trimDefault(info.Channel, info.Uploader))
-		title, artist = trimDefault(title, t), trimDefault(artist, a)
+	artists := info.Artists
+	if len(artists) == 0 && strings.TrimSpace(info.Artist) != "" {
+		artists = []string{info.Artist}
 	}
+	video := &videoNames{
+		Title:    info.Title,
+		Channel:  trimDefault(info.Channel, info.Uploader),
+		Track:    info.Track,
+		Artists:  artists,
+		Duration: info.Duration,
+	}
+	names := resolveVideoNames(*video, nil)
+	title, artist := names.title, tidyArtist(names.artist)
 	year := info.ReleaseYear
 	if year == 0 && len(info.UploadDate) >= 4 {
 		year, _ = strconv.Atoi(info.UploadDate[:4])
@@ -514,6 +521,7 @@ func (y *ytdlpSource) fetch(ctx context.Context, id string) (*sourceDownload, er
 		CoverURL:       cover,
 		SquareCover:    true,
 		LookupMetadata: false,
+		Video:          video,
 	}, nil
 }
 
@@ -574,13 +582,14 @@ func squareCrop(raw []byte) []byte {
 		return raw
 	}
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
-	if err != nil || cfg.Width == cfg.Height || int64(cfg.Width)*int64(cfg.Height) > maxAvatarPixels {
+	if err != nil || cfg.Width == cfg.Height {
 		return raw
 	}
-	src, _, err := image.Decode(bytes.NewReader(raw))
+	src, done, err := decodeImage(raw)
 	if err != nil {
 		return raw
 	}
+	defer done()
 	sub, ok := src.(interface {
 		SubImage(image.Rectangle) image.Image
 	})

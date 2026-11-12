@@ -25,7 +25,6 @@ import (
 const (
 	maxAvatarUploadBytes = 8 << 20
 	avatarSize           = 256
-	maxAvatarPixels      = 50_000_000
 )
 
 func (s *Server) avatarPath(userID string) string {
@@ -185,21 +184,11 @@ func parseCropRect(r *http.Request) cropRect {
 }
 
 func decodeSquareJPEG(raw []byte, crop cropRect, size int) ([]byte, error) {
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+	src, done, err := decodeImage(raw)
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Width <= 0 || cfg.Height <= 0 {
-		return nil, fmt.Errorf("empty image")
-	}
-	if int64(cfg.Width)*int64(cfg.Height) > maxAvatarPixels {
-		return nil, fmt.Errorf("image is too large (%dx%d)", cfg.Width, cfg.Height)
-	}
-
-	src, _, err := image.Decode(bytes.NewReader(raw))
-	if err != nil {
-		return nil, err
-	}
+	defer done()
 	b := src.Bounds()
 	if b.Dx() <= 0 || b.Dy() <= 0 {
 		return nil, fmt.Errorf("empty image")

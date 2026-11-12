@@ -3,25 +3,68 @@ package server
 import (
 	"database/sql"
 	"fmt"
+	"runtime"
 
 	_ "modernc.org/sqlite"
 )
 
-func openDB(path string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)", path)
-	db, err := sql.Open("sqlite", dsn)
+type database struct {
+	write *sql.DB
+	read  *sql.DB
+}
+
+func (d *database) Exec(query string, args ...any) (sql.Result, error) {
+	return d.write.Exec(query, args...)
+}
+
+func (d *database) Begin() (*sql.Tx, error) { return d.write.Begin() }
+
+func (d *database) Query(query string, args ...any) (*sql.Rows, error) {
+	return d.read.Query(query, args...)
+}
+
+func (d *database) QueryRow(query string, args ...any) *sql.Row {
+	return d.read.QueryRow(query, args...)
+}
+
+func (d *database) Close() error {
+	rerr := d.read.Close()
+	if err := d.write.Close(); err != nil {
+		return err
+	}
+	return rerr
+}
+
+func openDB(path string) (*database, error) {
+	base := fmt.Sprintf("file:%s?_pragma=busy_timeout(10000)&_pragma=foreign_keys(ON)", path)
+	write, err := sql.Open("sqlite", base+"&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(0)
+	write.SetMaxOpenConns(1)
+	write.SetMaxIdleConns(1)
+	write.SetConnMaxLifetime(0)
 
-	if err := createSchema(db); err != nil {
-		db.Close()
+	if err := createSchema(write); err != nil {
+		write.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
-	return db, nil
+
+	read, err := sql.Open("sqlite", base+"&_pragma=query_only(1)")
+	if err != nil {
+		write.Close()
+		return nil, fmt.Errorf("open sqlite for reading: %w", err)
+	}
+	readers := min(max(runtime.NumCPU(), 2), 8)
+	read.SetMaxOpenConns(readers)
+	read.SetMaxIdleConns(readers)
+	read.SetConnMaxLifetime(0)
+	if err := read.Ping(); err != nil {
+		read.Close()
+		write.Close()
+		return nil, fmt.Errorf("open sqlite for reading: %w", err)
+	}
+	return &database{write: write, read: read}, nil
 }
 
 func createSchema(db *sql.DB) error {
@@ -85,6 +128,7 @@ var schema = []string{
 	`CREATE INDEX IF NOT EXISTS idx_tracks_updated ON tracks(updated_at)`,
 	`CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks(source, source_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_tracks_hash ON tracks(file_hash)`,
+	`CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album)`,
 	`CREATE TABLE IF NOT EXISTS playlists (
                 id            TEXT PRIMARY KEY,
                 user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -790,28 +790,6 @@ func parseISO8601Duration(s string) float64 {
 	return atoi(m[1])*86400 + atoi(m[2])*3600 + atoi(m[3])*60 + atoi(m[4])
 }
 
-var youtubeNoiseRe = regexp.MustCompile(`(?i)[\(\[][^\)\]]*(official|lyric|audio|video|hd|hq|4k|remaster|visualizer|mv|m/v|full album|free download|explicit|clean)[^\)\]]*[\)\]]`)
-
-var youtubeChannelSuffixRe = regexp.MustCompile(`(?i)\s*-\s*topic\s*$`)
-
-func parseYouTubeTitle(videoTitle, channelTitle string) (artist, title string) {
-	clean := youtubeNoiseRe.ReplaceAllString(videoTitle, " ")
-	clean = strings.Join(strings.Fields(clean), " ")
-	clean = strings.Trim(clean, " -–—|")
-
-	channel := youtubeChannelSuffixRe.ReplaceAllString(strings.TrimSpace(channelTitle), "")
-
-	parts := filenameSepRe.Split(clean, -1)
-	if len(parts) >= 2 {
-		a := strings.TrimSpace(parts[0])
-		t := strings.TrimSpace(strings.Join(parts[1:], " - "))
-		if a != "" && t != "" {
-			return a, t
-		}
-	}
-	return channel, clean
-}
-
 const maxArtworkBytes = 8 << 20
 
 func fetchArtwork(ctx context.Context, artworkURL string) ([]byte, error) {

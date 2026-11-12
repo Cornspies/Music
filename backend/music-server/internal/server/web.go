@@ -3,13 +3,16 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"mime"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -18,21 +21,54 @@ import (
 //go:embed web-headers.json
 var webHeadersJSON []byte
 
+type webHeaderSpec struct {
+	ContentSecurityPolicy [][]string  `json:"contentSecurityPolicy"`
+	Headers               [][2]string `json:"headers"`
+}
+
 var webHeaders = loadWebHeaders()
 
-func loadWebHeaders() [][2]string {
-	var spec struct {
-		ContentSecurityPolicy [][]string  `json:"contentSecurityPolicy"`
-		Headers               [][2]string `json:"headers"`
-	}
+func loadWebHeaders() webHeaderSpec {
+	var spec webHeaderSpec
 	if err := json.Unmarshal(webHeadersJSON, &spec); err != nil {
 		panic("web-headers.json: " + err.Error())
 	}
-	directives := make([]string, 0, len(spec.ContentSecurityPolicy))
-	for _, d := range spec.ContentSecurityPolicy {
+	return spec
+}
+
+func (s webHeaderSpec) policy(scriptHashes []string) string {
+	directives := make([]string, 0, len(s.ContentSecurityPolicy))
+	for _, d := range s.ContentSecurityPolicy {
+		if len(d) > 0 && d[0] == "script-src" {
+			d = append(append([]string{}, d...), scriptHashes...)
+		}
 		directives = append(directives, strings.Join(d, " "))
 	}
-	return append([][2]string{{"Content-Security-Policy", strings.Join(directives, "; ")}}, spec.Headers...)
+	return strings.Join(directives, "; ")
+}
+
+var basePolicy = webHeaders.policy(nil)
+
+var (
+	scriptTagRe = regexp.MustCompile(`(?is)<script\b([^>]*)>(.*?)</script\s*>`)
+	scriptSrcRe = regexp.MustCompile(`(?i)(^|\s)src\s*=`)
+)
+
+func inlineScriptHashes(page []byte) []string {
+	var hashes []string
+	seen := map[string]bool{}
+	for _, m := range scriptTagRe.FindAllSubmatch(page, -1) {
+		if scriptSrcRe.Match(m[1]) || len(m[2]) == 0 {
+			continue
+		}
+		sum := sha256.Sum256(m[2])
+		hash := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+		if !seen[hash] {
+			seen[hash] = true
+			hashes = append(hashes, hash)
+		}
+	}
+	return hashes
 }
 
 var webTypes = map[string]string{
@@ -48,9 +84,16 @@ var compressible = map[string]bool{
 }
 
 type webApp struct {
-	root string
-	mu   sync.Mutex
-	gz   map[string]gzEntry
+	root     string
+	mu       sync.Mutex
+	gz       map[string]gzEntry
+	policies map[string]policyEntry
+}
+
+type policyEntry struct {
+	mod    time.Time
+	size   int64
+	policy string
 }
 
 type gzEntry struct {
@@ -61,7 +104,7 @@ type gzEntry struct {
 }
 
 func newWebApp(root string) *webApp {
-	return &webApp{root: root, gz: map[string]gzEntry{}}
+	return &webApp{root: root, gz: map[string]gzEntry{}, policies: map[string]policyEntry{}}
 }
 
 func (a *webApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,10 +120,15 @@ func (a *webApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h := w.Header()
-	for _, kv := range webHeaders {
+	ext := strings.ToLower(filepath.Ext(full))
+	if ext == ".html" {
+		h.Set("Content-Security-Policy", a.pagePolicy(full, info))
+	} else {
+		h.Set("Content-Security-Policy", basePolicy)
+	}
+	for _, kv := range webHeaders.Headers {
 		h.Set(kv[0], kv[1])
 	}
-	ext := strings.ToLower(filepath.Ext(full))
 	switch {
 	case webTypes[ext] != "":
 		h.Set("Content-Type", webTypes[ext])
@@ -136,6 +184,24 @@ func (a *webApp) file(name string) (string, os.FileInfo, bool) {
 		return "", nil, false
 	}
 	return full, info, true
+}
+
+func (a *webApp) pagePolicy(full string, info os.FileInfo) string {
+	a.mu.Lock()
+	cached, ok := a.policies[full]
+	a.mu.Unlock()
+	if ok && cached.size == info.Size() && cached.mod.Equal(info.ModTime()) {
+		return cached.policy
+	}
+	page, err := os.ReadFile(full)
+	if err != nil {
+		return basePolicy
+	}
+	policy := webHeaders.policy(inlineScriptHashes(page))
+	a.mu.Lock()
+	a.policies[full] = policyEntry{mod: info.ModTime(), size: info.Size(), policy: policy}
+	a.mu.Unlock()
+	return policy
 }
 
 func (a *webApp) gzipped(full string, info os.FileInfo) ([]byte, bool) {

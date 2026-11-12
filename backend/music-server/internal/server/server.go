@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,7 +20,7 @@ import (
 )
 
 type Server struct {
-	db      *sql.DB
+	db      *database
 	secret  []byte
 	dataDir string
 	upDir   string
@@ -261,7 +260,13 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 	logMW := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
-		next.ServeHTTP(sw, r)
+		if acceptsGzip(r) && strings.HasPrefix(r.URL.Path, "/api/") {
+			gz := &gzipResponseWriter{ResponseWriter: sw}
+			next.ServeHTTP(gz, r)
+			gz.finish()
+		} else {
+			next.ServeHTTP(sw, r)
+		}
 		positionSave := r.Method == http.MethodPut && r.URL.Path == "/api/playback" && sw.code < 400
 		listenPoll := r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/listen/") &&
 			strings.Count(r.URL.Path, "/") == 3 && sw.code < 400

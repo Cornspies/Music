@@ -3,6 +3,7 @@ package com.music.app.player
 import kotlinx.coroutines.flow.StateFlow
 
 data class NowPlayingInfo(
+    val id: String = "",
     val title: String,
     val artist: String,
     val album: String = "",

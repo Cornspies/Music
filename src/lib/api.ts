@@ -50,6 +50,7 @@ import type {
 import { useAuthStore } from "@/stores/auth"
 import { currentMediaToken } from "@/stores/media-token"
 import { apiUrl, publicUrl } from "@/lib/desktop"
+import { coverVersion } from "@/lib/covers"
 import { type ServerDown, serverDownFrom, serverDownMessage, useServerStatusStore } from "@/stores/server-status"
 
 
@@ -158,7 +159,9 @@ function browserCanPlay(track: Pick<Track, "mimeType" | "hasCompatible">): boole
 export type CoverSize = 32 | 128 | 256 | 512
 
 export function coverUrl(track: { id: string }, size?: CoverSize): string {
-  return withToken(`/api/tracks/${track.id}/cover${size ? `?size=${size}` : ""}`)
+  const version = coverVersion(track.id)
+  const query = [size ? `size=${size}` : "", version ? `v=${encodeURIComponent(version)}` : ""].filter(Boolean).join("&")
+  return withToken(`/api/tracks/${track.id}/cover${query ? `?${query}` : ""}`)
 }
 
 export function candidateArtworkUrl(trackId: string, candidateId: string): string {

@@ -2,7 +2,9 @@ package com.music.app
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DeepLinksTest {
 
@@ -56,5 +58,13 @@ class DeepLinksTest {
         DeepLinks.handle("cornspies-music://open?url=javascript%3Aalert(1)")
         assertNull(DeepLinks.linkServer)
         assertNull(DeepLinks.pendingPlaylistId)
+    }
+
+    @Test
+    fun comparesServersLooselyButNotAcrossHosts() {
+        assertTrue(DeepLinks.sameServer("https://Music.Example.org:443/", "https://music.example.org"))
+        assertTrue(DeepLinks.sameServer("http://nas.local/music/", "http://nas.local/music"))
+        assertFalse(DeepLinks.sameServer("https://music.example.org", "https://music.example.org.evil.test"))
+        assertFalse(DeepLinks.sameServer("https://music.example.org", "http://music.example.org"))
     }
 }

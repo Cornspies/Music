@@ -1,76 +1,36 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
-import webHeaders from "./backend/music-server/internal/server/web-headers.json";
 
 const API_HOST = process.env.MUSIC_API_HOST ?? "localhost";
 const API_PORT = process.env.MUSIC_API_PORT ?? "3001";
 const API_URL = process.env.MUSIC_API_URL ?? `http://${API_HOST}:${API_PORT}`;
 
-function contentSecurityPolicy(): string {
-  const dev = process.env.NODE_ENV !== "production";
-  return webHeaders.contentSecurityPolicy
-    .map(([name, ...sources]) => [name, ...sources, ...(dev && name === "script-src" ? ["'unsafe-eval'"] : [])].join(" "))
-    .join("; ");
-}
-
-const securityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy() },
-  ...webHeaders.headers.map(([key, value]) => ({ key, value })),
-];
-
 const desktop = process.env.NEXT_PUBLIC_MUSIC_DESKTOP === "1";
-const webStatic = process.env.MUSIC_WEB_STATIC === "1";
-const DESKTOP_DEV_SERVER = process.env.MUSIC_DESKTOP_DEV_SERVER ?? API_URL;
+const DEV_API = desktop ? (process.env.MUSIC_DESKTOP_DEV_SERVER ?? API_URL) : API_URL;
 
-const desktopConfig: NextConfig = {
-  output: "export",
-  distDir: ".next-desktop",
+const shared: NextConfig = {
   reactStrictMode: false,
-  experimental: { turbopackFileSystemCacheForBuild: false },
+  ...(desktop ? { distDir: ".next-desktop" } : {}),
 };
 
-const staticWebConfig: NextConfig = {
-  output: "export",
-  reactStrictMode: false,
-  experimental: { turbopackFileSystemCacheForBuild: false },
-};
-
-const desktopDevConfig: NextConfig = {
-  distDir: ".next-desktop",
-  reactStrictMode: false,
+const devConfig: NextConfig = {
+  ...shared,
   async rewrites() {
     return [
       {
         source: "/api/:path*",
-        destination: `${DESKTOP_DEV_SERVER}/api/:path*`,
+        destination: `${DEV_API}/api/:path*`,
       },
     ];
   },
 };
 
-const webConfig: NextConfig = {
-  output: "standalone",
-  reactStrictMode: false,
-  async headers() {
-    return [
-      { source: "/:path*", headers: securityHeaders },
-      {
-        source: "/.well-known/apple-app-site-association",
-        headers: [{ key: "Content-Type", value: "application/json" }],
-      },
-    ];
-  },
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${API_URL}/api/:path*`,
-      },
-    ];
-  },
+const exportConfig: NextConfig = {
+  ...shared,
+  output: "export",
+  experimental: { turbopackFileSystemCacheForBuild: false },
 };
 
 export default function config(phase: string): NextConfig {
-  if (desktop) return phase === PHASE_DEVELOPMENT_SERVER ? desktopDevConfig : desktopConfig;
-  return webStatic && phase !== PHASE_DEVELOPMENT_SERVER ? staticWebConfig : webConfig;
+  return phase === PHASE_DEVELOPMENT_SERVER ? devConfig : exportConfig;
 }

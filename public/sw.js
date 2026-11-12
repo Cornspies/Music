@@ -1,6 +1,10 @@
 const VERSION = "music-v3"
 const CACHE = VERSION
 const OFFLINE_CACHE = "music-offline-v1"
+const COVER_CACHE = "music-covers-v1"
+const COVER_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const COVER_MAX_ENTRIES = 2000
+const COVER_STAMP = "X-Cached-At"
 
 const STANDALONE_PAGES = ["/privacy"]
 
@@ -38,7 +42,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((k) => k !== CACHE && k !== OFFLINE_CACHE)
+            .filter((k) => k !== CACHE && k !== OFFLINE_CACHE && k !== COVER_CACHE)
             .map((k) => caches.delete(k))
         )
       )
@@ -103,6 +107,60 @@ async function serveOffline(req, cachedKey) {
   })
 }
 
+let coverPuts = 0
+
+function coverKey(id, size, version) {
+  return `/covers/${id}/${size || "full"}/${version || "-"}`
+}
+
+async function trimCovers(cache) {
+  const keys = await cache.keys()
+  for (let i = 0; i < keys.length - COVER_MAX_ENTRIES; i++) await cache.delete(keys[i])
+}
+
+async function storeCover(cache, id, size, version, res) {
+  const body = await res.blob()
+  await cache.put(
+    coverKey(id, size, version),
+    new Response(body, {
+      headers: {
+        "Content-Type": res.headers.get("Content-Type") || "image/jpeg",
+        "X-Content-Type-Options": "nosniff",
+        [COVER_STAMP]: String(Date.now()),
+      },
+    })
+  )
+  if (version) await cache.delete(coverKey(id, size, ""))
+  if (++coverPuts % 50 === 0) await trimCovers(cache)
+}
+
+async function serveCover(event, req, url, id) {
+  const size = url.searchParams.get("size") || ""
+  const version = url.searchParams.get("v") || ""
+  const cache = await caches.open(COVER_CACHE)
+  const key = coverKey(id, size, version)
+  const hit = await cache.match(key)
+  if (hit && (version || Date.now() - Number(hit.headers.get(COVER_STAMP)) < COVER_MAX_AGE_MS)) return hit
+
+  const offline = () => serveOffline(req, `/offline/cover/${id}`).catch(() => null)
+  if (!size || self.navigator.onLine === false) {
+    const local = await offline()
+    if (local) return local
+  }
+  try {
+    const res = await fetch(req)
+    if (res.status === 200) event.waitUntil(storeCover(cache, id, size, version, res.clone()).catch(() => {}))
+    else if (res.status === 404 && hit) event.waitUntil(cache.delete(key))
+    if (res.ok || res.status === 404 || !hit) return res
+    return hit
+  } catch (err) {
+    if (hit) return hit
+    const local = await offline()
+    if (local) return local
+    throw err
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request
 
@@ -121,9 +179,12 @@ self.addEventListener("fetch", (event) => {
 
   const media = STREAM_RE.exec(url.pathname)
   if (media && url.searchParams.get("offline") !== "bypass") {
-    const key = media[2] === "stream" ? `/offline/audio/${media[1]}` : `/offline/cover/${media[1]}`
+    if (media[2] === "cover") {
+      event.respondWith(serveCover(event, req, url, media[1]))
+      return
+    }
     event.respondWith(
-      serveOffline(req, key)
+      serveOffline(req, `/offline/audio/${media[1]}`)
         .catch(() => null)
         .then((res) => res || fetch(req))
     )

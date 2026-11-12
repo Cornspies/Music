@@ -13,7 +13,16 @@ use ureq::Agent;
 
 const PROGRESS_STEP: u64 = 256 * 1024;
 const FOLDER_NAME: &str = "Music offline";
-const OWN_EXTENSIONS: [&str; 6] = ["json", "audio", "part", "type", "cover", "covertype"];
+const OWN_EXTENSIONS: [&str; 8] = [
+    "json",
+    "audio",
+    "part",
+    "type",
+    "cover",
+    "covertype",
+    "thumb",
+    "thumbtype",
+];
 
 static DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
 
@@ -202,10 +211,12 @@ fn fetch(
     Ok(content_type)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn download(
     id: &str,
     url: &str,
     cover_url: Option<&str>,
+    thumb_url: Option<&str>,
     auth: &str,
     meta: &str,
     progress: &Channel<Progress>,
@@ -225,11 +236,18 @@ fn download(
     {
         let _ = fs::write(cover_type, content_type);
     }
+    if let Some(thumb_url) = thumb_url
+        && let Some(thumb) = path(id, "thumb")
+        && let Ok(Some(content_type)) = fetch(&agent, thumb_url, auth, &thumb, cancel, None)
+        && let Some(thumb_type) = path(id, "thumbtype")
+    {
+        let _ = fs::write(thumb_type, content_type);
+    }
     fs::write(path(id, "json").ok_or("invalid track")?, meta).map_err(|e| e.to_string())
 }
 
 fn remove_files(id: &str) {
-    for ext in ["json", "audio", "part", "type", "cover", "covertype"] {
+    for ext in OWN_EXTENSIONS {
         if let Some(file) = path(id, ext) {
             let _ = fs::remove_file(file);
         }
@@ -237,11 +255,13 @@ fn remove_files(id: &str) {
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn offline_download(
     downloads: State<'_, Downloads>,
     id: String,
     url: String,
     cover_url: Option<String>,
+    thumb_url: Option<String>,
     auth: String,
     meta: String,
     progress: Channel<Progress>,
@@ -257,6 +277,7 @@ pub fn offline_download(
         &id,
         &url,
         cover_url.as_deref(),
+        thumb_url.as_deref(),
         &auth,
         &meta,
         &progress,
@@ -278,6 +299,58 @@ pub fn offline_cancel(downloads: State<'_, Downloads>, id: String) {
     {
         cancel.store(true, Ordering::Relaxed);
     }
+}
+
+#[tauri::command(async)]
+pub fn offline_missing_thumbs() -> Vec<String> {
+    let Some(entries) = dir().and_then(|dir| fs::read_dir(dir).ok()) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|file| {
+            file.extension().is_some_and(|ext| ext == "cover")
+                && file.with_extension("audio").is_file()
+                && !file.with_extension("thumb").is_file()
+        })
+        .filter_map(|file| {
+            file.file_stem()
+                .and_then(|stem| stem.to_str())
+                .filter(|id| valid(id))
+                .map(String::from)
+        })
+        .collect()
+}
+
+#[tauri::command(async)]
+pub fn offline_thumb(
+    downloads: State<'_, Downloads>,
+    id: String,
+    url: String,
+    auth: String,
+) -> Result<(), String> {
+    let (Some(cover), Some(thumb)) = (path(&id, "cover"), path(&id, "thumb")) else {
+        return Err("invalid track".into());
+    };
+    if !cover.is_file() || thumb.is_file() {
+        return Ok(());
+    }
+    if downloads
+        .0
+        .lock()
+        .is_ok_and(|active| active.contains_key(&id))
+    {
+        return Ok(());
+    }
+    let cancel = AtomicBool::new(false);
+    let agent = crate::audio::http_agent();
+    if let Some(content_type) = fetch(&agent, &url, &auth, &thumb, &cancel, None)?
+        && let Some(thumb_type) = path(&id, "thumbtype")
+    {
+        let _ = fs::write(thumb_type, content_type);
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -361,14 +434,22 @@ fn safe_cover_mime(raw: &str) -> &'static str {
 
 pub fn cover(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
     let id = request.uri().path().trim_start_matches('/');
-    let found = path(id, "cover").and_then(|file| fs::read(file).ok());
-    let Some(bytes) = found else {
+    let small = request
+        .uri()
+        .query()
+        .is_some_and(|query| query.split('&').any(|pair| pair == "thumb=1"));
+    let read = |ext: &str| path(id, ext).and_then(|file| fs::read(file).ok());
+    let found = small
+        .then(|| read("thumb").map(|bytes| (bytes, "thumbtype")))
+        .flatten()
+        .or_else(|| read("cover").map(|bytes| (bytes, "covertype")));
+    let Some((bytes, type_ext)) = found else {
         return Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Vec::new())
             .unwrap_or_default();
     };
-    let stored_type = path(id, "covertype")
+    let stored_type = path(id, type_ext)
         .and_then(|file| fs::read_to_string(file).ok())
         .unwrap_or_default();
     Response::builder()

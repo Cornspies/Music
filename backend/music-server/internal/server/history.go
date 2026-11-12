@@ -71,16 +71,17 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		tracks  int
 		seconds float64
 	}
-	if err := s.db.QueryRow(`
-		SELECT COUNT(1), COUNT(DISTINCT pe.track_id), COALESCE(SUM(`+listenedExpr+`), 0)
-		FROM play_events pe JOIN tracks t ON t.id = pe.track_id
-		WHERE pe.user_id = ? AND pe.played_at > ? AND `+visibleTo("t.user_id"), u.ID, since, u.ID).
-		Scan(&totals.count, &totals.tracks, &totals.seconds); err != nil {
-		s.internalErr(w, "history totals", err)
-		return
-	}
-
 	beforeAt, beforeKey, _ := strings.Cut(strings.TrimSpace(q.Get("before")), "|")
+	if beforeAt == "" {
+		if err := s.db.QueryRow(`
+			SELECT COUNT(1), COUNT(DISTINCT pe.track_id), COALESCE(SUM(`+listenedExpr+`), 0)
+			FROM play_events pe JOIN tracks t ON t.id = pe.track_id
+			WHERE pe.user_id = ? AND pe.played_at > ? AND `+visibleTo("t.user_id"), u.ID, since, u.ID).
+			Scan(&totals.count, &totals.tracks, &totals.seconds); err != nil {
+			s.internalErr(w, "history totals", err)
+			return
+		}
+	}
 	var query string
 	var args []any
 	if distinct {
@@ -94,10 +95,11 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	} else {
 		eventID, _ := strconv.ParseInt(beforeKey, 10, 64)
 		query = trackSelect + `
-			JOIN play_events pe ON pe.track_id = t.id AND pe.user_id = ? AND pe.played_at > ?
-			WHERE ? = '' OR pe.played_at < ? OR (pe.played_at = ? AND pe.id < ?)
+			WHERE pe.user_id = ? AND pe.played_at > ?
+			  AND (? = '' OR pe.played_at < ? OR (pe.played_at = ? AND pe.id < ?))
 			ORDER BY pe.played_at DESC, pe.id DESC LIMIT ?`
-		query = strings.Replace(query, "\nFROM tracks t", ",\n       pe.played_at, CAST(pe.id AS TEXT)\nFROM tracks t", 1)
+		query = strings.Replace(query, "\nFROM tracks t",
+			",\n       pe.played_at, CAST(pe.id AS TEXT)\nFROM play_events pe CROSS JOIN tracks t ON t.id = pe.track_id", 1)
 		args = append(trackSelectArgs(u.ID), u.ID, since, beforeAt, beforeAt, beforeAt, eventID, limit)
 	}
 

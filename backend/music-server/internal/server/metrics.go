@@ -70,8 +70,18 @@ func (m *metrics) observe(r *http.Request, code int, elapsed time.Duration) {
 	if route == "" {
 		route = "unmatched"
 	}
-	m.requests.WithLabelValues(r.Method, route, strconv.Itoa(code)).Inc()
-	m.duration.WithLabelValues(r.Method, route).Observe(elapsed.Seconds())
+	method := metricMethod(r.Method)
+	m.requests.WithLabelValues(method, route, strconv.Itoa(code)).Inc()
+	m.duration.WithLabelValues(method, route).Observe(elapsed.Seconds())
+}
+
+func metricMethod(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return method
+	}
+	return "OTHER"
 }
 
 // MetricsHandler serves the Prometheus endpoint. With a token, scrapes must

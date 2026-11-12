@@ -177,6 +177,7 @@ export interface DiscoverResult {
   previewUrl?: string
   license?: string
   trackId?: string
+  similarTrackId?: string
 }
 
 export interface AudioQuality {

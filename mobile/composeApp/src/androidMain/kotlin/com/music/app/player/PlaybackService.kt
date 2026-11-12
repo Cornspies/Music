@@ -56,10 +56,27 @@ class PlaybackService : MediaSessionService() {
         )
         session = MediaSession.Builder(this, player)
             .setSessionActivity(openApp)
+            .setCallback(KnownControllers())
+            .setBitmapLoader(PrivateArtworkLoader(this))
             .build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    private inner class KnownControllers : MediaSession.Callback {
+        @OptIn(UnstableApi::class)
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val known = controller.packageName == packageName ||
+                controller.isTrusted ||
+                session.isMediaNotificationController(controller) ||
+                session.isAutomotiveController(controller) ||
+                session.isAutoCompanionController(controller)
+            return if (known) super.onConnect(session, controller) else MediaSession.ConnectionResult.reject()
+        }
+    }
 
     // ExoPlayer's default keeps exactly 50 s buffered, so it tops the buffer
     // up every few seconds and the radio never gets to sleep. Audio is small:

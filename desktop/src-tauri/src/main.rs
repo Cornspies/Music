@@ -63,6 +63,8 @@ fn main() {
             offline::offline_download,
             offline::offline_cancel,
             offline::offline_list,
+            offline::offline_missing_thumbs,
+            offline::offline_thumb,
             offline::offline_usage,
             offline::offline_update,
             offline::offline_remove,

@@ -1,10 +1,12 @@
 package server
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"music-server/internal/config"
@@ -16,6 +18,8 @@ const (
 	registrationMaxPerWindow = 3
 	authLimiterMaxKeys       = 10000
 	accountMaxFailures       = 10
+	knownClientTTL           = 30 * 24 * time.Hour
+	knownClientRefresh       = time.Hour
 )
 
 type attemptRecord struct {
@@ -117,6 +121,45 @@ func clearAccountFailures(key string) {
 	accountLimiter.clear(key)
 }
 
+type clientMemory struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+}
+
+var knownClients = &clientMemory{seen: map[string]time.Time{}}
+
+func knownClientKey(username string, r *http.Request) string {
+	return loginKey(strings.ToLower(username)) + "|" + limiterKey(r)
+}
+
+func noteKnownClient(username string, r *http.Request) {
+	key := knownClientKey(username, r)
+	now := time.Now()
+	c := knownClients
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if at, ok := c.seen[key]; ok && now.Sub(at) < knownClientRefresh {
+		return
+	}
+	if len(c.seen) >= authLimiterMaxKeys {
+		for k, at := range c.seen {
+			if now.Sub(at) > knownClientTTL || len(c.seen) >= authLimiterMaxKeys*9/10 {
+				delete(c.seen, k)
+			}
+		}
+	}
+	c.seen[key] = now
+}
+
+func isKnownClient(username string, r *http.Request) bool {
+	key := knownClientKey(username, r)
+	c := knownClients
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	at, ok := c.seen[key]
+	return ok && time.Since(at) < knownClientTTL
+}
+
 func loginKey(username string) string {
 	if len(username) > 64 {
 		username = username[:64]
@@ -138,6 +181,7 @@ func limiterKey(r *http.Request) string {
 func clientIP(r *http.Request) string {
 	peer := remoteHost(r.RemoteAddr)
 	if !isTrustedProxy(peer) {
+		warnUntrustedForwarder(peer, r)
 		return peer
 	}
 	candidates := forwardedChain(r)
@@ -177,7 +221,30 @@ func remoteHost(addr string) string {
 var (
 	trustedProxiesOnce sync.Once
 	trustedProxies     []*net.IPNet
+	forwardedIgnored   bool
+	untrustedWarned    sync.Map
+	untrustedWarnings  atomic.Int32
 )
+
+const maxUntrustedWarnings = 16
+
+func warnUntrustedForwarder(peer string, r *http.Request) {
+	if forwardedIgnored || (r.Header.Get("X-Forwarded-For") == "" && r.Header.Get("X-Real-IP") == "") {
+		return
+	}
+	ip := net.ParseIP(strings.Trim(peer, "[]"))
+	if ip == nil || !ip.IsPrivate() {
+		return
+	}
+	if untrustedWarnings.Load() >= maxUntrustedWarnings {
+		return
+	}
+	if _, seen := untrustedWarned.LoadOrStore(peer, true); seen {
+		return
+	}
+	untrustedWarnings.Add(1)
+	log.Printf("WARNING sign-in rate limit: ignoring X-Forwarded-For from %s. If that is your reverse proxy, add it to MUSIC_TRUSTED_PROXIES; otherwise everyone behind it shares one limit", peer)
+}
 
 func isTrustedProxy(host string) bool {
 	trustedProxiesOnce.Do(loadTrustedProxies)
@@ -196,10 +263,11 @@ func isTrustedProxy(host string) bool {
 func loadTrustedProxies() {
 	raw := strings.TrimSpace(config.Value("MUSIC_TRUSTED_PROXIES"))
 	if strings.EqualFold(raw, "none") {
+		forwardedIgnored = true
 		return
 	}
 	if raw == "" {
-		raw = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+		raw = "127.0.0.0/8,::1/128"
 	}
 	for _, entry := range strings.Split(raw, ",") {
 		entry = strings.TrimSpace(entry)

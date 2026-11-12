@@ -223,8 +223,8 @@ Kotlin Framework" phase runs `./gradlew :composeApp:embedAndSignAppleFrameworkFo
 before the Swift sources build.
 
 **No Mac?** `.github/workflows/ios.yml` does the same on a GitHub-hosted macOS
-runner and uploads the simulator build as an artifact. Like every workflow
-here it runs only when started from the Actions tab (**Run workflow**) —
+runner and uploads the simulator build as an artifact. It runs only when
+started from the Actions tab (**Run workflow**) —
 macOS minutes are billed at 10x. To get the app onto an iPhone, see
 [TestFlight](#testflight) below.
 

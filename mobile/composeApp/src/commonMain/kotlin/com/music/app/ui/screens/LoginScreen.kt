@@ -52,11 +52,12 @@ fun LoginScreen() {
 
     val linkedInvite = remember { DeepLinks.consumeInvite() }
     var registerMode by remember { mutableStateOf(linkedInvite != null) }
-    var serverUrl by remember { mutableStateOf(DeepLinks.linkServer ?: model.api.baseUrl) }
-    // A link opened while signed out names its server; sign in there.
+    val savedServer = remember { model.api.baseUrl }
     val linkServer = DeepLinks.linkServer
+    val otherServer = linkServer?.takeIf { savedServer.isNotBlank() && !DeepLinks.sameServer(it, savedServer) }
+    var serverUrl by remember { mutableStateOf(if (otherServer == null) linkServer ?: savedServer else savedServer) }
     LaunchedEffect(linkServer) {
-        if (linkServer != null) serverUrl = linkServer
+        if (linkServer != null && otherServer == null) serverUrl = linkServer
     }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -131,6 +132,19 @@ fun LoginScreen() {
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        if (otherServer != null && !DeepLinks.sameServer(otherServer, serverUrl)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "The link you opened is for ${otherServer.substringAfter("://").substringBefore('/')}, a different server.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { serverUrl = otherServer }) {
+                    Text("Use it", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
             value = username,

@@ -79,6 +79,8 @@ object DeepLinks {
         return server.substringAfter("://").substringBefore('/')
     }
 
+    fun sameServer(a: String, b: String): Boolean = normalized(a) == normalized(b)
+
     private fun unwrap(url: String?): String? {
         val raw = url?.trim().orEmpty()
         if (!raw.startsWith("$APP_SCHEME://", ignoreCase = true)) return raw.ifEmpty { null }

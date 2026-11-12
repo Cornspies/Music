@@ -133,11 +133,11 @@ actual class PlayerController actual constructor() {
                 setTitle(info.title)
                 setArtist(info.artist)
                 setAlbumTitle(info.album.ifBlank { null })
-                setArtworkUri(info.artworkUrl?.let(Uri::parse))
+                setArtworkUri(info.artworkUrl?.let(ArtworkLinks::publish))
                 if (info.durationSec > 0) setDurationMs((info.durationSec * 1000).toLong())
             }
         }.build()
-        val item = MediaItem.Builder().setUri(uri).setMediaId(url).setMediaMetadata(metadata).build()
+        val item = MediaItem.Builder().setUri(uri).setMediaId(info?.id.orEmpty()).setMediaMetadata(metadata).build()
         loadedItem = item
         playRequested = autoplay
         withController { c ->

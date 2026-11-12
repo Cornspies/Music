@@ -33,7 +33,7 @@ func (s *Server) handleTrackCopies(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	artist := dropPlaceholder(t.Artist, "Unknown Artist")
-	for _, m := range s.findSameSong(u.ID, t.Title, artist, t.Duration, true, artist != "") {
+	for _, m := range s.findSameSong(u.ID, songQuery{title: t.Title, artist: artist, duration: t.Duration}, false) {
 		c := m.Track
 		add(&c)
 	}

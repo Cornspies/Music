@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
-	"image"
 	"os"
 	"path/filepath"
 )
@@ -12,14 +10,11 @@ func dominantColor(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
 	}
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
-	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxAvatarPixels {
-		return ""
-	}
-	img, _, err := image.Decode(bytes.NewReader(raw))
+	img, done, err := decodeImage(raw)
 	if err != nil {
 		return ""
 	}
+	defer done()
 	b := img.Bounds()
 	step := max(1, int(float64(max(b.Dx(), b.Dy()))/100))
 

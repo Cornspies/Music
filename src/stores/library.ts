@@ -17,6 +17,7 @@ import { usePlayerStore } from "@/stores/player"
 import { useMediaTokenStore } from "@/stores/media-token"
 import { useOfflineStore } from "@/stores/offline"
 import { loadUserPrefs } from "@/stores/ui"
+import { noteCoverVersions } from "@/lib/covers"
 
 export type TrackSort = "created" | "title" | "artist" | "plays" | "recent"
 
@@ -424,6 +425,10 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     })
   },
 }))
+
+useLibraryStore.subscribe((s, prev) => {
+  if (s.tracks !== prev.tracks) noteCoverVersions(s.tracks)
+})
 
 export async function addTracksWithToast(playlist: { id: string; name: string }, tracks: Track[]): Promise<boolean> {
   const r = await useLibraryStore.getState().addTracksToPlaylist(

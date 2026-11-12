@@ -47,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.Brush
@@ -559,6 +560,8 @@ private fun ImportCard(job: PlaylistImport, onOpen: (String) -> Unit, onCancel: 
     }
 }
 
+private val SimilarAmber = Color(0xFFFCD34D)
+
 @Composable
 private fun DiscoverRow(source: String, result: DiscoverResult) {
     val model = LocalAppModel.current
@@ -566,6 +569,8 @@ private fun DiscoverRow(source: String, result: DiscoverResult) {
     var adding by remember(result.id) { mutableStateOf(false) }
     var error by remember(result.id) { mutableStateOf<String?>(null) }
     val inLibrary = result.trackId != null
+    val similarId = result.similarTrackId.takeIf { !inLibrary }
+    val similar = remember(similarId, model.tracks) { similarId?.let { id -> model.tracks?.firstOrNull { it.id == id } } }
 
     Row(
         Modifier
@@ -609,6 +614,16 @@ private fun DiscoverRow(source: String, result: DiscoverResult) {
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
+            if (similarId != null) {
+                Text(
+                    similar?.let { "Looks like “${it.title}” by ${it.artist}, already in your library" }
+                        ?: "A similar song is already in your library",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = SimilarAmber,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
             error?.let {
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, maxLines = 2)
             }

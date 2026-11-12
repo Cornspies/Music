@@ -92,6 +92,7 @@ data class DiscoverResult(
     val previewUrl: String? = null,
     val license: String? = null,
     val trackId: String? = null,
+    val similarTrackId: String? = null,
 )
 
 @Serializable

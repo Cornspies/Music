@@ -140,8 +140,16 @@ func (s *Server) analyzeTrack(trackID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), analysisTimeout)
 	defer cancel()
 
+	bin := ffmpegBinary()
+	var scan *audioScan
 	if trim {
-		trimmed, err := s.trimSilentEdges(ctx, trackID, rel)
+		var trimmed bool
+		var err error
+		if analyzedAt != "" {
+			trimmed, err = s.trimSilentEdges(ctx, trackID, rel)
+		} else {
+			scan, trimmed, err = s.scanAndTrim(ctx, bin, trackID, rel)
+		}
 		if err != nil {
 			logErr("trim silence", fmt.Errorf("track %s (checked again at the next start): %w", trackID, err))
 		} else {
@@ -150,21 +158,28 @@ func (s *Server) analyzeTrack(trackID string) {
 		if !trimmed && analyzedAt != "" {
 			return
 		}
+		if trimmed {
+			scan = nil
+		}
+	}
+	if scan == nil {
+		fresh := scanAudio(ctx, bin, abs, nil, 0)
+		scan = &fresh
 	}
 
 	var loudness *float64
-	if v, err := measureLoudness(ctx, abs); err == nil {
-		loudness = &v
+	if scan.loudnessErr == nil {
+		loudness = &scan.loudness
 	} else {
-		logErr("analysis loudness", fmt.Errorf("track %s: %w", trackID, err))
+		logErr("analysis loudness", fmt.Errorf("track %s: %w", trackID, scan.loudnessErr))
 	}
 	peaksJSON := ""
-	if peaks, err := computeWaveform(ctx, abs); err == nil {
-		if b, err := json.Marshal(peaks); err == nil {
+	if scan.peaksErr == nil {
+		if b, err := json.Marshal(scan.peaks); err == nil {
 			peaksJSON = string(b)
 		}
 	} else {
-		logErr("analysis waveform", fmt.Errorf("track %s: %w", trackID, err))
+		logErr("analysis waveform", fmt.Errorf("track %s: %w", trackID, scan.peaksErr))
 	}
 
 	now := nowRFC3339()
@@ -189,21 +204,73 @@ func (s *Server) analyzeTrack(trackID string) {
 
 var integratedLoudnessRE = regexp.MustCompile(`I:\s+(-?[0-9]+(?:\.[0-9]+)?)\s+LUFS`)
 
-func measureLoudness(ctx context.Context, path string) (float64, error) {
-	bin := ffmpegBinary()
-	if bin == "" {
-		return 0, fmt.Errorf("ffmpeg not available")
+type silenceParams struct {
+	noise, minSeconds string
+}
+
+type audioScan struct {
+	silence     SilenceInfo
+	silenceErr  error
+	loudness    float64
+	loudnessErr error
+	peaks       []int
+	peaksErr    error
+}
+
+func scanAudio(ctx context.Context, bin, abs string, silence *silenceParams, duration float64) audioScan {
+	graph := "[0:a:0]asplit=2[e][w];[e]ebur128=framelog=quiet[eo]"
+	args := []string{"-nostdin", "-hide_banner", "-nostats", "-i", abs}
+	if silence != nil {
+		graph = "[0:a:0]asplit=3[s][e][w];[s]silencedetect=noise=" + silence.noise + ":d=" + silence.minSeconds +
+			"[so];[e]ebur128=framelog=quiet[eo]"
 	}
-	cmd := exec.CommandContext(ctx, bin,
-		"-nostdin", "-hide_banner", "-loglevel", "info",
-		"-i", path, "-vn", "-af", "ebur128=framelog=quiet", "-f", "null", "-")
+	args = append(args, "-filter_complex", graph)
+	if silence != nil {
+		args = append(args, "-map", "[so]", "-f", "null", "-")
+	}
+	args = append(args, "-map", "[eo]", "-f", "null", "-",
+		"-map", "[w]", "-ac", "1", "-ar", strconv.Itoa(waveformSampleRate), "-f", "s16le", "pipe:1")
+
+	failed := func(err error) audioScan {
+		return audioScan{silenceErr: err, loudnessErr: err, peaksErr: err}
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
 	var stderr bytes.Buffer
-	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return 0, fmt.Errorf("ffmpeg: %v: %s", err, lastLine(stderr.String()))
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return failed(err)
 	}
-	matches := integratedLoudnessRE.FindAllStringSubmatch(stderr.String(), -1)
+	if err := cmd.Start(); err != nil {
+		return failed(err)
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(stdout, maxWaveformBytes))
+	_, _ = io.Copy(io.Discard, stdout)
+	waitErr := cmd.Wait()
+	out := stderr.String()
+
+	var scan audioScan
+	if silence != nil {
+		scan.silence, scan.silenceErr = parseSilence(out, duration), waitErr
+	}
+	if waitErr != nil {
+		scan.loudnessErr = fmt.Errorf("ffmpeg: %v: %s", waitErr, lastLine(out))
+	} else {
+		scan.loudness, scan.loudnessErr = parseLoudness(out)
+	}
+	switch {
+	case readErr != nil:
+		scan.peaksErr = readErr
+	case waitErr != nil && len(raw) == 0:
+		scan.peaksErr = fmt.Errorf("ffmpeg: %v: %s", waitErr, lastLine(out))
+	default:
+		scan.peaks, scan.peaksErr = waveformPeaks(raw)
+	}
+	return scan
+}
+
+func parseLoudness(ffmpegOutput string) (float64, error) {
+	matches := integratedLoudnessRE.FindAllStringSubmatch(ffmpegOutput, -1)
 	if len(matches) == 0 {
 		return 0, fmt.Errorf("no loudness in ffmpeg output")
 	}
@@ -217,33 +284,7 @@ func measureLoudness(ctx context.Context, path string) (float64, error) {
 	return v, nil
 }
 
-func computeWaveform(ctx context.Context, path string) ([]int, error) {
-	bin := ffmpegBinary()
-	if bin == "" {
-		return nil, fmt.Errorf("ffmpeg not available")
-	}
-	cmd := exec.CommandContext(ctx, bin,
-		"-nostdin", "-hide_banner", "-loglevel", "error",
-		"-i", path, "-vn", "-ac", "1", "-ar", strconv.Itoa(waveformSampleRate),
-		"-f", "s16le", "-")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	raw, readErr := io.ReadAll(io.LimitReader(stdout, maxWaveformBytes))
-	_, _ = io.Copy(io.Discard, stdout)
-	waitErr := cmd.Wait()
-	if readErr != nil {
-		return nil, readErr
-	}
-	if waitErr != nil && len(raw) == 0 {
-		return nil, fmt.Errorf("ffmpeg: %v: %s", waitErr, lastLine(stderr.String()))
-	}
+func waveformPeaks(raw []byte) ([]int, error) {
 	samples := len(raw) / 2
 	if samples < waveformBuckets {
 		return nil, fmt.Errorf("too short to draw")

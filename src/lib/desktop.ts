@@ -68,8 +68,9 @@ export function resetLocalCovers(ids: string[]) {
   for (const id of ids) localCovers.add(id)
 }
 
-export function localCoverUrl(id: string): string | null {
-  return isDesktop && localCovers.has(id) ? convertFileSrc(id, "music-cover") : null
+export function localCoverUrl(id: string, small = false): string | null {
+  if (!isDesktop || !localCovers.has(id)) return null
+  return convertFileSrc(id, "music-cover") + (small ? "?thumb=1" : "")
 }
 
 export const SERVER_REFUSES_APP = "This server doesn't accept the desktop app yet. Update it to the latest version."

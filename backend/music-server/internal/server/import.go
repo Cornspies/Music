@@ -362,14 +362,11 @@ func (s *Server) importEntry(ctx context.Context, job *importJob, e discoverResu
 }
 
 func (s *Server) sameSongInLibrary(userID string, e discoverResult, clean bool) *Track {
-	artist, title := parseYouTubeTitle(e.Title, "")
-	title = trimDefault(title, e.Title)
-	veto := artist != ""
-	artist = trimDefault(artist, e.Artist)
+	q := resultQuery(e)
 	if clean {
-		title, artist, veto = e.Title, e.Artist, e.Artist != ""
+		q.combined = false
 	}
-	matches := s.findSameSong(userID, title, artist, e.Duration, true, veto)
+	matches := s.findSameSong(userID, q, true)
 	if len(matches) == 0 {
 		return nil
 	}

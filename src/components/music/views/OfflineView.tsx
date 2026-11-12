@@ -7,7 +7,7 @@ import { useOfflineStore } from "@/stores/offline"
 import { useUIStore } from "@/stores/ui"
 import { CollectionHeader } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
-import { TrackList } from "@/components/music/TrackList"
+import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -85,7 +85,7 @@ export function OfflineView() {
             onAction={() => navigate("library")}
           />
         ) : (
-          <TrackList tracks={tracks} />
+          <VirtualTrackList tracks={tracks} />
         )}
       </div>
 

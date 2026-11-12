@@ -4,6 +4,7 @@ import { create } from "zustand"
 import type { MediaToken } from "@/lib/types"
 import { useAuthStore } from "@/stores/auth"
 import { apiUrl } from "@/lib/desktop"
+import { dropCoverCache } from "@/lib/covers"
 
 const REFRESH_MARGIN_MS = 10 * 60_000
 const MIN_REFRESH_MS = 60_000
@@ -93,8 +94,10 @@ function refreshIfDue() {
 if (typeof window !== "undefined") {
   useAuthStore.subscribe((s, prev) => {
     if (s.token === prev.token) return
-    if (!s.token) useMediaTokenStore.getState().clear()
-    else useMediaTokenStore.getState().refresh().catch(() => {})
+    if (!s.token) {
+      useMediaTokenStore.getState().clear()
+      dropCoverCache()
+    } else useMediaTokenStore.getState().refresh().catch(() => {})
   })
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refreshIfDue()

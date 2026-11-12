@@ -91,7 +91,13 @@ func (s *Server) findDuplicates(userID string, up *pendingUpload) DuplicateRespo
 		}
 	}
 
-	for _, m := range s.findSameSong(userID, title, up.meta.artist, duration, false, false) {
+	q := songQuery{
+		title:    title,
+		artist:   up.meta.artist,
+		duration: duration,
+		combined: up.meta.title == "" || strings.TrimSpace(up.meta.artist) == "",
+	}
+	for _, m := range s.findSameSong(userID, q, true) {
 		t := m.Track
 		add(&t, m.Reason)
 	}
@@ -148,73 +154,76 @@ func sameCoreTitle(a, b string) bool {
 	return core != "" && core == coreTitle(b) && titleTags(a) == titleTags(b)
 }
 
-func (s *Server) findSameSong(userID, title, artist string, duration float64, loose, artistVeto bool) []DuplicateMatch {
-	wantTitle := normalizeForMatch(title)
-	wantCore := coreTitle(title)
-	if wantTitle == "" {
+func (s *Server) findSameSong(userID string, q songQuery, otherArtists bool) []DuplicateMatch {
+	lib, err := s.loadSongLibrary(userID)
+	if err != nil {
+		logErr("duplicate check", err)
 		return nil
 	}
-	wantArtist := normalizeForMatch(artist)
-	prefilter := wantTitle
-	if loose && wantCore != "" {
-		prefilter = wantCore
+	var matches []songMatch
+	for _, m := range lib.match(q) {
+		if otherArtists || m.relation != artistsDiffer {
+			matches = append(matches, m)
+		}
 	}
-	rows, err := s.db.Query(libraryTrackSelect+` WHERE lower(t.title) LIKE ?`, append(trackSelectArgs(userID), "%"+firstWord(prefilter)+"%")...)
+	if len(matches) == 0 {
+		return nil
+	}
+	marks := make([]string, len(matches))
+	args := trackSelectArgs(userID)
+	for i, m := range matches {
+		marks[i] = "?"
+		args = append(args, m.entry.id)
+	}
+	rows, err := s.db.Query(libraryTrackSelect+` WHERE t.id IN (`+strings.Join(marks, ",")+`)`, args...)
 	if err != nil {
+		logErr("duplicate check", err)
 		return nil
 	}
 	defer rows.Close()
-	var out []DuplicateMatch
+	byID := map[string]*Track{}
 	for rows.Next() {
-		t, _, _, err := scanTrack(rows.Scan)
-		if err != nil {
-			continue
+		if t, _, _, err := scanTrack(rows.Scan); err == nil {
+			byID[t.ID] = t
 		}
-		exact := normalizeForMatch(t.Title) == wantTitle
-		core := loose && wantCore != "" && sameCoreTitle(t.Title, title)
-		if !exact && !core {
-			continue
-		}
-		haveArtist := normalizeForMatch(dropPlaceholder(t.Artist, "Unknown Artist"))
-		bothKnown := wantArtist != "" && haveArtist != ""
-		artistsAgree := bothKnown && (wantArtist == haveArtist ||
-			strings.Contains(haveArtist, wantArtist) || strings.Contains(wantArtist, haveArtist))
-		lengthsAgree := duration > 0 && t.Duration > 0 && math.Abs(t.Duration-duration) <= 3
-		switch {
-		case exact && artistsAgree:
-			out = append(out, DuplicateMatch{Track: *t, Reason: "same song"})
-		case artistVeto && bothKnown && !artistsAgree:
-		case lengthsAgree:
-			out = append(out, DuplicateMatch{Track: *t, Reason: "same song"})
+	}
+	out := make([]DuplicateMatch, 0, len(matches))
+	for _, m := range matches {
+		if t := byID[m.entry.id]; t != nil {
+			out = append(out, DuplicateMatch{Track: *t, Reason: m.reason})
 		}
 	}
 	return out
 }
 
 func sameSongPair(a, b *Track) (bool, string) {
-	titleA, titleB := normalizeForMatch(a.Title), normalizeForMatch(b.Title)
-	if titleA == "" || titleB == "" {
+	if foldForMatch(a.Title) == "" || foldForMatch(b.Title) == "" {
 		return false, ""
 	}
-	exact := titleA == titleB
-	core := sameCoreTitle(a.Title, b.Title)
-	if !exact && !core {
+	exact := foldForMatch(a.Title) == foldForMatch(b.Title)
+	if !exact && !sameTitleKeys(a.Title, b.Title) {
 		return false, ""
 	}
-	artistA := normalizeForMatch(dropPlaceholder(a.Artist, "Unknown Artist"))
-	artistB := normalizeForMatch(dropPlaceholder(b.Artist, "Unknown Artist"))
-	bothKnown := artistA != "" && artistB != ""
-	artistsAgree := bothKnown && (artistA == artistB || strings.Contains(artistA, artistB) || strings.Contains(artistB, artistA))
-	lengthsAgree := a.Duration > 0 && b.Duration > 0 && math.Abs(a.Duration-b.Duration) <= 3
+	relation := relateArtists(a.Artist, b.Artist)
+	known := a.Duration > 0 && b.Duration > 0
+	gap := math.Abs(a.Duration - b.Duration)
 	switch {
-	case exact && artistsAgree:
+	case exact && relation == artistsAgree:
 		return true, "same title and artist"
-	case bothKnown && !artistsAgree:
+	case relation == artistsAgree && (!known || gap <= sameSongSlack):
+		return true, "same song"
+	case relation == artistsDiffer:
 		return false, ""
-	case lengthsAgree:
+	case known && gap <= unknownArtistSlack:
 		return true, "same title and length"
 	}
 	return false, ""
+}
+
+func swappedPair(a, b *Track) bool {
+	return foldForMatch(a.Title) != "" && foldForMatch(a.Title) == foldForMatch(dropPlaceholder(b.Artist, "Unknown Artist")) &&
+		foldForMatch(b.Title) == foldForMatch(dropPlaceholder(a.Artist, "Unknown Artist")) &&
+		foldForMatch(a.Title) != foldForMatch(b.Title)
 }
 
 type DuplicateGroup struct {
@@ -239,7 +248,7 @@ func (s *Server) handleLibraryDuplicates(w http.ResponseWriter, r *http.Request)
 
 	buckets := map[string][]int{}
 	for i, t := range tracks {
-		if key := coreTitle(t.Title); key != "" {
+		if key := foldedCore(t.Title); key != "" {
 			buckets[key] = append(buckets[key], i)
 		}
 	}
@@ -256,17 +265,44 @@ func (s *Server) handleLibraryDuplicates(w http.ResponseWriter, r *http.Request)
 		return i
 	}
 	reasons := map[int]string{}
+	join := func(i, j int, why string) {
+		ra, rb := find(i), find(j)
+		if ra != rb {
+			parent[rb] = ra
+			if reasons[ra] == "" {
+				reasons[ra] = reasons[rb]
+			}
+		}
+		if reasons[ra] == "" || why == "same title and artist" {
+			reasons[ra] = why
+		}
+	}
 	for _, idx := range buckets {
 		for x := 0; x < len(idx); x++ {
 			for y := x + 1; y < len(idx); y++ {
 				if ok, why := sameSongPair(tracks[idx[x]], tracks[idx[y]]); ok {
-					ra, rb := find(idx[x]), find(idx[y])
-					if ra != rb {
-						parent[rb] = ra
-					}
-					if reasons[ra] == "" || why == "same title and artist" {
-						reasons[ra] = why
-					}
+					join(idx[x], idx[y], why)
+				}
+			}
+		}
+	}
+	for i, t := range tracks {
+		for _, j := range buckets[foldedCore(dropPlaceholder(t.Artist, "Unknown Artist"))] {
+			if j > i && swappedPair(t, tracks[j]) {
+				join(i, j, "same song, with artist and title swapped")
+			}
+		}
+		q := songQuery{title: t.Title, artist: t.Artist, duration: t.Duration, combined: true}
+		guesses := q.guesses()
+		for _, g := range guesses[1:] {
+			for _, j := range buckets[foldedCore(g.title)] {
+				if j == i {
+					continue
+				}
+				other := tracks[j]
+				entry := &libraryEntry{id: other.ID, title: other.Title, artist: other.Artist, duration: other.Duration}
+				if strength, relation, why := rateMatch(g, q, entry); strength != matchNone && relation != artistsDiffer {
+					join(i, j, why)
 				}
 			}
 		}
@@ -296,13 +332,6 @@ func (s *Server) handleLibraryDuplicates(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
-}
-
-func firstWord(s string) string {
-	if i := strings.IndexByte(s, ' '); i > 0 {
-		return s[:i]
-	}
-	return s
 }
 
 const maxPendingPerUser = 10

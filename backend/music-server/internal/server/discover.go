@@ -44,6 +44,7 @@ type discoverResult struct {
 	PreviewURL string  `json:"previewUrl,omitempty"`
 	License    string  `json:"license,omitempty"`
 	TrackID    string  `json:"trackId,omitempty"`
+	SimilarID  string  `json:"similarTrackId,omitempty"`
 }
 
 type sourceDownload struct {
@@ -57,6 +58,7 @@ type sourceDownload struct {
 	SquareCover                 bool
 	CatalogueCover              bool
 	LookupMetadata              bool
+	Video                       *videoNames
 }
 
 type linkSource interface{ takesLinks() }
@@ -264,10 +266,37 @@ func serveArtwork(w http.ResponseWriter, r *http.Request, u string) {
 }
 
 func (s *Server) markInLibrary(viewerID string, results []discoverResult) {
+	var lib songLibrary
 	for i := range results {
-		if id, ok := s.trackFromSource(viewerID, results[i].Source, results[i].ID); ok {
-			results[i].TrackID = id
+		r := &results[i]
+		if id, ok := s.trackFromSource(viewerID, r.Source, r.ID); ok {
+			r.TrackID = id
+			continue
 		}
+		if lib == nil {
+			loaded, err := s.loadSongLibrary(viewerID)
+			if err != nil {
+				logErr("discover library index", err)
+				return
+			}
+			lib = loaded
+		}
+		if matches := lib.match(resultQuery(*r)); len(matches) > 0 {
+			if matches[0].strength == matchStrong {
+				r.TrackID = matches[0].entry.id
+			} else {
+				r.SimilarID = matches[0].entry.id
+			}
+		}
+	}
+}
+
+func resultQuery(r discoverResult) songQuery {
+	return songQuery{
+		title:    r.Title,
+		artist:   r.Artist,
+		duration: r.Duration,
+		combined: r.Source == "youtube" || r.Source == "soundcloud",
 	}
 }
 
@@ -404,6 +433,11 @@ func (s *Server) ingestDownload(ctx context.Context, u *User, sourceKey, sourceI
 		}
 	}
 
+	if dl.Video != nil {
+		dl.Artist, dl.Title = s.videoNames(ctx, u.ID, *dl.Video)
+		dl.FileName = sanitizeFilename(trimDefault(dl.Artist, "YouTube")+" - "+trimDefault(dl.Title, sourceID)) + ext
+	}
+
 	hash, _ := fileSHA256(absPath)
 	meta := readMetadata(absPath)
 	title := trimDefault(dl.Title, trimDefault(meta.title, strings.TrimSuffix(dl.FileName, ext)))
@@ -494,13 +528,11 @@ func resizeCover(raw []byte, edge int) []byte {
 	if err != nil || cfg.Width <= edge && cfg.Height <= edge {
 		return raw
 	}
-	if int64(cfg.Width)*int64(cfg.Height) > maxAvatarPixels {
-		return raw
-	}
-	src, _, err := image.Decode(bytes.NewReader(raw))
+	src, done, err := decodeImage(raw)
 	if err != nil {
 		return raw
 	}
+	defer done()
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, downscale(src, edge), &jpeg.Options{Quality: 88}); err != nil {
 		return raw

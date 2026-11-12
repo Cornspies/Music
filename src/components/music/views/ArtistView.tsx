@@ -8,7 +8,7 @@ import { useUIStore } from "@/stores/ui"
 import { ArtistImage } from "@/components/music/ArtistImage"
 import { CollectionHeader, PinButton } from "@/components/music/CollectionHeader"
 import { EmptyState } from "@/components/music/EmptyState"
-import { TrackList } from "@/components/music/TrackList"
+import { VirtualTrackList } from "@/components/music/VirtualTrackList"
 import { Button } from "@/components/ui/button"
 
 export function ArtistView() {
@@ -68,7 +68,7 @@ export function ArtistView() {
             compact
           />
         ) : (
-          <TrackList tracks={artistTracks} />
+          <VirtualTrackList tracks={artistTracks} />
         )}
       </div>
     </div>

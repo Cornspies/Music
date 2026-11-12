@@ -87,12 +87,16 @@ func detectSilence(ctx context.Context, bin, abs, noise, minSeconds string, dura
 		"-f", "null", "-",
 	)
 	out, err := cmd.CombinedOutput()
-	if d := decodedLength(string(out)); d > 0 {
+	return parseSilence(string(out), duration), err
+}
+
+func parseSilence(out string, duration float64) SilenceInfo {
+	if d := decodedLength(out); d > 0 {
 		duration = d
 	}
 	info := SilenceInfo{Duration: duration, TrailingStart: duration}
-	starts := silenceStartRe.FindAllStringSubmatch(string(out), -1)
-	ends := silenceEndRe.FindAllStringSubmatch(string(out), -1)
+	starts := silenceStartRe.FindAllStringSubmatch(out, -1)
+	ends := silenceEndRe.FindAllStringSubmatch(out, -1)
 	for i, m := range starts {
 		start, _ := strconv.ParseFloat(m[1], 64)
 		end := duration
@@ -106,7 +110,7 @@ func detectSilence(ctx context.Context, bin, abs, noise, minSeconds string, dura
 			info.TrailingStart = start
 		}
 	}
-	return info, err
+	return info
 }
 
 func cutAudio(ctx context.Context, bin, abs string, start, end, duration float64) error {
@@ -233,12 +237,31 @@ func (s *Server) trimSilentEdges(ctx context.Context, id, rel string) (bool, err
 		return false, fmt.Errorf("couldn't read the length of %s", rel)
 	}
 	rule := s.trimRule()
-	info, err := detectSilence(ctx, bin, abs, rule.ffmpegThreshold(), strconv.FormatFloat(rule.MinSeconds, 'f', -1, 64), duration)
+	info, err := detectSilence(ctx, bin, abs, rule.ffmpegThreshold(), rule.ffmpegMinSeconds(), duration)
 	if err != nil {
 		return false, err
 	}
-	duration = info.Duration
-	start, end := 0.0, duration
+	return s.cutSilentEdges(ctx, bin, id, rel, info, rule)
+}
+
+func (s *Server) scanAndTrim(ctx context.Context, bin, id, rel string) (*audioScan, bool, error) {
+	abs := filepath.Join(s.dataDir, rel)
+	duration := probeDuration(abs)
+	if duration <= 0 {
+		return nil, false, fmt.Errorf("couldn't read the length of %s", rel)
+	}
+	rule := s.trimRule()
+	scan := scanAudio(ctx, bin, abs, &silenceParams{noise: rule.ffmpegThreshold(), minSeconds: rule.ffmpegMinSeconds()}, duration)
+	if scan.silenceErr != nil {
+		return &scan, false, scan.silenceErr
+	}
+	trimmed, err := s.cutSilentEdges(ctx, bin, id, rel, scan.silence, rule)
+	return &scan, trimmed, err
+}
+
+func planTrim(info SilenceInfo, rule trimRule) (start, end float64, cut bool) {
+	duration := info.Duration
+	start, end = 0.0, duration
 	if info.LeadingEnd >= rule.MinSeconds {
 		start = info.LeadingEnd - rule.MarginSeconds
 	}
@@ -246,12 +269,21 @@ func (s *Server) trimSilentEdges(ctx context.Context, id, rel string) (bool, err
 		end = info.TrailingStart + rule.MarginSeconds
 	}
 	if start <= 0 && end >= duration {
-		return false, nil
+		return start, end, false
 	}
 	if end-start < 1 {
+		return start, end, false
+	}
+	return start, end, true
+}
+
+func (s *Server) cutSilentEdges(ctx context.Context, bin, id, rel string, info SilenceInfo, rule trimRule) (bool, error) {
+	start, end, cut := planTrim(info, rule)
+	if !cut {
 		return false, nil
 	}
-	if err := cutAudio(ctx, bin, abs, start, end, duration); err != nil {
+	duration := info.Duration
+	if err := cutAudio(ctx, bin, filepath.Join(s.dataDir, rel), start, end, duration); err != nil {
 		return false, err
 	}
 	s.recordNewAudio(id, rel)

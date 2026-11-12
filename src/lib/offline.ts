@@ -28,7 +28,31 @@ async function listOnDisk(): Promise<Track[]> {
     }
   })
   resetLocalCovers(tracks.filter((t) => t.hasCover).map((t) => t.id))
+  void fetchMissingThumbs()
   return newestFirst(tracks)
+}
+
+const LOCAL_THUMB_SIZE = 256
+let thumbsChecked = false
+
+async function fetchMissingThumbs(): Promise<void> {
+  const token = useAuthStore.getState().token
+  if (thumbsChecked || !token) return
+  thumbsChecked = true
+  const ids = await invoke<string[]>("offline_missing_thumbs").catch(() => [] as string[])
+  for (const id of ids) {
+    try {
+      await invoke("offline_thumb", {
+        id,
+        url: apiUrl(`/api/tracks/${id}/cover?size=${LOCAL_THUMB_SIZE}`),
+        auth: `Bearer ${token}`,
+      })
+    } catch (err) {
+      if (typeof err === "string" && err.startsWith("Download failed")) continue
+      thumbsChecked = false
+      return
+    }
+  }
 }
 
 async function downloadToDisk(track: Track, onProgress?: DownloadProgress, signal?: AbortSignal): Promise<void> {
@@ -45,6 +69,7 @@ async function downloadToDisk(track: Track, onProgress?: DownloadProgress, signa
       id: track.id,
       url: apiUrl(`/api/tracks/${track.id}/stream?version=compatible`),
       coverUrl: track.hasCover ? apiUrl(`/api/tracks/${track.id}/cover`) : null,
+      thumbUrl: track.hasCover ? apiUrl(`/api/tracks/${track.id}/cover?size=${LOCAL_THUMB_SIZE}`) : null,
       auth: `Bearer ${token}`,
       meta: JSON.stringify({ ...track, updatedAt: new Date().toISOString() }),
       progress,

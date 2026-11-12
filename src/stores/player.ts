@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import { changeOnlyStorage } from "@/lib/persist-storage"
 import { toast } from "sonner"
 import type { PlaybackState, Track } from "@/lib/types"
 import { api, coverUrl, fetchPlayback, savePlayback } from "@/lib/api"
@@ -1104,6 +1105,7 @@ export const usePlayerStore = create<PlayerState>()(
     }),
     {
       name: "music-volume",
+      storage: changeOnlyStorage(),
       partialize: (s) => ({
         volume: s.volume,
         shuffle: s.shuffle,

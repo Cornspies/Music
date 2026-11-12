@@ -1192,6 +1192,7 @@ class AppModel(
             source,
             autoplay = autoplay,
             info = NowPlayingInfo(
+                id = track.id,
                 title = track.title,
                 artist = track.artist.ifBlank { "Unknown artist" },
                 album = track.album,

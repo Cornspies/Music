@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { BadgeCheck, Check, Compass, ExternalLink, Library, ListPlus, Loader2, Play, Plus, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -507,6 +507,11 @@ function ImportCard({ job, onCancel, onDismiss }: { job: PlaylistImport; onCance
 function ResultRow({ result, onAdded }: { result: DiscoverResult; onAdded: (t: Track) => void }) {
   const [adding, setAdding] = useState(false)
   const inLibrary = !!result.trackId
+  const similarId = inLibrary ? undefined : result.similarTrackId
+  const similar = useMemo(
+    () => (similarId ? useLibraryStore.getState().tracks.find((t) => t.id === similarId) : undefined),
+    [similarId]
+  )
 
   const add = async () => {
     setAdding(true)
@@ -564,6 +569,13 @@ function ResultRow({ result, onAdded }: { result: DiscoverResult; onAdded: (t: T
           {result.year ? ` · ${result.year}` : ""}
           {result.duration ? ` · ${formatDuration(result.duration)}` : ""}
         </p>
+        {similarId ? (
+          <p className="truncate text-xs text-amber-300/90">
+            {similar
+              ? `Looks like “${similar.title}” by ${similar.artist}, already in your library`
+              : "A similar song is already in your library"}
+          </p>
+        ) : null}
       </div>
       {result.pageUrl ? (
         <a

@@ -32,7 +32,7 @@ func main() {
 	logDir := flag.String("logs", cfg.LogDir,
 		"directory for daily log files, deleted after 14 days; empty means <data>/logs (env: MUSIC_LOG_DIR)")
 	webDir := flag.String("web", cfg.WebDir,
-		"directory with the static web app (bun run build:static); empty means the web app isn't served (env: MUSIC_WEB_DIR)")
+		"directory with the static web app (bun run build); empty means the web app isn't served (env: MUSIC_WEB_DIR)")
 	resetUser := flag.String("reset-password", "",
 		"print a one-time password reset link for this username and exit")
 	flag.Parse()
@@ -80,7 +80,7 @@ func main() {
 			log.Fatalf("resolve web dir: %v", err)
 		}
 		if _, err := os.Stat(filepath.Join(web, "index.html")); err != nil {
-			log.Printf("music-server web app: %s has no index.html; run `bun run build:static` and point MUSIC_WEB_DIR at its out/ directory", web)
+			log.Printf("music-server web app: %s has no index.html; run `bun run build` and point MUSIC_WEB_DIR at its out/ directory", web)
 		} else {
 			log.Printf("music-server web app: serving %s", web)
 		}

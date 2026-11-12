@@ -39,7 +39,7 @@ export function CoverArt({
 }: CoverArtProps) {
   const mediaToken = useMediaToken()
   const [failedWith, setFailedWith] = useState<string | null>(null)
-  const local = hasCover ? localCoverUrl(trackId) : null
+  const local = hasCover ? localCoverUrl(trackId, size !== "full" && size <= 128) : null
   const source = local ?? mediaToken
 
   if (hasCover && source && failedWith !== source) {

@@ -187,15 +187,11 @@ complete site with a maintenance switch (see [Maintenance](#maintenance)).
 To build and serve everything from source, one process serves both:
 
 ```sh
-bun run build:static                # writes the web app to out/
+bun run build                       # writes the web app to out/
 cd backend/music-server
 go build -o music-server .
 MUSIC_WEB_DIR=../../out ./music-server
 ```
-
-The alternative is `bun run build` and `bun run start`, which runs the web app
-as a second process that forwards `/api` to the Go server. Remove
-`MUSIC_WEB_DIR` from `.env` when you use it.
 
 The data folder (`MUSIC_DATA_DIR`) is the only thing to back up. A first
 session secret is generated into it; set `MUSIC_JWT_SECRET` if you rebuild
@@ -301,10 +297,17 @@ bun run typecheck && bun run lint
 cd mobile && ./gradlew :androidApp:assembleDebug
 ```
 
-To publish a release, run **Actions → Release → Run workflow** and enter a tag
-such as `v0.4.4`. It builds the desktop installers, a signed Android APK and
-the server bundles (server plus web app) for Linux and Windows, and attaches
-them to a GitHub release, a draft by default. It needs the
+To publish a release, push a tag:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The Release workflow tests the server, builds the desktop installers, a
+signed Android APK and the server bundles (server plus web app) for Linux and
+Windows, and publishes them as a GitHub release. The notes are the tagged
+commit's message, or GitHub's generated notes when it has no body; a tag with
+a hyphen, such as `v0.2.0-rc1`, becomes a pre-release. It needs the
 repository secrets `ANDROID_KEYSTORE_BASE64` (`base64 -w0` of your keystore),
 `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`, and
 reads the repository variables `MUSIC_DEFAULT_SERVER` and `MUSIC_HOST`.

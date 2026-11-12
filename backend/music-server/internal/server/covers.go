@@ -86,14 +86,11 @@ func writeFileAtomic(path string, data []byte) error {
 }
 
 func backdropCover(raw []byte) []byte {
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
-	if err != nil || int64(cfg.Width)*int64(cfg.Height) > maxAvatarPixels {
-		return raw
-	}
-	src, _, err := image.Decode(bytes.NewReader(raw))
+	src, done, err := decodeImage(raw)
 	if err != nil {
 		return raw
 	}
+	defer done()
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, blur(downscale(src, backdropSize), 1.2), &jpeg.Options{Quality: 88}); err != nil {
 		return raw

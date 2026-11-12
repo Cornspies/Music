@@ -295,6 +295,7 @@ func (s *Server) requireAuthKind(next func(http.ResponseWriter, *http.Request), 
 		}
 		if !u.IsMediaToken {
 			s.maybeRefreshToken(w, u)
+			noteKnownClient(u.Username, r)
 		}
 		next(w, withUser(r, u))
 	}
@@ -460,7 +461,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := strings.ToLower(strings.TrimSpace(req.Username))
-	if locked, retry := accountLocked(loginKey(username)); locked {
+	if locked, retry := accountLocked(loginKey(username)); locked && !isKnownClient(username, r) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
 		writeErr(w, http.StatusTooManyRequests, "too many sign-in attempts for this account, try again later")
 		return
@@ -494,6 +495,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	clearAuthFailures(r)
 	clearAccountFailures(loginKey(username))
+	noteKnownClient(username, r)
 
 	token, err := s.issueToken(&User{ID: id, Username: username, Role: role}, time.Time{})
 	if err != nil {
