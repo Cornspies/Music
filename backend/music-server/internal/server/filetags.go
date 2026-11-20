@@ -43,7 +43,7 @@ func fileTagChanges(t *Track, tags fileMetadata) []TagChange {
 }
 
 func (s *Server) restoreFileTags(t *Track, filePath string, only map[string]bool) ([]string, error) {
-	tags := readMetadata(filepath.Join(s.dataDir, filePath))
+	tags := readTextTags(filepath.Join(s.dataDir, filePath))
 	title, artist, album, albumArtist, genre, year := t.Title, t.Artist, t.Album, t.AlbumArtist, t.Genre, t.Year
 	restored := []string{}
 	for _, c := range fileTagChanges(t, tags) {
@@ -169,7 +169,10 @@ func (s *Server) handleLibraryFileTags(w http.ResponseWriter, r *http.Request) {
 
 	diffs := []FileTagDiff{}
 	for _, c := range all {
-		if changes := fileTagChanges(c.track, readMetadata(filepath.Join(s.dataDir, c.filePath))); len(changes) > 0 {
+		if r.Context().Err() != nil {
+			return
+		}
+		if changes := fileTagChanges(c.track, readTextTags(filepath.Join(s.dataDir, c.filePath))); len(changes) > 0 {
 			diffs = append(diffs, FileTagDiff{Track: c.track, Changes: changes})
 		}
 	}

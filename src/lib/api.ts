@@ -197,7 +197,9 @@ export function discardPendingUpload(pendingId: string): Promise<void> {
 }
 
 export function avatarUrl(userId: string): string {
-  return withToken(`/api/users/${userId}/avatar`)
+  const { user, avatarVersion } = useAuthStore.getState()
+  const version = avatarVersion && user?.id === userId ? `?v=${avatarVersion}` : ""
+  return withToken(`/api/users/${userId}/avatar${version}`)
 }
 
 export interface AvatarCrop {

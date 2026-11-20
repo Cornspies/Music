@@ -173,10 +173,12 @@ export function MetadataReviewDialog({ tracks, open, onOpenChange, onKeep }: Pro
     if (!track) return
     setApplyingId(candidate.id)
     try {
-      await applyMetadataCandidate(track.id, candidate.id)
+      const updated = await applyMetadataCandidate(track.id, candidate.id)
       setResolved((r) => ({ ...r, [track.id]: candidate.id }))
       toast.success(`Updated to “${candidate.title}” by ${candidate.artist || "Unknown Artist"}`)
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      const library = useLibraryStore.getState()
+      library.replaceTrack(updated)
+      library.fetchStats().catch(() => {})
       goNext()
     } catch (e) {
       toast.error((e as Error).message)

@@ -89,12 +89,7 @@ func (s *Server) mergeTrackInto(dropID, keepID string) error {
 				queue_json = REPLACE(queue_json, ?, ?)
 			WHERE track_id = ? OR instr(queue_json, ?) > 0`,
 			[]any{dropID, keepID, `"` + dropID + `"`, `"` + keepID + `"`, dropID, `"` + dropID + `"`}},
-		{`UPDATE tracks SET
-				plays = plays + (SELECT plays FROM tracks WHERE id = ?),
-				last_played_at = CASE WHEN (SELECT last_played_at FROM tracks WHERE id = ?) > COALESCE(last_played_at, '')
-					THEN (SELECT last_played_at FROM tracks WHERE id = ?) ELSE last_played_at END,
-				updated_at = ?
-			WHERE id = ?`, []any{dropID, dropID, dropID, now, keepID}},
+		{`UPDATE tracks SET updated_at = ? WHERE id = ?`, []any{now, keepID}},
 	}
 	for _, st := range stmts {
 		if _, err := tx.Exec(st.query, st.args...); err != nil {

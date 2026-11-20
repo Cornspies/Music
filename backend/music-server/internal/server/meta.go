@@ -22,23 +22,11 @@ type fileMetadata struct {
 }
 
 func readMetadata(path string) fileMetadata {
-	var meta fileMetadata
-
-	if f, err := os.Open(path); err == nil {
-		if m, err := tag.ReadFrom(f); err == nil && m != nil {
-			meta.title = strings.TrimSpace(m.Title())
-			meta.artist = strings.TrimSpace(m.Artist())
-			meta.album = strings.TrimSpace(m.Album())
-			meta.albumArtist = strings.TrimSpace(m.AlbumArtist())
-			meta.genre = strings.TrimSpace(m.Genre())
-			meta.year = m.Year()
-			track, _ := m.Track()
-			meta.trackNo = track
-			if p := m.Picture(); p != nil && len(p.Data) > 0 {
-				meta.picture = p.Data
-			}
+	meta, m := readTags(path)
+	if m != nil {
+		if p := m.Picture(); p != nil && len(p.Data) > 0 {
+			meta.picture = p.Data
 		}
-		f.Close()
 	}
 
 	if strings.EqualFold(filepath.Ext(path), ".mp3") {
@@ -46,6 +34,36 @@ func readMetadata(path string) fileMetadata {
 	}
 
 	return meta
+}
+
+// readTextTags is readMetadata without the picture and without the duration,
+// which for an MP3 means walking every frame of the file.
+func readTextTags(path string) fileMetadata {
+	meta, _ := readTags(path)
+	return meta
+}
+
+func readTags(path string) (fileMetadata, tag.Metadata) {
+	var meta fileMetadata
+
+	f, err := os.Open(path)
+	if err != nil {
+		return meta, nil
+	}
+	defer f.Close()
+	m, err := tag.ReadFrom(f)
+	if err != nil || m == nil {
+		return meta, nil
+	}
+	meta.title = strings.TrimSpace(m.Title())
+	meta.artist = strings.TrimSpace(m.Artist())
+	meta.album = strings.TrimSpace(m.Album())
+	meta.albumArtist = strings.TrimSpace(m.AlbumArtist())
+	meta.genre = strings.TrimSpace(m.Genre())
+	meta.year = m.Year()
+	track, _ := m.Track()
+	meta.trackNo = track
+	return meta, m
 }
 
 func mp3DurationSeconds(path string) float64 {

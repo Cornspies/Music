@@ -1,5 +1,5 @@
 #!/bin/sh
-# Updates a Music server installed from a release bundle (README.md → Updates).
+# Updates a Music server installed from a release bundle (docs/server.md → Updates).
 #
 #   music-update                  install the latest release
 #   music-update v0.1.3           install that release (also to reinstall one)
@@ -13,9 +13,10 @@
 # are kept. With the nginx maintenance page set up (music-maintenance), users
 # see "down for maintenance" in the meantime. When .env sets MUSIC_APK_DIR,
 # it also puts the release's app builds in that folder, where the server
-# offers them for download and as the apps' update: the Windows installer, or
-# the kinds named in MUSIC_UPDATE_APPS in .env (android, appimage, deb, rpm,
-# windows, separated by commas; all; or none).
+# offers them for download and as the apps' update: the kinds named in
+# MUSIC_UPDATE_APPS in .env (android, appimage, deb, rpm, windows, separated
+# by commas; or all), none when it isn't set. A signed build's signature
+# (<file>.sig) comes with it.
 #
 # Settings, as environment variables: MUSIC_DIR (default /opt/music),
 # MUSIC_SERVICE (music-server), MUSIC_REPO (Cornspies/Music) and
@@ -46,7 +47,7 @@ need_root() {
 		command -v "$cmd" >/dev/null 2>&1 || die "$cmd is missing."
 	done
 	[ -x "$dir/music-server" ] ||
-		die "there's no server in $dir. Install it first (README.md → Run as a service), or set MUSIC_DIR."
+		die "there's no server in $dir. Install it first (docs/server.md → Run as a service), or set MUSIC_DIR."
 	systemctl cat "$service" >/dev/null 2>&1 ||
 		die "there's no $service service. Set MUSIC_SERVICE if yours has another name."
 }
@@ -284,9 +285,38 @@ fetch_app() {
 	partial=
 }
 
+# Puts the signature of one of a release's app builds (arguments as for
+# fetch_app) next to the build, when the release has one: <name>.sig, which
+# the desktop app checks before it installs the build as an update. The build
+# is the release's own by then, so another signature of that name is replaced.
+# A download that fails or doesn't match its checksum is dropped.
+fetch_sig() {
+	sig_sum=$(printf '%s\n' "$1" | asset_digest "$3.sig")
+	[ -n "$sig_sum" ] || return 0
+	if [ -f "$apps/$3.sig" ] && sum_matches "$sig_sum" "$apps/$3.sig"; then return 0; fi
+	echo "Downloading $3.sig to $apps"
+	partial=$apps/.$3.sig.$$
+	if ! curl -fsSL -o "$partial" "https://github.com/$repo/releases/download/$2/$3.sig"; then
+		rm -f "$partial"
+		partial=
+		echo "Couldn't download $3.sig; run music-update again to retry." >&2
+		return 1
+	fi
+	if ! sum_matches "$sig_sum" "$partial"; then
+		rm -f "$partial"
+		partial=
+		echo "$3.sig doesn't match its checksum on GitHub, so it wasn't added." >&2
+		return 1
+	fi
+	chmod 644 "$partial"
+	chown "$(stat -c %u:%g "$apps")" "$partial"
+	mv -f "$partial" "$apps/$3.sig"
+	partial=
+}
+
 # Puts a release's app builds (its JSON in $1, its tag in $2) in the app
-# folder and removes older ones of the same kind. Problems only print a note,
-# as the server itself is up to date by then.
+# folder, with their signatures, and removes older ones of the same kind.
+# Problems only print a note, as the server itself is up to date by then.
 fetch_apps() {
 	apps=$(apps_dir)
 	[ -n "$apps" ] || return 0
@@ -313,10 +343,11 @@ fetch_apps() {
 			continue
 		fi
 		fetch_app "$1" "$2" "$app" || continue
+		fetch_sig "$1" "$2" "$app" || true
 		for f in "$apps"/$glob; do
 			[ -f "$f" ] && [ "$f" != "$apps/$app" ] || continue
 			if [ "$(printf '%s\n%s\n' "${f##*/}" "$app" | sort -V | head -n 1)" = "${f##*/}" ]; then
-				rm -f "$f"
+				rm -f "$f" "$f.sig"
 				echo "Removed the older ${f##*/}."
 			fi
 		done

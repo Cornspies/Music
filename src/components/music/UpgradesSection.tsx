@@ -84,10 +84,10 @@ export function UpgradesSection() {
   const replace = async (c: UpgradeCandidate) => {
     setBusyFor(c.track.id, true)
     try {
-      await admin.applyUpgrade(c.track.id)
+      const track = await admin.applyUpgrade(c.track.id)
       drop(c.track.id)
       toast.success(`Replaced “${c.track.title}”`, { description: `${quality(c.current)} → ${quality(c.quality)}` })
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      useLibraryStore.getState().replaceAudio(track)
     } catch (e) {
       toast.error(`“${c.track.title}”: ${(e as Error).message}`)
     } finally {

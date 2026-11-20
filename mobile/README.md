@@ -17,6 +17,7 @@ running natively on both platforms:
 - Library with sorting (recent / title / artist / plays)
 - Home: stats, recently added, most played
 - Full player screen (seek, shuffle, repeat off/all/one, queue auto-advance) + mini now-playing bar
+- Queue: hold a song for **Play next** or **Add to queue**; a playlist's **Add to queue** adds all its songs
 - Favorites (optimistic heart toggles), playlists (create / detail / add & remove tracks)
 - Listen together: host a session, share its invite link, and everyone who
   joins (with an account on the server) hears the same queue in sync. The
@@ -95,6 +96,22 @@ Notes:
   2. Add the App Groups capability to both the iosApp and MusicWidget targets
      with the group `group.com.cornspies.music` (it matches `WIDGET_APP_GROUP` in
      `PlayerController.ios.kt`).
+
+## CarPlay
+
+On a car's screen the iOS app shows four tabs (Library, Playlists, Favorites,
+Downloads) and the car's own now-playing screen. Tapping a song plays it and
+queues the list it is in; each list starts with **Shuffle**.
+
+- The screens are in `composeApp/src/iosMain/kotlin/com/music/app/CarScreens.kt`;
+  `iosApp/iosApp/CarPlaySceneDelegate.swift` hands them the car's interface,
+  and `Info.plist` declares the CarPlay scene.
+- It needs the `com.apple.developer.carplay-audio` entitlement, which Apple
+  grants on request. It is in `iosApp.entitlements`, so the App ID needs the
+  CarPlay capability and the provisioning profile has to be regenerated before
+  a signed build works.
+- To try it without a car: run the app in the simulator and open
+  I/O → External Displays → CarPlay.
 
 ## Offline
 

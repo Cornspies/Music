@@ -196,7 +196,7 @@ type homeData struct {
 	events   []homeEvent
 	related  map[string]map[string]float64
 	info     map[string]artistInfo
-	coPlay   map[string]map[string]int
+	lists    [][]*homeTrack
 	now      time.Time
 	userID   string
 	daySeed  string
@@ -286,7 +286,6 @@ func (s *Server) loadHomeData(userID string) (*homeData, error) {
 		tracks:  map[string]*homeTrack{},
 		artists: map[string]*homeArtist{},
 		related: map[string]map[string]float64{},
-		coPlay:  map[string]map[string]int{},
 		now:     now,
 		userID:  userID,
 		daySeed: now.Format("2006-01-02"),
@@ -404,18 +403,7 @@ func (s *Server) loadHomeData(userID string) (*homeData, error) {
 		if len(list) > 400 {
 			continue
 		}
-		for _, a := range list {
-			m := d.coPlay[a.id]
-			if m == nil {
-				m = map[string]int{}
-				d.coPlay[a.id] = m
-			}
-			for _, b := range list {
-				if a != b {
-					m[b.id]++
-				}
-			}
-		}
+		d.lists = append(d.lists, list)
 		d.addListRelations(list)
 	}
 	return d, nil
@@ -978,6 +966,29 @@ func (d *homeData) similar(days int) HomeSimilar {
 	for _, w := range genres {
 		maxGenre = math.Max(maxGenre, w)
 	}
+	affinity := map[string]float64{}
+	for h, w := range heard {
+		for a, rel := range d.related[h] {
+			affinity[a] += w / maxHeard * rel * 0.8
+		}
+	}
+	// For a track that wasn't played, the played tracks it shares a playlist
+	// with, counted once per playlist.
+	shared := map[string]int{}
+	for _, list := range d.lists {
+		n := 0
+		for _, t := range list {
+			if played[t.id] {
+				n++
+			}
+		}
+		if n == 0 {
+			continue
+		}
+		for _, t := range list {
+			shared[t.id] += n
+		}
+	}
 	r := d.rng("similar:" + strconv.Itoa(days))
 	type scored struct {
 		t *homeTrack
@@ -991,20 +1002,12 @@ func (d *homeData) similar(days int) HomeSimilar {
 		score := 0.0
 		for _, a := range t.artists {
 			score += 0.5 * heard[a] / maxHeard
-			for h, w := range heard {
-				score += w / maxHeard * d.related[h][a] * 0.8
-			}
+			score += affinity[a]
 		}
 		if maxGenre > 0 && t.genre != "" {
 			score += 0.3 * genres[t.genre] / maxGenre
 		}
-		shared := 0
-		for other, n := range d.coPlay[t.id] {
-			if played[other] {
-				shared += n
-			}
-		}
-		score += 0.3 * math.Min(float64(shared), 3) / 3
+		score += 0.3 * math.Min(float64(shared[t.id]), 3) / 3
 		if t.lastHeard.IsZero() {
 			score += 0.1
 		}

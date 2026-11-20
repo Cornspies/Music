@@ -26,8 +26,15 @@ import (
 
 const maxUploadBytes = 512 << 20
 
+// safeCoverBytes reports whether a cover can be made from b. A picture that is
+// small in pixels is stored as it came, so one that would still be over the
+// size limit after shrinking is refused: that is padding behind a small
+// picture, or data that doesn't decode.
 func safeCoverBytes(b []byte) bool {
-	return len(b) > 0 && allowedImageTypes[http.DetectContentType(b)]
+	if len(b) == 0 || !allowedImageTypes[http.DetectContentType(b)] {
+		return false
+	}
+	return len(b) <= maxArtworkBytes || len(shrinkCover(b)) <= maxArtworkBytes
 }
 
 var allowedImageTypes = map[string]bool{
@@ -313,7 +320,14 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 		fileName  string
 		mimeType  string
 		clientDur float64
+		kept      bool
 	)
+	// A request that fails after its file part was stored must not leave the file.
+	defer func() {
+		if savedPath != "" && !kept {
+			os.Remove(filepath.Join(s.dataDir, savedPath))
+		}
+	}()
 
 	for {
 		part, err := mr.NextPart()
@@ -389,13 +403,13 @@ func (s *Server) handleUploadTrack(w http.ResponseWriter, r *http.Request) {
 	if quota := userQuotaBytes(); quota > 0 {
 		used, _ := s.bytesUsedBy(u.ID)
 		if used+fileSize > quota {
-			os.Remove(absPath)
 			writeErr(w, http.StatusInsufficientStorage,
 				fmt.Sprintf("this file would exceed your storage limit (%s of %s used)", humanBytes(used), humanBytes(quota)))
 			return
 		}
 	}
 
+	kept = true
 	up := &pendingUpload{savedPath: savedPath, fileName: fileName, mimeType: mimeType, size: fileSize, clientDur: clientDur, userID: u.ID}
 	up.hash, _ = fileSHA256(absPath)
 	up.meta = readMetadata(absPath)

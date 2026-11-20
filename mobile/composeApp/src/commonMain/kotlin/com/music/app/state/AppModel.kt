@@ -1,6 +1,8 @@
 package com.music.app.state
 
 import com.music.app.appVersionName
+import com.music.app.whatsNew
+import com.music.app.clearMediaCaches
 import com.music.app.api.AppRelease
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -71,11 +73,13 @@ private const val KEY_SONGS_ONLY = "discover.songsOnly"
 private const val HOME_RETRIES = 4
 private const val HOME_RETRY_MS = 5_000L
 private const val KEY_UPDATE_DISMISSED = "update.dismissed"
+private const val KEY_VERSION_SEEN = "app.versionSeen"
 private const val UPDATE_CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
 private const val CHANGE_CHECK_INTERVAL_MS = 30_000L
 private const val RECONNECT_CHECK_INTERVAL_MS = 60_000L
 private const val PLAYBACK_SYNC_INTERVAL_MS = 5L * 60_000L
 private const val SHUFFLE_HISTORY_MAX = 500
+private const val SAVED_QUEUE_MAX = 500
 private const val DEFAULT_LIBRARY_SORT = "created"
 private val LIBRARY_SORTS = setOf("created", "title", "artist", "plays", "recent")
 private const val PAUSE_SETTLE_MS = 2_000L
@@ -90,7 +94,8 @@ class InsecureServerException(message: String) : Exception(message)
 fun isPrivateHost(host: String): Boolean {
     val h = host.trim().trimStart('[').trimEnd(']').lowercase()
     if (h == "localhost" || h.endsWith(".local") || h == "::1") return true
-    if (h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80:")) return true
+    // Only an IPv6 address has a colon; names like "fdroid.org" start with "fd" too.
+    if (':' in h && (h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80:"))) return true
     val parts = h.split('.')
     if (parts.size != 4 || parts.any { it.toIntOrNull() == null }) return false
     val a = parts[0].toInt()
@@ -101,7 +106,10 @@ fun isPrivateHost(host: String): Boolean {
 fun insecureServerWarning(baseUrl: String): String? {
     val url = baseUrl.trim()
     if (!url.startsWith("http://", ignoreCase = true)) return null
-    val host = url.removePrefix("http://").removePrefix("HTTP://").substringBefore('/').substringBefore(':')
+    // The host of user:password@host:port; an IPv6 address comes in brackets.
+    val authority = url.substring("http://".length).substringBefore('/').substringBefore('?').substringBefore('#')
+        .substringAfterLast('@')
+    val host = if (authority.startsWith("[")) authority.substringBefore(']') else authority.substringBefore(':')
     if (host.isBlank() || isPrivateHost(host)) return null
     return "Plain http:// outside your local network sends your password unencrypted. Use https://."
 }
@@ -142,6 +150,24 @@ class AppModel(
     fun updateSwipeToDelete(on: Boolean) {
         swipeToDelete = on
         localStore.saveMeta(KEY_SWIPE_TO_DELETE, if (on) "1" else null)
+    }
+
+    var whatsNew by mutableStateOf(
+        whatsNew(localStore.loadMeta(KEY_VERSION_SEEN), appVersionName(), signedIn = store.loadToken() != null),
+    )
+        private set
+
+    init {
+        if (whatsNew == null) rememberVersion()
+    }
+
+    private fun rememberVersion() {
+        appVersionName()?.let { localStore.saveMeta(KEY_VERSION_SEEN, it) }
+    }
+
+    fun dismissWhatsNew() {
+        whatsNew = null
+        rememberVersion()
     }
 
     var availableUpdate by mutableStateOf<AppRelease?>(null)
@@ -329,9 +355,10 @@ class AppModel(
         } else {
             scope.launch {
                 try {
-                    user = api.me()
+                    val account = api.me()
+                    downloads.signedIn(account)
+                    user = account
                     offlineMode = false
-                    downloads.cacheUser(user!!)
                     onAuthenticated()
                 } catch (e: Exception) {
                     // Only a refused token signs out: a server that's down or
@@ -356,10 +383,10 @@ class AppModel(
         guardInsecure(baseUrl, acceptInsecure)
         api.baseUrl = baseUrl
         val response = api.login(username.trim(), password)
+        downloads.signedIn(response.user)
         store.saveToken(response.token)
         user = response.user
         offlineMode = false
-        downloads.cacheUser(response.user)
         onAuthenticated()
     }
 
@@ -388,10 +415,10 @@ class AppModel(
         guardInsecure(baseUrl, acceptInsecure)
         api.baseUrl = baseUrl
         val response = api.register(username.trim(), password, inviteCode?.takeIf { it.isNotBlank() })
+        downloads.signedIn(response.user)
         store.saveToken(response.token)
         user = response.user
         offlineMode = false
-        downloads.cacheUser(response.user)
         onAuthenticated()
     }
 
@@ -428,14 +455,21 @@ class AppModel(
         logout()
     }
 
-    fun logout() {
+    fun logout() = signOut(keepOfflineData = false)
+
+    // A session that ended by itself keeps the offline data: it is there again
+    // when the same account signs back in, and cleared if another one does.
+    private fun signOut(keepOfflineData: Boolean) {
         listen.signedOut()
         listenInvite = null
         favoritesDownloadJob?.cancel()
         favoritesDownloadError = null
         store.saveToken(null)
         api.clearMediaToken()
-        downloads.clearForLogout()
+        if (!keepOfflineData) {
+            downloads.clearForLogout()
+            scope.launch { runCatching { clearMediaCaches() } }
+        }
         offlineMode = false
         serverDown = null
         user = null
@@ -618,7 +652,7 @@ class AppModel(
             refreshAll()
         } catch (e: Exception) {
             if (e is ApiException && e.status == 401) {
-                logout()
+                signOut(keepOfflineData = true)
             } else {
                 noteFailure(e)
             }
@@ -1117,6 +1151,26 @@ class AppModel(
         if (shuffled && !shuffleOn) setShuffleMode(ShuffleMode.RANDOM)
     }
 
+    fun playNext(tracks: List<Track>) = enqueue(tracks, next = true)
+
+    fun addToQueue(tracks: List<Track>) = enqueue(tracks, next = false)
+
+    private fun enqueue(tracks: List<Track>, next: Boolean) {
+        if (tracks.isEmpty()) return
+        if (listen.active) return listen.add(tracks, if (next) "next" else "end")
+        if (currentTrack == null || queue.isEmpty()) return playAll(tracks)
+        val at = if (next) (queueIndex + 1).coerceIn(0, queue.size) else queue.size
+        queue = queue.take(at) + tracks + queue.drop(at)
+        if (next) {
+            // Shuffle picks at random, so these go on top of what it plays first.
+            if (shuffle) tracks.asReversed().forEach { shuffleForward.addLast(it.id) }
+            prefetchNeighbours()
+        }
+        savePlayback()
+        val what = if (tracks.size == 1) "“${tracks[0].title}”" else "${tracks.size} songs"
+        notify(if (next) "Playing $what next" else "Added $what to the queue")
+    }
+
     fun cycleShuffle() {
         setShuffleMode(
             when (shuffleMode) {
@@ -1336,17 +1390,22 @@ class AppModel(
     }
 
     private fun noteShuffleMove(fromId: String?, toId: String) {
-        if (!shuffle || fromId == null || fromId == toId) return
+        if (!shuffle || fromId == null) return
+        // Before the check below: the song playing now can be queued to play next too.
+        if (shuffleForward.lastOrNull() == toId) shuffleForward.removeLast()
+        else if (fromId != toId) shuffleForward.clear()
+        if (fromId == toId) return
         shuffleBack.addLast(fromId)
         if (shuffleBack.size > SHUFFLE_HISTORY_MAX) shuffleBack.removeFirst()
-        if (shuffleForward.lastOrNull() == toId) shuffleForward.removeLast() else shuffleForward.clear()
     }
 
     private fun forwardIndex(): Int {
         while (shuffleForward.isNotEmpty()) {
             val id = shuffleForward.last()
-            val idx = queue.indexOfFirst { it.id == id }
-            if (idx >= 0 && idx != queueIndex) return idx
+            // The queue can hold a song twice: the copy after the current one first.
+            val idx = (queueIndex + 1 until queue.size).firstOrNull { queue[it].id == id }
+                ?: (0 until queueIndex).firstOrNull { queue[it].id == id }
+            if (idx != null) return idx
             shuffleForward.removeLast()
         }
         return -1
@@ -1483,6 +1542,14 @@ class AppModel(
 
     private var lastSavedQueueIds: List<String> = emptyList()
 
+    // The part of the queue that gets saved. The server keeps at most 500 songs,
+    // those around the current one, and refuses a much longer list outright.
+    private fun savedQueueIds(): List<String> {
+        if (queue.size <= SAVED_QUEUE_MAX) return queue.map { it.id }
+        val end = minOf(queue.size, maxOf(0, queueIndex - 50) + SAVED_QUEUE_MAX)
+        return queue.subList(maxOf(0, end - SAVED_QUEUE_MAX), end).map { it.id }
+    }
+
     private var knownPlaybackUpdatedAt = ""
     private var syncingPlayback = false
 
@@ -1542,7 +1609,7 @@ class AppModel(
     private fun savePlayback(position: Double = player.currentPositionSec()) {
         val track = currentTrack ?: return
         if (user == null || offlineMode || listen.active) return
-        val ids = queue.map { it.id }
+        val ids = savedQueueIds()
         val queueChanged = ids != lastSavedQueueIds
         if (!queueChanged && track.id == lastSavedTrackId && abs(position - lastSavedPosition) < 1) return
         lastSavedTrackId = track.id
@@ -1607,7 +1674,7 @@ class AppModel(
     private fun applyServerPlayback(state: PlaybackState) {
         val same = currentTrack?.id == state.track.id &&
             abs(player.currentPositionSec() - state.position) < 1 &&
-            queue.map { it.id } == state.queue.map { it.id }
+            savedQueueIds() == state.queue.map { it.id }
         lastSavedQueueIds = state.queue.map { it.id }
         lastSavedTrackId = state.track.id
         lastSavedPosition = state.position

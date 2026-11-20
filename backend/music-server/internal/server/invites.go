@@ -40,7 +40,8 @@ func inviteStatus(inv *Invite, now time.Time) string {
 	switch {
 	case inv.RevokedAt != nil:
 		return "revoked"
-	case inv.UsedBy != nil:
+	// used_by goes back to NULL when that account is deleted, used_at stays.
+	case inv.UsedBy != nil || inv.UsedAt != nil:
 		return "used"
 	}
 	if exp, err := time.Parse(time.RFC3339, inv.ExpiresAt); err == nil && !exp.After(now) {
@@ -87,7 +88,7 @@ func (s *Server) getInvite(code string) (*Invite, error) {
 func (s *Server) consumeInvite(code, userID string) error {
 	res, err := s.db.Exec(`
 		UPDATE invites SET used_by = ?, used_at = ?
-		WHERE code = ? AND used_by IS NULL AND revoked_at IS NULL AND expires_at > ?`,
+		WHERE code = ? AND used_by IS NULL AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
 		userID, nowRFC3339(), code, nowRFC3339())
 	if err != nil {
 		return err
@@ -194,7 +195,7 @@ func (s *Server) handleAdminCreateInvite(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleAdminRevokeInvite(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
-	res, err := s.db.Exec(`UPDATE invites SET revoked_at = ? WHERE code = ? AND revoked_at IS NULL AND used_by IS NULL`,
+	res, err := s.db.Exec(`UPDATE invites SET revoked_at = ? WHERE code = ? AND revoked_at IS NULL AND used_by IS NULL AND used_at IS NULL`,
 		nowRFC3339(), code)
 	if err != nil {
 		s.internalErr(w, "revoke invite", err)

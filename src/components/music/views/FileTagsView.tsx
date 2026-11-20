@@ -48,7 +48,9 @@ export function FileTagsView() {
     try {
       const r = await restoreLibraryTags(selected.map((d) => d.track.id))
       toast.success(`Restored ${r.restored} track${r.restored === 1 ? "" : "s"} from their files`)
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      const library = useLibraryStore.getState()
+      library.syncTracks().catch(() => {})
+      library.fetchStats().catch(() => {})
       setScanKey((k) => k + 1)
     } catch (e) {
       toast.error((e as Error).message)

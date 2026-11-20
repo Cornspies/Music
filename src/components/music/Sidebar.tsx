@@ -172,7 +172,7 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
   const pins = useLibraryStore((s) => s.pins)
   const tracks = useLibraryStore((s) => s.tracks)
   const user = useAuthStore((s) => s.user)
-  const logout = useAuthStore((s) => s.logout)
+  const signOut = useAuthStore((s) => s.signOut)
   const downloadCount = useOfflineStore((s) => s.tracks.length)
   const listeners = useListenStore((s) => s.session?.members.length ?? 0)
   const tips = useRailTips(collapsed)
@@ -201,7 +201,7 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
       toast.error((e as Error).message)
       return
     }
-    logout()
+    signOut()
   }
 
   const openUpload = () => {
@@ -518,7 +518,7 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => logout()}>
+              <DropdownMenuItem onClick={() => signOut()}>
                 <LogOut className="size-4" /> Sign out here
               </DropdownMenuItem>
               <DropdownMenuItem onClick={signOutEverywhere} className="text-red-400">
@@ -536,7 +536,7 @@ export function SidebarContent({ collapsed = false, collapsible = false }: { col
             </div>
             <SignOutMenu
               onEverywhere={signOutEverywhere}
-              onHere={() => logout()}
+              onHere={() => signOut()}
               tip={{}}
               className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-800/60 hover:text-red-400"
             />

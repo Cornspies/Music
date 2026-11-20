@@ -4,6 +4,8 @@ import android.content.Context
 import com.music.app.appContext
 import java.io.File
 import androidx.core.content.edit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 actual class OfflineStore actual constructor() {
 
@@ -13,72 +15,92 @@ actual class OfflineStore actual constructor() {
 
     private val prefs = appContext.getSharedPreferences("music-offline", Context.MODE_PRIVATE)
 
+    private val audio = FileCatalog(dir.list().orEmpty().asList())
+
+    private val extra = FileCatalog(extras.list().orEmpty().asList())
+
     actual suspend fun save(trackId: String, extension: String, write: suspend (path: String) -> Unit): String {
         if (!dir.exists()) dir.mkdirs()
         val target = File(dir, "$trackId.$extension")
         val partial = File(dir, "$trackId.$extension$PART_SUFFIX")
+        audio.put(partial.name, 0L)
         try {
             write(partial.absolutePath)
         } catch (e: Throwable) {
             partial.delete()
+            audio.remove(partial.name)
             throw e
         }
-        filesFor(trackId).filter { it != partial }.forEach { it.delete() }
+        audio.names(trackId).filter { it != partial.name }.forEach { remove(dir, audio, it) }
+        audio.remove(partial.name)
         if (!partial.renameTo(target)) {
             partial.delete()
             throw IllegalStateException("Could not save the download to device storage.")
         }
+        audio.put(target.name, target.length())
         return target.absolutePath
     }
 
     actual fun pathFor(trackId: String): String? =
-        filesFor(trackId).firstOrNull { !it.name.endsWith(PART_SUFFIX) }?.absolutePath
+        audio.names(trackId).firstOrNull { !it.endsWith(PART_SUFFIX) }?.let { File(dir, it).absolutePath }
 
     actual fun delete(trackId: String) {
-        filesFor(trackId).forEach { it.delete() }
+        audio.names(trackId).forEach { remove(dir, audio, it) }
         deleteExtras(trackId)
     }
 
     actual fun deleteAll() {
         dir.listFiles()?.forEach { it.delete() }
         extras.listFiles()?.forEach { it.delete() }
+        audio.clear()
+        extra.clear()
     }
 
-    actual fun bytesUsed(): Long =
-        listOf(dir, extras).sumOf { folder ->
-            folder.listFiles()
-                ?.filter { it.isFile && !it.name.endsWith(PART_SUFFIX) }
-                ?.sumOf { it.length() }
-                ?: 0L
+    actual fun bytesUsed(): Long = audio.bytes + extra.bytes
+
+    actual suspend fun measure() {
+        val audioNames = audio.unmeasured()
+        val extraNames = extra.unmeasured()
+        val (audioSizes, extraSizes) = withContext(Dispatchers.IO) {
+            sizesOf(dir, audioNames) to sizesOf(extras, extraNames)
         }
+        audio.measured(audioSizes)
+        extra.measured(extraSizes)
+    }
 
     actual fun saveExtra(trackId: String, kind: String, bytes: ByteArray) {
         if (!extras.exists()) extras.mkdirs()
-        val partial = File(extras, "$trackId.$kind$PART_SUFFIX")
+        val name = "$trackId.$kind"
+        val partial = File(extras, "$name$PART_SUFFIX")
         partial.writeBytes(bytes)
-        if (!partial.renameTo(File(extras, "$trackId.$kind"))) partial.delete()
+        if (partial.renameTo(File(extras, name))) extra.put(name, bytes.size.toLong()) else partial.delete()
     }
 
     actual fun extraPath(trackId: String, kind: String): String? =
-        File(extras, "$trackId.$kind").takeIf { it.isFile }?.absolutePath
+        "$trackId.$kind".takeIf { it in extra }?.let { File(extras, it).absolutePath }
 
     actual fun readExtra(trackId: String, kind: String): ByteArray? =
         File(extras, "$trackId.$kind").takeIf { it.isFile }?.readBytes()
 
     actual fun deleteExtras(trackId: String) {
-        extras.listFiles()?.filter { it.name.startsWith("$trackId.") }?.forEach { it.delete() }
+        extra.names(trackId).forEach { remove(extras, extra, it) }
     }
 
     actual fun saveMeta(key: String, value: String?) {
         prefs.edit { putString(key, value) }
     }
 
+    actual fun commitMeta(values: Map<String, String?>) {
+        prefs.edit(commit = true) { values.forEach { (key, value) -> putString(key, value) } }
+    }
+
     actual fun loadMeta(key: String): String? = prefs.getString(key, null)
 
-    private fun filesFor(trackId: String): List<File> =
-        dir.listFiles()?.filter { it.isFile && it.name.startsWith("$trackId.") } ?: emptyList()
-
-    private companion object {
-        const val PART_SUFFIX = ".part"
+    private fun remove(folder: File, catalog: FileCatalog, name: String) {
+        File(folder, name).delete()
+        catalog.remove(name)
     }
+
+    private fun sizesOf(folder: File, names: List<String>): Map<String, Long> =
+        names.associateWith { File(folder, it).length() }
 }

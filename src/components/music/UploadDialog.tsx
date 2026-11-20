@@ -231,7 +231,9 @@ export function UploadDialog() {
       toast.success(
         `Uploaded ${uploaded.length} track${uploaded.length === 1 ? "" : "s"} to your library`
       )
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      const library = useLibraryStore.getState()
+      for (const track of uploaded) library.addTrack(track)
+      library.fetchStats().catch(() => {})
       setUploadedTracks(uploaded)
     }
   }
@@ -243,7 +245,9 @@ export function UploadDialog() {
       const track = await confirmPendingUpload(task.duplicate.pendingId)
       patchTask(task.key, { status: "done", duplicate: undefined })
       setUploadedTracks((ts) => [...ts, track])
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      const library = useLibraryStore.getState()
+      library.addTrack(track)
+      library.fetchStats().catch(() => {})
     } catch (e) {
       patchTask(task.key, { status: "error", message: (e as Error).message, duplicate: undefined })
     }
@@ -253,9 +257,9 @@ export function UploadDialog() {
     if (!task.duplicate) return
     patchTask(task.key, { status: "uploading", progress: 100 })
     try {
-      await replaceWithPendingUpload(task.duplicate.pendingId, trackId)
+      const track = await replaceWithPendingUpload(task.duplicate.pendingId, trackId)
       patchTask(task.key, { status: "done", message: "replaced", duplicate: undefined })
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      useLibraryStore.getState().replaceAudio(track)
     } catch (e) {
       patchTask(task.key, { status: "error", message: (e as Error).message, duplicate: undefined })
     }

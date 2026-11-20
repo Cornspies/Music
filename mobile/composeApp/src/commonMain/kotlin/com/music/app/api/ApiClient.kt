@@ -418,7 +418,7 @@ class ApiClient(private val store: TokenStore) {
         noteRefreshedToken(response)
         if (response.status == HttpStatusCode.NoContent || response.status == HttpStatusCode.NotModified) return null
         if (!response.status.isSuccess()) throw apiError(response)
-        return response.body()
+        return withContext(Dispatchers.Default) { response.body() }
     }
 
     suspend fun savePlayback(trackId: String, position: Double, queue: List<String>? = null): String {
@@ -662,7 +662,8 @@ class ApiClient(private val store: TokenStore) {
     private suspend inline fun <reified T> bodyOrError(response: HttpResponse): T {
         noteRefreshedToken(response)
         if (!response.status.isSuccess()) throw apiError(response)
-        return response.body()
+        // Callers are on the main thread, and the library list is megabytes of JSON.
+        return withContext(Dispatchers.Default) { response.body() }
     }
 
     private suspend fun expectNoContent(response: HttpResponse) {

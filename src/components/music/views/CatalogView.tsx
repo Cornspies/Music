@@ -175,7 +175,9 @@ function FindToolsProvider({ onImported, children }: { onImported: () => void; c
       const added = await discover.add(result.source, result.id)
       setOne(track.id, { state: "added", trackId: added.id })
       toast.success(`Added “${added.title}”`)
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      const library = useLibraryStore.getState()
+      library.addTrack(added)
+      library.fetchStats().catch(() => {})
     } catch (e) {
       setOne(track.id, { state: "found", result })
       toast.error((e as Error).message)
@@ -293,7 +295,8 @@ function FindToolsProvider({ onImported, children }: { onImported: () => void; c
         }
         setJobs((prev) => ({ ...prev, ...updates }))
         if (finished.length === 0) return
-        await useLibraryStore.getState().fetchAll()
+        const library = useLibraryStore.getState()
+        await Promise.allSettled([library.syncTracks(), library.fetchStats()])
         onImported()
         for (const fresh of finished) {
           toast.success(

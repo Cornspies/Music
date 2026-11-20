@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::thread;
+use std::thread::{self, Thread};
 use std::time::Duration;
 
 use crossbeam_channel::Sender;
@@ -21,6 +21,8 @@ use super::Msg;
 use super::http::{self, HttpSource};
 
 const RESAMPLE_CHUNK: usize = 1024;
+const REFILL_DIVISOR: usize = 4;
+const SHORTEST_WAIT: Duration = Duration::from_millis(50);
 
 pub struct SlotShared {
     pub id: u64,
@@ -28,17 +30,53 @@ pub struct SlotShared {
     pub finished: AtomicBool,
     pub total_frames: AtomicU64,
     pub played: AtomicU64,
+    held: AtomicBool,
 }
 
 impl SlotShared {
-    pub fn new(id: u64) -> Arc<Self> {
+    pub fn new(id: u64, held: bool) -> Arc<Self> {
         Arc::new(SlotShared {
             id,
             cancel: Arc::new(AtomicBool::new(false)),
             finished: AtomicBool::new(false),
             total_frames: AtomicU64::new(0),
             played: AtomicU64::new(0),
+            held: AtomicBool::new(held),
         })
+    }
+}
+
+pub struct Decoder {
+    pub shared: Arc<SlotShared>,
+    thread: Option<Thread>,
+}
+
+impl Decoder {
+    pub fn cancel(&self) {
+        self.shared.cancel.store(true, Ordering::Relaxed);
+        self.wake();
+    }
+
+    // A held decoder whose ring is full sleeps until it's released, so its
+    // slot must not be played while it's held.
+    pub fn hold(&self, held: bool) {
+        self.shared.held.store(held, Ordering::Relaxed);
+        if !held {
+            self.wake();
+        }
+    }
+
+    fn wake(&self) {
+        if let Some(thread) = &self.thread {
+            thread.unpark();
+        }
+    }
+}
+
+impl Drop for Decoder {
+    // Nothing else could wake the thread afterwards.
+    fn drop(&mut self) {
+        self.hold(false);
     }
 }
 
@@ -84,8 +122,9 @@ impl From<SymphoniaError> for Failure {
     }
 }
 
-pub fn spawn(mut job: DecodeJob) {
-    let _ = thread::Builder::new()
+pub fn spawn(mut job: DecodeJob) -> Decoder {
+    let shared = job.slot.clone();
+    let thread = thread::Builder::new()
         .name("decoder".into())
         .spawn(move || {
             let result = decode(&mut job);
@@ -110,7 +149,10 @@ pub fn spawn(mut job: DecodeJob) {
                     }
                 }
             }
-        });
+        })
+        .ok()
+        .map(|handle| handle.thread().clone());
+    Decoder { shared, thread }
 }
 
 fn decode(job: &mut DecodeJob) -> Result<(), Failure> {
@@ -178,6 +220,7 @@ fn decode(job: &mut DecodeJob) -> Result<(), Failure> {
         decoder.reset();
     }
 
+    let mut feed = Feed::new(&mut job.producer, &job.slot, job.out_rate);
     let mut resample: Option<Resample> = None;
     let mut in_rate = 0u32;
     let mut interleaved: Vec<f32> = Vec::new();
@@ -242,19 +285,13 @@ fn decode(job: &mut DecodeJob) -> Result<(), Failure> {
             }
         }
         match resample.as_mut() {
-            Some(resampler) => {
-                let producer = &mut job.producer;
-                let cancel = &job.slot.cancel;
-                resampler.process(input, &mut |out| push(producer, out, cancel))?;
-            }
-            None => push(&mut job.producer, input, &job.slot.cancel)?,
+            Some(resampler) => resampler.process(input, &mut |out| feed.push(out))?,
+            None => feed.push(input)?,
         }
     }
 
     if let Some(resampler) = resample.as_mut() {
-        let producer = &mut job.producer;
-        let cancel = &job.slot.cancel;
-        resampler.finish(&mut |out| push(producer, out, cancel))?;
+        resampler.finish(&mut |out| feed.push(out))?;
     }
     Ok(())
 }
@@ -279,28 +316,80 @@ fn to_stereo(input: &[f32], channels: usize, out: &mut Vec<f32>) {
     }
 }
 
-fn push(
-    producer: &mut Producer<f32>,
-    mut data: &[f32],
-    cancel: &AtomicBool,
-) -> Result<(), Failure> {
-    while !data.is_empty() {
-        if cancel.load(Ordering::Relaxed) || producer.is_abandoned() {
-            return Err(Failure::Cancelled);
-        }
-        let free = producer.slots() & !1;
-        if free == 0 {
-            thread::sleep(Duration::from_millis(15));
-            continue;
-        }
-        let n = free.min(data.len());
-        if let Ok(chunk) = producer.write_chunk_uninit(n) {
-            chunk.fill_from_iter(data[..n].iter().copied());
-            data = &data[n..];
+struct Pacing {
+    refill: usize,
+    samples_per_second: f64,
+    full: bool,
+}
+
+impl Pacing {
+    fn new(capacity: usize, rate: u32) -> Self {
+        Pacing {
+            refill: (capacity / REFILL_DIVISOR).max(2) & !1,
+            samples_per_second: f64::from(rate.max(1)) * 2.0,
+            full: false,
         }
     }
-    Ok(())
+
+    // `None` means write now. Once the ring is full it's left alone until
+    // `refill` samples of it have been played, and the wait is the time that
+    // takes, so the decoder comes back when there's that much room and not
+    // every few milliseconds.
+    fn wait(&mut self, free: usize) -> Option<Duration> {
+        if free == 0 {
+            self.full = true;
+        } else if free >= self.refill {
+            self.full = false;
+        }
+        if !self.full {
+            return None;
+        }
+        let missing = (self.refill - free) as f64 / self.samples_per_second;
+        Some(Duration::from_secs_f64(missing).max(SHORTEST_WAIT))
+    }
 }
+
+struct Feed<'a> {
+    producer: &'a mut Producer<f32>,
+    slot: &'a SlotShared,
+    pacing: Pacing,
+}
+
+impl<'a> Feed<'a> {
+    fn new(producer: &'a mut Producer<f32>, slot: &'a SlotShared, rate: u32) -> Self {
+        let pacing = Pacing::new(producer.buffer().capacity(), rate);
+        Feed {
+            producer,
+            slot,
+            pacing,
+        }
+    }
+
+    fn push(&mut self, mut data: &[f32]) -> Result<(), Failure> {
+        while !data.is_empty() {
+            if self.slot.cancel.load(Ordering::Relaxed) || self.producer.is_abandoned() {
+                return Err(Failure::Cancelled);
+            }
+            let free = self.producer.slots() & !1;
+            if let Some(wait) = self.pacing.wait(free) {
+                if self.slot.held.load(Ordering::Relaxed) {
+                    thread::park();
+                } else {
+                    thread::park_timeout(wait);
+                }
+                continue;
+            }
+            let n = free.min(data.len());
+            if let Ok(chunk) = self.producer.write_chunk_uninit(n) {
+                chunk.fill_from_iter(data[..n].iter().copied());
+                data = &data[n..];
+            }
+        }
+        Ok(())
+    }
+}
+
+const SOURCE_RATES: std::ops::RangeInclusive<u32> = 8_000..=384_000;
 
 struct Resample {
     fft: Fft<f32>,
@@ -314,6 +403,12 @@ struct Resample {
 
 impl Resample {
     fn new(in_rate: u32, out_rate: u32) -> Option<Self> {
+        // The rate comes from the file's header. The converter's buffers grow
+        // with it, and a nonsense value asks for more memory than there is,
+        // which ends the app.
+        if !SOURCE_RATES.contains(&in_rate) {
+            return None;
+        }
         let fft = Fft::<f32>::new(
             in_rate as usize,
             out_rate as usize,
@@ -404,5 +499,140 @@ impl Resample {
         }
         self.output_frames += take as u64;
         sink(&frames[..take * 2])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::thread::{self, JoinHandle};
+    use std::time::{Duration, Instant};
+
+    use rtrb::{Producer, RingBuffer};
+
+    use super::Resample;
+    use super::{Decoder, Feed, Pacing, SHORTEST_WAIT, SlotShared};
+
+    #[test]
+    fn resampler_refuses_rates_no_real_file_has() {
+        assert!(Resample::new(44_100, 48_000).is_some());
+        assert!(Resample::new(96_000, 44_100).is_some());
+        assert!(Resample::new(1, 48_000).is_none());
+        assert!(Resample::new(4_294_967_291, 48_000).is_none());
+    }
+
+    const RATE: u32 = 48_000;
+    const RING: usize = 192_000;
+
+    #[test]
+    fn decoder_fills_the_ring_then_waits_until_a_quarter_has_played() {
+        let mut pacing = Pacing::new(RING, RATE);
+        assert_eq!(pacing.wait(RING), None);
+        assert_eq!(pacing.wait(2), None);
+        assert_eq!(pacing.wait(0), Some(Duration::from_millis(500)));
+        assert_eq!(pacing.wait(24_000), Some(Duration::from_millis(250)));
+        assert_eq!(pacing.wait(47_998), Some(SHORTEST_WAIT));
+        assert_eq!(pacing.wait(48_000), None);
+        assert_eq!(pacing.wait(2), None);
+        assert_eq!(pacing.wait(0), Some(Duration::from_millis(500)));
+    }
+
+    #[test]
+    fn playing_ring_stays_three_quarters_full_on_a_few_wake_ups_a_second() {
+        const PERIOD: usize = 1024;
+        const SECONDS: usize = 60;
+        let rate = RATE as usize;
+        let mut pacing = Pacing::new(RING, RATE);
+        let mut buffered = 0;
+        let mut lowest = RING;
+        let mut wake_ups = 0;
+        let mut now = 0;
+        let mut callback = PERIOD;
+        while now < SECONDS * rate {
+            let Some(wait) = pacing.wait(RING - buffered) else {
+                buffered = RING;
+                continue;
+            };
+            wake_ups += 1;
+            now += (wait.as_secs_f64() * f64::from(RATE)).ceil() as usize;
+            while callback <= now {
+                buffered -= PERIOD * 2;
+                callback += PERIOD;
+            }
+            lowest = lowest.min(buffered);
+        }
+        let shortest = (SHORTEST_WAIT.as_secs_f64() * f64::from(RATE)) as usize * 2;
+        assert!(lowest >= RING - RING / 4 - shortest - PERIOD * 2);
+        assert!(wake_ups <= SECONDS * 4);
+    }
+
+    fn feeder(
+        mut producer: Producer<f32>,
+        shared: Arc<SlotShared>,
+        samples: usize,
+    ) -> (Decoder, JoinHandle<bool>) {
+        let slot = shared.clone();
+        let handle = thread::spawn(move || {
+            let data: Vec<f32> = (0..samples).map(|i| i as f32).collect();
+            let mut feed = Feed::new(&mut producer, &slot, RATE);
+            data.chunks(6).all(|packet| feed.push(packet).is_ok())
+        });
+        let decoder = Decoder {
+            shared,
+            thread: Some(handle.thread().clone()),
+        };
+        (decoder, handle)
+    }
+
+    fn wait_for(mut done: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !done() {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn samples_arrive_once_and_in_order() {
+        let (producer, mut consumer) = RingBuffer::<f32>::new(64);
+        let (_decoder, thread) = feeder(producer, SlotShared::new(1, false), 400);
+        let mut heard = Vec::new();
+        wait_for(|| {
+            heard.extend(std::iter::from_fn(|| consumer.pop().ok()));
+            heard.len() >= 400
+        });
+        assert!(thread.join().unwrap());
+        assert!(heard.iter().copied().eq((0..400).map(|i| i as f32)));
+    }
+
+    #[test]
+    fn held_decoder_sleeps_until_it_is_released() {
+        let (producer, mut consumer) = RingBuffer::<f32>::new(64);
+        let (decoder, thread) = feeder(producer, SlotShared::new(1, true), 128);
+        wait_for(|| consumer.slots() == 64);
+        while consumer.pop().is_ok() {}
+        thread::sleep(SHORTEST_WAIT * 6);
+        assert_eq!(consumer.slots(), 0);
+        decoder.hold(false);
+        wait_for(|| consumer.slots() == 64);
+        assert!(thread.join().unwrap());
+    }
+
+    #[test]
+    fn cancelling_or_dropping_its_handle_wakes_a_held_decoder() {
+        let (producer, consumer) = RingBuffer::<f32>::new(64);
+        let (decoder, thread) = feeder(producer, SlotShared::new(1, true), 128);
+        wait_for(|| consumer.slots() == 64);
+        decoder.cancel();
+        wait_for(|| thread.is_finished());
+        assert!(!thread.join().unwrap());
+
+        let (producer, consumer) = RingBuffer::<f32>::new(64);
+        let (decoder, thread) = feeder(producer, SlotShared::new(2, true), 128);
+        wait_for(|| consumer.slots() == 64);
+        drop(decoder);
+        drop(consumer);
+        wait_for(|| thread.is_finished());
+        assert!(!thread.join().unwrap());
     }
 }

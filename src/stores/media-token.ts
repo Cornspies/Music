@@ -13,6 +13,7 @@ interface MediaTokenState {
   token: string | null
   expiresAt: number
   refresh: () => Promise<void>
+  ensure: () => Promise<void>
   adopt: (token: string, expiresAt: number) => void
   clear: () => void
 }
@@ -32,7 +33,7 @@ function scheduleRefresh(expiresAt: number) {
   }, delay)
 }
 
-export const useMediaTokenStore = create<MediaTokenState>()((set) => ({
+export const useMediaTokenStore = create<MediaTokenState>()((set, get) => ({
   token: null,
   expiresAt: 0,
 
@@ -62,6 +63,14 @@ export const useMediaTokenStore = create<MediaTokenState>()((set) => ({
     return inflight
   },
 
+  // A new token changes the address of every cover and avatar, so they would
+  // all load again: only ask when there is none or it is about to run out.
+  ensure: () => {
+    if (inflight) return inflight
+    const { token, expiresAt } = get()
+    return !token || expiresAt - Date.now() < REFRESH_MARGIN_MS ? get().refresh() : Promise.resolve()
+  },
+
   adopt: (token, expiresAt) => {
     set({ token, expiresAt })
     scheduleRefresh(expiresAt)
@@ -84,10 +93,18 @@ export function useMediaToken(): string | null {
 }
 
 function refreshIfDue() {
-  if (!useAuthStore.getState().token) return
-  const { token, expiresAt } = useMediaTokenStore.getState()
-  if (!token || expiresAt - Date.now() < REFRESH_MARGIN_MS) {
-    useMediaTokenStore.getState().refresh().catch(() => {})
+  if (useAuthStore.getState().token) useMediaTokenStore.getState().ensure().catch(() => {})
+}
+
+// The account and token version a token was issued for. The server refuses a
+// media token from before a password change, when the version went up.
+function issuedFor(jwt: string | null): string | null {
+  try {
+    const payload = (jwt ?? "").split(".")[1].replace(/-/g, "+").replace(/_/g, "/")
+    const claims = JSON.parse(atob(payload)) as { sub?: string; ver?: number }
+    return `${claims.sub}:${claims.ver}`
+  } catch {
+    return null
   }
 }
 
@@ -97,7 +114,13 @@ if (typeof window !== "undefined") {
     if (!s.token) {
       useMediaTokenStore.getState().clear()
       dropCoverCache()
-    } else useMediaTokenStore.getState().refresh().catch(() => {})
+      return
+    }
+    // A session the server merely renewed keeps its media token.
+    const session = issuedFor(s.token)
+    if (!session || session !== issuedFor(useMediaTokenStore.getState().token)) {
+      useMediaTokenStore.getState().refresh().catch(() => {})
+    }
   })
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refreshIfDue()

@@ -65,7 +65,7 @@ fn register_appimage(app: &AppHandle, appimage: &str) -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn exec_path(path: &str) -> String {
+pub(crate) fn exec_path(path: &str) -> String {
     let plain = path
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "/._-+,@".contains(c));

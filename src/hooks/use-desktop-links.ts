@@ -12,13 +12,15 @@ import { useUIStore } from "@/stores/ui"
 function openLink(link: string) {
   const target = linkedUrl(link)
   if (!target) return
-  const pathname = appPathname(target)
-  if (pathname === null) {
+  const path = appPathname(target)
+  if (path === null) {
     toast.error(`This link is for ${target.host}`, {
       action: { label: "Open in browser", onClick: () => window.open(target.href, "_blank") },
     })
     return
   }
+  // A path starting with "//" would be read as the address of another site.
+  const pathname = path.replace(/^\/+/, "/")
   if (!useAuthStore.getState().token) {
     window.location.assign(pathname + target.search)
     return

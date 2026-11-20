@@ -14,6 +14,15 @@ import com.music.app.api.friendlyError
 import com.music.app.api.prefersCompatible
 import com.music.app.api.toPlaylist
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.plus
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -33,7 +42,29 @@ class DownloadManager(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     private val index = mutableStateMapOf<String, Track>()
+
+    // Whose downloads, cached user and cached playlists these are, see
+    // offlineOwner(). Null while there is nothing that belongs to anyone.
+    private var owner: String? = null
+
+    // Counts how often everything was cleared, so that a download or sync
+    // that was under way at the time can tell and adds nothing afterwards.
+    private var cleared = 0
+
+    // Encoding the whole index and waiting for the disk is too slow for the
+    // main thread once there are many downloads. The owner goes into the same
+    // write, so the two always match on disk.
+    private val indexWriter = LatestWriter<Pair<String?, List<Track>>>(scope + Dispatchers.IO) { (owner, tracks) ->
+        store.commitMeta(
+            mapOf(
+                KEY_OWNER to owner,
+                KEY_INDEX to json.encodeToString(ListSerializer(Track.serializer()), tracks),
+            ),
+        )
+    }
 
     private val transient = mutableStateMapOf<String, DownloadState>()
 
@@ -96,6 +127,10 @@ class DownloadManager(
         lastSyncedAt = store.loadMeta(KEY_SYNC_AT)
         store.loadMeta(KEY_KEPT)?.split(',')?.filter { it.isNotBlank() }?.forEach { keptPlaylists[it] = true }
         store.loadMeta(KEY_STALE)?.split(',')?.filter { it.isNotBlank() }?.let { staleAudio.addAll(it) }
+        scope.launch {
+            store.measure()
+            bytesUsed = store.bytesUsed()
+        }
     }
 
     val tracks: List<Track>
@@ -196,16 +231,25 @@ class DownloadManager(
 
         transient[track.id] = DownloadState.DOWNLOADING
         lastError = null
+        val era = cleared
         try {
             val compatible = useCompatible ?: useCompatibleFor(track)
             store.save(track.id, extensionFor(track, compatible)) { path ->
                 api.downloadTrack(track, compatible, path)
             }
+            if (era != cleared) {
+                if (!index.containsKey(track.id)) store.delete(track.id)
+                return
+            }
             index[track.id] = track
             if (staleAudio.remove(track.id)) persistStale()
-            saveExtras(track)
-            transient.remove(track.id)
+            // Before the cover and lyrics are fetched: the audio is what must
+            // not be lost if the app is killed now.
             persist()
+            saveExtras(track)
+            bytesUsed = store.bytesUsed()
+            indexWriter.flush()
+            transient.remove(track.id)
         } catch (e: CancellationException) {
             transient.remove(track.id)
             throw e
@@ -216,10 +260,14 @@ class DownloadManager(
     }
 
     fun remove(trackId: String) {
+        discard(trackId)
+        persist()
+    }
+
+    private fun discard(trackId: String) {
         store.delete(trackId)
         index.remove(trackId)
         transient.remove(trackId)
-        persist()
     }
 
     fun removeAll() {
@@ -233,9 +281,7 @@ class DownloadManager(
         val stillNeeded = playlistTracks.values.flatten().toSet()
         for (id in trackIds) {
             if (id in stillNeeded || !index.containsKey(id)) continue
-            store.delete(id)
-            index.remove(id)
-            transient.remove(id)
+            discard(id)
         }
         persist()
     }
@@ -310,11 +356,15 @@ class DownloadManager(
         if (syncing) return
         syncing = true
         lastError = null
+        val era = cleared
         try {
             for (playlistId in keptPlaylists.keys.toList()) {
                 val detail = try {
                     api.playlist(playlistId)
-                } catch (_: com.music.app.api.ApiException) {
+                } catch (e: com.music.app.api.ApiException) {
+                    // Only a playlist that is gone gives up its downloads, not
+                    // a session that ran out or a server that failed.
+                    if (e.status != 404) throw e
                     keptPlaylists.remove(playlistId)
                     removePlaylist(playlistId)
                     continue
@@ -322,12 +372,15 @@ class DownloadManager(
                 val before = playlistTracks[playlistId].orEmpty().toSet()
                 val now = detail.tracks.map { it.id }.toSet()
                 if (!waitingForWifi) {
-                    for (track in detail.tracks) if (!index.containsKey(track.id)) download(track)
+                    for (track in detail.tracks) if (era == cleared && !index.containsKey(track.id)) download(track)
                 }
+                if (era != cleared) return
                 playlistIndex[playlistId] = detail.toPlaylist()
                 playlistTracks = playlistTracks + (playlistId to detail.tracks.map { it.id })
                 val stillNeeded = playlistTracks.values.flatten().toSet()
-                for (gone in before - now) if (gone !in stillNeeded) remove(gone)
+                val gone = (before - now).filter { it !in stillNeeded }
+                gone.forEach(::discard)
+                if (gone.isNotEmpty()) persist()
             }
             persistKept()
             persistPlaylists()
@@ -390,9 +443,9 @@ class DownloadManager(
 
         if (!keepTracks) {
             val stillNeeded = playlistTracks.values.flatten().toSet()
-            for (trackId in ids) {
-                if (trackId !in stillNeeded) remove(trackId)
-            }
+            val unneeded = ids.filter { it !in stillNeeded }
+            unneeded.forEach(::discard)
+            if (unneeded.isNotEmpty()) persist()
         }
         persistPlaylists()
     }
@@ -473,8 +526,23 @@ class DownloadManager(
             runCatching { json.decodeFromString(User.serializer(), it) }.getOrNull()
         }
 
+    // Offline data belongs to one account on one server. When a different one
+    // signs in, what the last one left is cleared; returns once that is on
+    // disk, so call it before the new session is stored or shown.
+    suspend fun signedIn(user: User) {
+        val account = offlineOwner(api.baseUrl, user.id)
+        if (isForeign(owner, account)) clearForLogout()
+        cacheUser(user)
+        if (owner != account) {
+            owner = account
+            persist()
+        }
+        indexWriter.flush()
+    }
+
     fun clearForLogout() {
-        removeAll()
+        cleared++
+        owner = null
         playlistIndex.clear()
         playlistTracks = emptyMap()
         keptPlaylists.clear()
@@ -484,9 +552,16 @@ class DownloadManager(
         store.saveMeta(KEY_SYNC_SINCE, null)
         store.saveMeta(KEY_SYNC_AT, null)
         lastSyncedAt = null
+        // Last: its index write also puts everything above on disk.
+        removeAll()
     }
 
     private fun reconcile() {
+        val recorded = store.loadMeta(KEY_OWNER)
+        // Data from before owners were recorded belongs to the account that
+        // was signed in last, and that is the cached user.
+        owner = recorded ?: cachedUser()?.let { offlineOwner(api.baseUrl, it.id) }
+
         val stored = store.loadMeta(KEY_INDEX)
             ?.let { runCatching { json.decodeFromString(ListSerializer(Track.serializer()), it) }.getOrNull() }
             ?: emptyList()
@@ -500,19 +575,17 @@ class DownloadManager(
                 pruned = true
             }
         }
-        if (pruned) persist() else bytesUsed = store.bytesUsed()
+        if (pruned || owner != recorded) persist()
     }
 
     private fun persist() {
-        val payload = runCatching {
-            json.encodeToString(ListSerializer(Track.serializer()), index.values.toList())
-        }.getOrNull()
-        store.saveMeta(KEY_INDEX, payload)
+        indexWriter.submit(owner to index.values.toList())
         bytesUsed = store.bytesUsed()
     }
 
     private companion object {
         const val KEY_INDEX = "downloads.index"
+        const val KEY_OWNER = "downloads.owner"
         const val KEY_USER = "downloads.user"
         const val KEY_PLAYLISTS = "downloads.playlists"
         const val KEY_PLAYLIST_TRACKS = "downloads.playlistTracks"
@@ -548,4 +621,59 @@ internal fun extensionFor(track: Track, useCompatible: Boolean = prefersCompatib
         else -> null
     }
     return fromMime ?: "mp3"
+}
+
+// The account that offline data belongs to: its id on its server, with the
+// address in one form however it was typed. The result is stored, so changing
+// the form would make existing downloads look like someone else's.
+internal fun offlineOwner(server: String, userId: String): String {
+    val address = server.trim().trimEnd('/')
+    val scheme = address.substringBefore("://", "").lowercase()
+    val rest = address.substringAfter("://")
+    var host = rest.substringBefore('/').lowercase()
+    if (scheme == "https") host = host.removeSuffix(":443") else if (scheme == "http") host = host.removeSuffix(":80")
+    val path = rest.substringAfter('/', "")
+    return "$userId@$scheme://$host" + if (path.isEmpty()) "" else "/$path"
+}
+
+// Whether offline data recorded for [owner] has to go before [account] may
+// use the app. Data without an owner is nobody else's and stays.
+internal fun isForeign(owner: String?, account: String): Boolean = owner != null && owner != account
+
+// Writes the newest value it was given, one write at a time. A value that
+// arrives during a write waits for it to end, and of several waiting values
+// only the last is written, so an older state never lands after a newer one.
+// A failed write is not repeated: the next value carries everything again.
+// submit() and flush() are for one thread; the writes run in [scope].
+internal class LatestWriter<T>(scope: CoroutineScope, private val write: suspend (T) -> Unit) {
+
+    private val waiting = Channel<Pair<Long, T>>(Channel.CONFLATED)
+
+    private var submitted = 0L
+
+    private val handled = MutableStateFlow(0L)
+
+    init {
+        scope.launch {
+            for ((turn, value) in waiting) {
+                try {
+                    write(value)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {}
+                handled.value = turn
+            }
+        }
+    }
+
+    fun submit(value: T) {
+        waiting.trySend(++submitted to value)
+    }
+
+    // Returns once everything submitted so far has been written, or was
+    // passed over for a newer value that has.
+    suspend fun flush() {
+        val turn = submitted
+        handled.first { it >= turn }
+    }
 }

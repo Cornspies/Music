@@ -134,7 +134,7 @@ function DeleteSection({ onDeleted }: { onDeleted: () => void }) {
     try {
       await deleteAccount(password)
       onDeleted()
-      useAuthStore.getState().logout()
+      await useAuthStore.getState().signOut()
       toast.success("Your account was deleted")
     } catch (err) {
       setError((err as Error).message)

@@ -109,7 +109,8 @@ export function normalizeServer(input: string): string | null {
 function isPrivateHost(host: string): boolean {
   const h = host.trim().replace(/^\[|\]$/g, "").toLowerCase()
   if (h === "localhost" || h.endsWith(".local") || h === "::1") return true
-  if (h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80:")) return true
+  // Only an IPv6 address has a colon; names like "fdroid.org" start with "fd" too.
+  if (h.includes(":") && (h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80:"))) return true
   const parts = h.split(".")
   if (parts.length !== 4 || parts.some((p) => !/^\d+$/.test(p))) return false
   const [a, b] = parts.map(Number)

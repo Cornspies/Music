@@ -87,9 +87,13 @@ val LocalAppModel = staticCompositionLocalOf<AppModel> { error("AppModel is not 
 
 private var processModel: AppModel? = null
 
+// The one AppModel of the process. The screens below use it, and so does
+// CarPlay, which can start the app without them.
+internal fun appModel(): AppModel = processModel ?: AppModel().also { processModel = it }
+
 @Composable
 fun App() {
-    val model = remember { processModel ?: AppModel().also { processModel = it } }
+    val model = remember { appModel() }
 
     setSingletonImageLoaderFactory { context ->
         ImageLoader.Builder(context)
@@ -158,6 +162,15 @@ private fun Root() {
                 }) { Text("Download") }
             },
             dismissButton = { TextButton(onClick = { model.dismissUpdate() }) { Text("Later") } },
+        )
+    }
+    val news = model.whatsNew
+    if (news != null && model.user != null) {
+        AlertDialog(
+            onDismissRequest = { model.dismissWhatsNew() },
+            title = { Text("What's new in Music ${appVersionName().orEmpty()}") },
+            text = { Text(news.joinToString("\n") { "• $it" }) },
+            confirmButton = { TextButton(onClick = { model.dismissWhatsNew() }) { Text("OK") } },
         )
     }
     val invite = model.listenInvite

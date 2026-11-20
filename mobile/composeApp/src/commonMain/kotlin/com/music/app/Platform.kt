@@ -25,6 +25,9 @@ internal expect val unplayableMimeTypes: Set<String>
 
 internal expect fun appVersionName(): String?
 
+// Empties what streaming and image loading have kept on disk.
+internal expect suspend fun clearMediaCaches()
+
 internal fun decodeImageBitmap(bytes: ByteArray): ImageBitmap? =
     runCatching { bytes.decodeToImageBitmap() }.getOrNull()
 

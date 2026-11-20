@@ -15,5 +15,11 @@
 	<array>
 		<string>applinks:$(MUSIC_HOST)</string>
 	</array>
+	<!--
+	  CarPlay, as an audio app. Apple grants this on request; a build signed
+	  with a profile that doesn't have it is refused.
+	-->
+	<key>com.apple.developer.carplay-audio</key>
+	<true/>
 </dict>
 </plist>

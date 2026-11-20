@@ -25,13 +25,14 @@ export function ArtistImage({
 }) {
   const tracks = useLibraryStore((s) => s.tracks)
   const coverId = useMemo(() => {
+    if (picture) return null
     let best: { id: string; plays: number } | null = null
     for (const t of tracks) {
       if (!t.hasCover || !hasArtist(t.artist, name)) continue
       if (!best || t.plays > best.plays) best = { id: t.id, plays: t.plays }
     }
     return best?.id ?? null
-  }, [tracks, name])
+  }, [tracks, name, picture])
 
   if (picture) {
     return (

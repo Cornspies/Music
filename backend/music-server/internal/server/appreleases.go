@@ -1,7 +1,10 @@
 package server
 
 import (
+	"encoding/base64"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,6 +80,71 @@ func (s *Server) handleLatestAppRelease(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, out)
+}
+
+// AppUpdate answers a desktop app's updater: the newest build of its kind,
+// when that is newer than the app and has a signature beside it.
+type AppUpdate struct {
+	Version   string `json:"version"`
+	URL       string `json:"url"`
+	Signature string `json:"signature"`
+	PubDate   string `json:"pub_date,omitempty"`
+}
+
+// handleAppUpdate speaks the Tauri updater's protocol: 204 when there is
+// nothing to install. The updater needs a full address for the download, and
+// only the app knows the one it reaches this server under, so it passes it
+// as base.
+func (s *Server) handleAppUpdate(w http.ResponseWriter, r *http.Request) {
+	kind, ok := requestedKind(w, r)
+	if !ok {
+		return
+	}
+	query := r.URL.Query()
+	base, err := url.Parse(strings.TrimSpace(query.Get("base")))
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" ||
+		base.User != nil || base.RawQuery != "" || base.Fragment != "" {
+		writeErr(w, http.StatusBadRequest, "base has to be the address of this server")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	current := strings.TrimSpace(query.Get("current"))
+	releases := s.appReleases(kind)
+	if current == "" || len(releases) == 0 || compareVersions(releases[0].Version, current) <= 0 {
+		writeNoContent(w)
+		return
+	}
+	latest := releases[0]
+	signature := s.releaseSignature(latest.FileName)
+	if signature == "" {
+		writeNoContent(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, AppUpdate{
+		Version:   latest.Version,
+		URL:       base.JoinPath("api", "app", "releases", latest.FileName).String(),
+		Signature: signature,
+		PubDate:   latest.ModifiedAt,
+	})
+}
+
+// releaseSignature is the content of <build>.sig, which the build's signing
+// writes next to it, or "" when there is none that could be one.
+func (s *Server) releaseSignature(fileName string) string {
+	f, err := os.Open(filepath.Join(s.apkDir(), fileName+".sig"))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, 4097))
+	if err != nil || len(raw) > 4096 {
+		return ""
+	}
+	signature := strings.TrimSpace(string(raw))
+	if _, err := base64.StdEncoding.DecodeString(signature); err != nil || signature == "" {
+		return ""
+	}
+	return signature
 }
 
 func (s *Server) appReleases(kind releaseKind) []AppRelease {

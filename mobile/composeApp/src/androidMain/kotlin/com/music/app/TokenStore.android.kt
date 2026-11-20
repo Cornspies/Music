@@ -31,12 +31,22 @@ internal actual val defaultBaseUrl: String by lazy {
 actual class TokenStore {
     private val prefs = appContext.getSharedPreferences("music", Context.MODE_PRIVATE)
 
+    // The token is read for every request, and decrypting it asks the system
+    // keystore each time, so it is kept after the first read.
+    @Volatile private var cached: String? = null
+    @Volatile private var loaded = false
+
     actual fun loadToken(): String? {
-        val stored = prefs.getString(KEY_TOKEN_ENCRYPTED, null) ?: return null
-        return runCatching { decrypt(stored) }.getOrElse {
-            prefs.edit { remove(KEY_TOKEN_ENCRYPTED) }
-            null
+        if (loaded) return cached
+        val token = prefs.getString(KEY_TOKEN_ENCRYPTED, null)?.let { stored ->
+            runCatching { decrypt(stored) }.getOrElse {
+                prefs.edit { remove(KEY_TOKEN_ENCRYPTED) }
+                null
+            }
         }
+        cached = token
+        loaded = true
+        return token
     }
 
     actual fun saveToken(token: String?) {
@@ -47,6 +57,8 @@ actual class TokenStore {
                 putString(KEY_TOKEN_ENCRYPTED, encrypt(token))
             }
         }
+        cached = token
+        loaded = true
     }
 
     actual fun loadBaseUrl(): String = prefs.getString("baseUrl", null) ?: defaultBaseUrl

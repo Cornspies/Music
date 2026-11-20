@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { avatarUrl } from "@/lib/api"
+import { useAuthStore } from "@/stores/auth"
 import { useMediaToken } from "@/stores/media-token"
 import { hashGradient, initialsOf } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -17,7 +18,8 @@ interface Props {
 
 export function UserAvatar({ userId, username, hasAvatar, size = 20, className, label }: Props) {
   const mediaToken = useMediaToken()
-  const attempt = `${userId}:${mediaToken}`
+  const avatarVersion = useAuthStore((s) => s.avatarVersion)
+  const attempt = `${userId}:${mediaToken}:${avatarVersion}`
   const [failedAttempt, setFailedAttempt] = useState<string | null>(null)
 
   const showImage = hasAvatar && Boolean(mediaToken) && failedAttempt !== attempt

@@ -235,9 +235,9 @@ fun PlaylistDetailScreen(screen: Screen.PlaylistDetail) {
                         Spacer(Modifier.size(4.dp))
                         Text("Play all")
                     }
-                    if (model.listen.session?.canControl == true) {
+                    if (model.listen.session?.canControl != false) {
                         OutlinedButton(
-                            onClick = { model.listen.add(detail.tracks, "end") },
+                            onClick = { model.addToQueue(detail.tracks) },
                             modifier = Modifier.weight(1f),
                         ) {
                             Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)

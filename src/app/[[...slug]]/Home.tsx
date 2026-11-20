@@ -11,6 +11,7 @@ import { useUIStore } from "@/stores/ui"
 import { AuthView } from "@/components/music/AuthView"
 import { ResetPasswordView, resetCodeFromUrl } from "@/components/music/ResetPasswordView"
 import { AppShell } from "@/components/music/AppShell"
+import { WhatsNewDialog } from "@/components/music/WhatsNewDialog"
 import { SharePage } from "@/components/music/SharePage"
 import { OpenInAppBanner } from "@/components/music/OpenInAppBanner"
 import { useDesktopLinks } from "@/hooks/use-desktop-links"
@@ -72,6 +73,7 @@ export function Home() {
     <>
       {page}
       <OpenInAppBanner />
+      <WhatsNewDialog />
     </>
   )
 }

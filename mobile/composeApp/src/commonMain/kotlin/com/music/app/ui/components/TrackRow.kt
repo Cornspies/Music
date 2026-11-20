@@ -172,19 +172,19 @@ fun TrackRow(
                     model.toggleSelected(track, context, onRemove)
                 },
             )
-            if (model.listen.session?.canControl == true) {
+            if (model.listen.session?.canControl != false) {
                 DropdownMenuItem(
                     text = { Text("Play next") },
                     onClick = {
                         menuOpen = false
-                        model.listen.add(listOf(track), "next")
+                        model.playNext(listOf(track))
                     },
                 )
                 DropdownMenuItem(
                     text = { Text("Add to queue") },
                     onClick = {
                         menuOpen = false
-                        model.listen.add(listOf(track), "end")
+                        model.addToQueue(listOf(track))
                     },
                 )
             }

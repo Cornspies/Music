@@ -114,7 +114,9 @@ export function LibraryView() {
           toast.success(`Applied ${applied} match${applied === 1 ? "" : "es"}`, {
             description: st.failed ? `${st.failed} couldn't be applied` : undefined,
           })
-          useLibraryStore.getState().fetchAll().catch(() => {})
+          const library = useLibraryStore.getState()
+          library.syncTracks().catch(() => {})
+          library.fetchStats().catch(() => {})
         })
         .catch(() => {})
     }, 1500)

@@ -30,6 +30,12 @@ internal object StreamCache {
             ).also { cache = it }
         }
 
+    // Reads the cache's index and deletes files, so not for the main thread.
+    fun clear(context: Context) {
+        val cache = cache(context.applicationContext)
+        cache.keys.forEach(cache::removeResource)
+    }
+
     fun dataSourceFactory(context: Context): DataSource.Factory {
         val app = context.applicationContext
         val cached = CacheDataSource.Factory()

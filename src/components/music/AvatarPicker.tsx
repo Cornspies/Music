@@ -5,6 +5,7 @@ import { Camera, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import type { AvatarCrop } from "@/lib/api"
 import { removeAvatar, uploadAvatar } from "@/lib/api"
+import type { User } from "@/lib/types"
 import { AvatarCropDialog } from "@/components/music/AvatarCropDialog"
 import { useAuthStore } from "@/stores/auth"
 import { useLibraryStore } from "@/stores/library"
@@ -26,6 +27,11 @@ export function AvatarPicker() {
 
   if (!user) return null
 
+  const adopt = (updated: User) => {
+    useAuthStore.setState({ user: updated, avatarVersion: Date.now() })
+    useLibraryStore.getState().setUploaderAvatar(updated.id, updated.hasAvatar)
+  }
+
   const handleFile = (file: File | undefined) => {
     if (!file) return
     if (file.size > MAX_BYTES) {
@@ -40,9 +46,7 @@ export function AvatarPicker() {
     if (!file) return
     setBusy(true)
     try {
-      const updated = await uploadAvatar(file, crop)
-      useAuthStore.setState({ user: updated })
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      adopt(await uploadAvatar(file, crop))
       toast.success("Avatar updated")
       setPending(null)
     } catch (e) {
@@ -56,9 +60,7 @@ export function AvatarPicker() {
   const handleRemove = async () => {
     setBusy(true)
     try {
-      const updated = await removeAvatar()
-      useAuthStore.setState({ user: updated })
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      adopt(await removeAvatar())
       toast.success("Avatar removed")
     } catch (e) {
       toast.error((e as Error).message)

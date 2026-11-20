@@ -11,8 +11,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import coil3.SingletonImageLoader
+import com.music.app.player.StreamCache
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.jvm.javaio.toByteReadChannel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal actual val canUploadFromDevice: Boolean = true
 
@@ -87,6 +91,13 @@ internal actual fun appVersionName(): String? = runCatching {
     }
     info.versionName
 }.getOrNull()
+
+internal actual suspend fun clearMediaCaches() {
+    withContext(Dispatchers.IO) {
+        StreamCache.clear(appContext)
+        SingletonImageLoader.get(appContext).diskCache?.clear()
+    }
+}
 
 @Composable
 internal actual fun rememberImagePickerLauncher(

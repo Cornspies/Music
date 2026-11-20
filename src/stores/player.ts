@@ -641,6 +641,18 @@ function queueKey(queue: Track[]): string {
   return queue.map((t) => t.id).join(",")
 }
 
+const SAVED_QUEUE_MAX = 500
+const SAVE_RETRY_MS = 15_000
+let saveRetryAt = 0
+
+// The part of the queue that gets saved. The server keeps at most 500 songs,
+// those around the current one, and refuses a much longer list outright.
+function savedQueue(queue: Track[], index: number): Track[] {
+  if (queue.length <= SAVED_QUEUE_MAX) return queue
+  const end = Math.min(queue.length, Math.max(0, index - 50) + SAVED_QUEUE_MAX)
+  return queue.slice(Math.max(0, end - SAVED_QUEUE_MAX), end)
+}
+
 function noteUpdatedAt(stamp: string | undefined) {
   if (stamp && stamp > knownUpdatedAt) knownUpdatedAt = stamp
 }
@@ -649,10 +661,12 @@ function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}): P
   if (restoring || session) return Promise.resolve()
   const s = usePlayerStore.getState()
   if (!s.currentTrack || !useAuthStore.getState().token) return Promise.resolve()
-  const key = queueKey(s.queue)
+  const now = Date.now()
+  if (!opts.force && now < saveRetryAt) return Promise.resolve()
+  const saved = savedQueue(s.queue, s.queueIndex)
+  const key = queueKey(saved)
   const queueChanged = key !== lastSavedQueueKey
   if (!positionDirty && !queueChanged) return Promise.resolve()
-  const now = Date.now()
   if (!opts.force && !queueChanged && now - lastSaveAt < SAVE_INTERVAL_MS) return Promise.resolve()
 
   lastSaveAt = now
@@ -663,20 +677,25 @@ function persistPlayback(opts: { force?: boolean; keepalive?: boolean } = {}): P
     {
       trackId: s.currentTrack.id,
       position: s.position,
-      ...(queueChanged ? { queue: s.queue.map((t) => t.id) } : {}),
+      ...(queueChanged ? { queue: saved.map((t) => t.id) } : {}),
     },
     opts.keepalive
   )
-    .then((r) => noteUpdatedAt(r?.updatedAt))
+    .then((r) => {
+      saveRetryAt = 0
+      noteUpdatedAt(r?.updatedAt)
+    })
     .catch(() => {
       positionDirty = true
       if (queueChanged) lastSavedQueueKey = ""
+      // Without this a save that keeps failing is sent again on every time update.
+      saveRetryAt = Date.now() + SAVE_RETRY_MS
     })
 }
 
 function nothingUnsaved(): boolean {
   const s = usePlayerStore.getState()
-  return !positionDirty && (!s.currentTrack || queueKey(s.queue) === lastSavedQueueKey)
+  return !positionDirty && (!s.currentTrack || queueKey(savedQueue(s.queue, s.queueIndex)) === lastSavedQueueKey)
 }
 
 function applyServerState(state: PlaybackState) {
@@ -684,7 +703,7 @@ function applyServerState(state: PlaybackState) {
   const same =
     s.currentTrack?.id === state.track.id &&
     Math.abs(s.position - state.position) < 1 &&
-    queueKey(s.queue) === queueKey(state.queue)
+    queueKey(savedQueue(s.queue, s.queueIndex)) === queueKey(state.queue)
   if (!same) {
     restoring = true
     usePlayerStore.setState({
@@ -1169,7 +1188,7 @@ async function takeBackground(): Promise<boolean> {
     shuffleForward = resume.history.forward
     shufflePlayed = new Set(resume.history.played)
   }
-  lastSavedQueueKey = queueKey(queue)
+  lastSavedQueueKey = queueKey(savedQueue(queue, resume.index))
   lastSavedPosition = resume.position
   positionDirty = false
   lastSaveAt = Date.now()
@@ -1274,5 +1293,10 @@ if (typeof window !== "undefined") {
   }, SYNC_INTERVAL_MS)
   usePlayerStore.subscribe((s, prev) => {
     if (s.queue !== prev.queue) queueMicrotask(() => persistPlayback({ force: true }))
+  })
+  // What an account played from, and how, isn't left for the next one. A
+  // session that only ran out keeps its owner, and with it these.
+  useAuthStore.subscribe((s, prev) => {
+    if (prev.owner && s.owner !== prev.owner) usePlayerStore.setState({ playContext: null, contextPrefs: {} })
   })
 }

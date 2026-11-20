@@ -3,12 +3,15 @@
 mod about;
 mod audio;
 mod background;
+#[cfg(target_os = "linux")]
+mod desktop_entry;
 mod discord;
 mod links;
 mod media;
 mod offline;
 mod settings;
 mod tray;
+mod update;
 mod window;
 
 use tauri::{Manager, RunEvent};
@@ -18,10 +21,17 @@ fn main() {
     if std::env::var_os("WEBKIT_USE_SKIA_FOR_COMPOSITION").is_none() {
         unsafe { std::env::set_var("WEBKIT_USE_SKIA_FOR_COMPOSITION", "0") };
     }
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+    #[cfg(target_os = "linux")]
+    desktop_entry::set_app_id();
+    let context = tauri::generate_context!();
+    let mut builder =
+        tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _, _| {
             window::open(app)
-        }))
+        }));
+    if update::has_key(context.config()) {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    let app = builder
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -33,6 +43,7 @@ fn main() {
         .manage(background::Background::default())
         .manage(tray::Tray::default())
         .manage(offline::Downloads::default())
+        .manage(update::Pending::default())
         .register_uri_scheme_protocol("music-cover", |_, request| offline::cover(request))
         .invoke_handler(tauri::generate_handler![
             audio::audio_init,
@@ -70,6 +81,8 @@ fn main() {
             offline::offline_remove,
             offline::offline_clear,
             about::app_about,
+            update::update_check,
+            update::update_install,
         ])
         .setup(|app| {
             let settings = settings::setup(app);
@@ -79,13 +92,15 @@ fn main() {
             app.manage(audio);
             let minimized = settings.start_minimized && settings::launched_minimized();
             tray::show(app.handle());
+            #[cfg(target_os = "linux")]
+            desktop_entry::install(app);
             let window = window::start(app.handle(), minimized)?;
             media::setup(app.handle(), window.as_ref(), media_events);
             discord::start(settings.discord);
             links::setup(app);
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building Music");
     app.run(|_, event| {
         if let RunEvent::ExitRequested { api, code, .. } = event

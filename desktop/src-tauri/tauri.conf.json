@@ -76,6 +76,11 @@
     }
   },
   "plugins": {
+    "updater": {
+      "pubkey": "",
+      "dangerousInsecureTransportProtocol": true,
+      "requireSignedVersion": true
+    },
     "deep-link": {
       "desktop": {
         "schemes": [

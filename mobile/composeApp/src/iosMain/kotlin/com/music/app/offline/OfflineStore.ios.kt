@@ -4,6 +4,9 @@ import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.withContext
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
@@ -29,6 +32,10 @@ actual class OfflineStore actual constructor() {
 
     private val extras: String = folder("offline-extras")
 
+    private val audio = FileCatalog(allNames(dir))
+
+    private val extra = FileCatalog(allNames(extras))
+
     private fun folder(name: String): String {
         val base = fileManager.URLsForDirectory(NSApplicationSupportDirectory, NSUserDomainMask)
             .firstOrNull() as? NSURL
@@ -44,45 +51,55 @@ actual class OfflineStore actual constructor() {
         if (!fileManager.fileExistsAtPath(dir)) {
             fileManager.createDirectoryAtPath(dir, withIntermediateDirectories = true, attributes = null, error = null)
         }
-        val target = "$dir/$trackId.$extension"
-        val partial = "$target$PART_SUFFIX"
+        val name = "$trackId.$extension"
+        val partialName = "$name$PART_SUFFIX"
+        val target = "$dir/$name"
+        val partial = "$dir/$partialName"
+        audio.put(partialName, 0L)
         try {
             write(partial)
         } catch (e: Throwable) {
             fileManager.removeItemAtPath(partial, null)
+            audio.remove(partialName)
             throw e
         }
-        namesFor(trackId).map { "$dir/$it" }.filter { it != partial }.forEach { fileManager.removeItemAtPath(it, null) }
+        audio.names(trackId).filter { it != partialName }.forEach { remove(dir, audio, it) }
+        audio.remove(partialName)
         val moved = fileManager.moveItemAtPath(partial, target, null)
         if (!moved) {
             fileManager.removeItemAtPath(partial, null)
             throw IllegalStateException("Could not save the download to device storage.")
         }
+        audio.put(name, sizeOf(target))
         return target
     }
 
     actual fun pathFor(trackId: String): String? =
-        namesFor(trackId).firstOrNull { !it.endsWith(PART_SUFFIX) }?.let { "$dir/$it" }
+        audio.names(trackId).firstOrNull { !it.endsWith(PART_SUFFIX) }?.let { "$dir/$it" }
 
     actual fun delete(trackId: String) {
-        namesFor(trackId).forEach { fileManager.removeItemAtPath("$dir/$it", null) }
+        audio.names(trackId).forEach { remove(dir, audio, it) }
         deleteExtras(trackId)
     }
 
     actual fun deleteAll() {
-        allNames().forEach { fileManager.removeItemAtPath("$dir/$it", null) }
+        allNames(dir).forEach { fileManager.removeItemAtPath("$dir/$it", null) }
         allNames(extras).forEach { fileManager.removeItemAtPath("$extras/$it", null) }
+        audio.clear()
+        extra.clear()
     }
 
-    actual fun bytesUsed(): Long =
-        listOf(dir, extras).sumOf { folder ->
-            allNames(folder)
-                .filter { !it.endsWith(PART_SUFFIX) }
-                .sumOf { name ->
-                    val attrs = fileManager.attributesOfItemAtPath("$folder/$name", null)
-                    (attrs?.get(NSFileSize) as? NSNumber)?.longLongValue ?: 0L
-                }
+    actual fun bytesUsed(): Long = audio.bytes + extra.bytes
+
+    actual suspend fun measure() {
+        val audioNames = audio.unmeasured()
+        val extraNames = extra.unmeasured()
+        val (audioSizes, extraSizes) = withContext(Dispatchers.IO) {
+            sizesOf(dir, audioNames) to sizesOf(extras, extraNames)
         }
+        audio.measured(audioSizes)
+        extra.measured(extraSizes)
+    }
 
     actual fun saveExtra(trackId: String, kind: String, bytes: ByteArray) {
         if (!fileManager.fileExistsAtPath(extras)) {
@@ -93,11 +110,12 @@ actual class OfflineStore actual constructor() {
         } else {
             bytes.usePinned { NSData.create(bytes = it.addressOf(0), length = bytes.size.toULong()) }
         }
-        data.writeToFile("$extras/$trackId.$kind", atomically = true)
+        val name = "$trackId.$kind"
+        if (data.writeToFile("$extras/$name", atomically = true)) extra.put(name, bytes.size.toLong())
     }
 
     actual fun extraPath(trackId: String, kind: String): String? =
-        "$extras/$trackId.$kind".takeIf { fileManager.fileExistsAtPath(it) }
+        "$trackId.$kind".takeIf { it in extra }?.let { "$extras/$it" }
 
     actual fun readExtra(trackId: String, kind: String): ByteArray? {
         val data = NSData.dataWithContentsOfFile("$extras/$trackId.$kind") ?: return null
@@ -107,24 +125,33 @@ actual class OfflineStore actual constructor() {
     }
 
     actual fun deleteExtras(trackId: String) {
-        allNames(extras).filter { it.startsWith("$trackId.") }.forEach { fileManager.removeItemAtPath("$extras/$it", null) }
+        extra.names(trackId).forEach { remove(extras, extra, it) }
     }
 
     actual fun saveMeta(key: String, value: String?) {
         if (value != null) defaults.setObject(value, forKey = key) else defaults.removeObjectForKey(key)
     }
 
+    actual fun commitMeta(values: Map<String, String?>) {
+        values.forEach { (key, value) -> saveMeta(key, value) }
+        defaults.synchronize()
+    }
+
     actual fun loadMeta(key: String): String? = defaults.stringForKey(key)
 
-    private fun allNames(folder: String = dir): List<String> =
+    private fun allNames(folder: String): List<String> =
         fileManager.contentsOfDirectoryAtPath(folder, null)
             ?.filterIsInstance<String>()
             ?: emptyList()
 
-    private fun namesFor(trackId: String): List<String> =
-        allNames().filter { it.startsWith("$trackId.") }
-
-    private companion object {
-        const val PART_SUFFIX = ".part"
+    private fun remove(folder: String, catalog: FileCatalog, name: String) {
+        fileManager.removeItemAtPath("$folder/$name", null)
+        catalog.remove(name)
     }
+
+    private fun sizesOf(folder: String, names: List<String>): Map<String, Long> =
+        names.associateWith { sizeOf("$folder/$it") }
+
+    private fun sizeOf(path: String): Long =
+        (fileManager.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? NSNumber)?.longLongValue ?: 0L
 }

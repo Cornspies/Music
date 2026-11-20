@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"music-server/internal/config"
 	"music-server/internal/redact"
@@ -144,6 +146,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/tracks/{id}/cover", s.requireAuth(s.handleSetCoverFromURL))
 	mux.HandleFunc("GET /api/app/releases", s.requireAuth(s.handleAppReleases))
 	mux.HandleFunc("GET /api/app/releases/latest", s.requireAuth(s.handleLatestAppRelease))
+	mux.HandleFunc("GET /api/app/update", s.requireAuth(s.handleAppUpdate))
 	mux.HandleFunc("GET /api/app/releases/{file}", s.requireMediaAuth(s.handleAppReleaseDownload))
 	mux.HandleFunc("GET /api/admin/shares", s.requireAdmin(s.handleAdminShares))
 	mux.HandleFunc("DELETE /api/admin/shares/{token}", s.requireAdmin(s.handleAdminRevokeShare))
@@ -256,6 +259,22 @@ func (s *Server) Routes() http.Handler {
 	return s.middleware(mux)
 }
 
+// logPath is the request's path as the log shows it. Reset codes, invite codes
+// and share tokens work like passwords, so their routes are logged as the
+// pattern ("/api/auth/reset/{code}"); a path with control characters is quoted,
+// so a request can't write a log line of its own.
+func logPath(r *http.Request) string {
+	if _, route, ok := strings.Cut(r.Pattern, " "); ok &&
+		(strings.Contains(route, "{code}") || strings.Contains(route, "{token}")) {
+		return route
+	}
+	path := r.URL.Path
+	if strings.ContainsFunc(path, unicode.IsControl) {
+		return strconv.Quote(path)
+	}
+	return path
+}
+
 func (s *Server) middleware(next http.Handler) http.Handler {
 	logMW := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -275,9 +294,9 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		s.metrics.observe(r, sw.code, elapsed)
 		switch {
 		case sw.code >= 500:
-			log.Printf("ERROR %s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, elapsed.Round(time.Millisecond))
+			log.Printf("ERROR %s %s -> %d (%s)", r.Method, logPath(r), sw.code, elapsed.Round(time.Millisecond))
 		case r.URL.Path != "/healthz" && !positionSave && !listenPoll && !webFile:
-			log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, sw.code, elapsed.Round(time.Millisecond))
+			log.Printf("%s %s -> %d (%s)", r.Method, logPath(r), sw.code, elapsed.Round(time.Millisecond))
 		}
 	})
 

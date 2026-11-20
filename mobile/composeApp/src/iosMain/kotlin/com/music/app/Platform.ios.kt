@@ -1,6 +1,8 @@
 package com.music.app
 
 import androidx.compose.runtime.Composable
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.writeFully
 import io.ktor.utils.io.writer
@@ -9,6 +11,8 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.withContext
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -129,6 +133,10 @@ private fun NSData.toByteArray(): ByteArray {
 internal actual val canPickImageFromDevice: Boolean = true
 
 internal actual fun appVersionName(): String? = null
+
+internal actual suspend fun clearMediaCaches() {
+    withContext(Dispatchers.IO) { SingletonImageLoader.get(PlatformContext.INSTANCE).diskCache?.clear() }
+}
 
 internal actual val unplayableMimeTypes: Set<String> = setOf(
     "audio/ogg",

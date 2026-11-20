@@ -7,7 +7,7 @@ use rtrb::RingBuffer;
 use tauri::AppHandle;
 use ureq::Agent;
 
-use super::decode::{self, DecodeJob, SlotShared};
+use super::decode::{self, DecodeJob, Decoder, SlotShared};
 use super::output::{self, MixSlot, Mixer, Output};
 use super::{Emitter, Event, Info, Msg, Snapshot};
 use crate::media;
@@ -26,7 +26,7 @@ struct Track {
     url: String,
     gain: f32,
     start: f64,
-    shared: Arc<SlotShared>,
+    decoder: Decoder,
     duration_sent: bool,
 }
 
@@ -42,6 +42,7 @@ pub struct Engine {
     current: Option<Track>,
     next: Option<Track>,
     playing: bool,
+    paused: bool,
     volume: f32,
     muted: bool,
     crossfade: f64,
@@ -49,7 +50,7 @@ pub struct Engine {
     last_tick: Instant,
     last_media_position: Instant,
     quiet_at: Option<Instant>,
-    preview: Option<Arc<SlotShared>>,
+    preview: Option<Decoder>,
     previews: u64,
 }
 
@@ -68,6 +69,7 @@ impl Engine {
             current: None,
             next: None,
             playing: false,
+            paused: true,
             volume: 1.0,
             muted: false,
             crossfade: 0.0,
@@ -162,7 +164,7 @@ impl Engine {
             Msg::Snapshot(reply) => {
                 let rate = f64::from(self.rate);
                 let duration = self.current.as_ref().and_then(|track| {
-                    let total = track.shared.total_frames.load(Ordering::Relaxed);
+                    let total = track.decoder.shared.total_frames.load(Ordering::Relaxed);
                     (total > 0).then(|| track.start + total as f64 / rate)
                 });
                 let _ = reply.send(Snapshot {
@@ -176,14 +178,14 @@ impl Engine {
             Msg::Media(action, position) => self.emit(Event::Media { action, position }),
             Msg::PreviewPlay { url, start, until } => self.preview_play(url, start, until),
             Msg::PreviewStop => {
-                if let Some(shared) = self.preview.take() {
-                    shared.cancel.store(true, Ordering::Relaxed);
+                if let Some(preview) = self.preview.take() {
+                    preview.cancel();
                     self.mixer().fade_out_preview();
                     self.quiet_output();
                 }
             }
             Msg::PreviewEnded(id) => {
-                if self.preview.as_ref().is_some_and(|p| p.id == id) {
+                if self.preview.as_ref().is_some_and(|p| p.shared.id == id) {
                     self.preview = None;
                     self.quiet_output();
                     self.emit(Event::Preview {
@@ -203,10 +205,10 @@ impl Engine {
     }
 
     fn start_track(&self, id: u64, url: String, start: f64, gain: f32) -> (Track, MixSlot) {
-        let shared = SlotShared::new(id);
+        let shared = SlotShared::new(id, self.paused);
         let capacity = (self.rate * BUFFER_SECONDS * 2) as usize;
         let (producer, consumer) = RingBuffer::<f32>::new(capacity);
-        decode::spawn(DecodeJob {
+        let decoder = decode::spawn(DecodeJob {
             url: url.clone(),
             start,
             out_rate: self.rate,
@@ -220,7 +222,7 @@ impl Engine {
             url,
             gain,
             start,
-            shared: shared.clone(),
+            decoder,
             duration_sent: false,
         };
         let slot = MixSlot::new(shared, consumer, gain);
@@ -229,8 +231,18 @@ impl Engine {
 
     fn cancel(track: &Option<Track>) {
         if let Some(track) = track {
-            track.shared.cancel.store(true, Ordering::Relaxed);
+            track.decoder.cancel();
         }
+    }
+
+    // Decoders with a full ring sleep while the mixer is paused, so they are
+    // woken before it reads again.
+    fn set_paused(&mut self, paused: bool) {
+        self.paused = paused;
+        for track in [&self.current, &self.next].into_iter().flatten() {
+            track.decoder.hold(paused);
+        }
+        self.mixer().paused = paused;
     }
 
     fn load(&mut self, id: u64, url: String, start: f64, autoplay: bool, gain: f32) {
@@ -271,7 +283,7 @@ impl Engine {
         if autoplay {
             self.play();
         } else {
-            self.mixer().paused = true;
+            self.set_paused(true);
             self.emit_time();
         }
     }
@@ -335,7 +347,8 @@ impl Engine {
         match self.current.as_ref() {
             Some(track) => {
                 track.start
-                    + track.shared.played.load(Ordering::Relaxed) as f64 / f64::from(self.rate)
+                    + track.decoder.shared.played.load(Ordering::Relaxed) as f64
+                        / f64::from(self.rate)
             }
             None => 0.0,
         }
@@ -344,13 +357,13 @@ impl Engine {
     fn restart_decoders(&mut self) {
         let position = self.position();
         if let Some(track) = self.current.take() {
-            track.shared.cancel.store(true, Ordering::Relaxed);
+            track.decoder.cancel();
             let (fresh, slot) = self.start_track(track.id, track.url, position, track.gain);
             self.mixer().active = Some(slot);
             self.current = Some(fresh);
         }
         if let Some(track) = self.next.take() {
-            track.shared.cancel.store(true, Ordering::Relaxed);
+            track.decoder.cancel();
             let (fresh, slot) = self.start_track(track.id, track.url, 0.0, track.gain);
             self.mixer().next = Some(slot);
             self.next = Some(fresh);
@@ -373,7 +386,7 @@ impl Engine {
         if !self.ensure_output() {
             return;
         }
-        self.mixer().paused = false;
+        self.set_paused(false);
         self.quiet_at = None;
         if let Some(output) = self.output.as_ref()
             && let Err(message) = output.play()
@@ -393,7 +406,7 @@ impl Engine {
     }
 
     fn pause(&mut self) {
-        self.mixer().paused = true;
+        self.set_paused(true);
         let was_playing = self.playing;
         self.playing = false;
         self.quiet_output();
@@ -408,7 +421,7 @@ impl Engine {
         let Some(track) = self.current.take() else {
             return;
         };
-        track.shared.cancel.store(true, Ordering::Relaxed);
+        track.decoder.cancel();
         let target = position.max(0.0);
         let (fresh, slot) = self.start_track(track.id, track.url, target, track.gain);
         let mut mixer = self.mixer();
@@ -431,6 +444,7 @@ impl Engine {
         mixer.clear_fade();
         mixer.paused = true;
         drop(mixer);
+        self.paused = true;
         self.playing = false;
         self.output = None;
         self.quiet_at = None;
@@ -452,7 +466,7 @@ impl Engine {
             return;
         }
         self.playing = false;
-        self.mixer().paused = true;
+        self.set_paused(true);
         self.quiet_output();
         self.emit(Event::Ended { id });
         self.update_media_playback();
@@ -460,7 +474,7 @@ impl Engine {
 
     fn failed(&mut self, id: u64, message: String, expired: bool) {
         if id & PREVIEW_BIT != 0 {
-            if self.preview.as_ref().is_some_and(|p| p.id == id) {
+            if self.preview.as_ref().is_some_and(|p| p.shared.id == id) {
                 self.cancel_preview();
                 self.quiet_output();
                 self.emit(Event::Preview {
@@ -478,7 +492,7 @@ impl Engine {
             return;
         }
         if self.playing {
-            self.mixer().paused = true;
+            self.set_paused(true);
             self.playing = false;
             self.quiet_output();
         }
@@ -521,7 +535,7 @@ impl Engine {
         if let Some(track) = self.current.as_mut()
             && !track.duration_sent
         {
-            let total = track.shared.total_frames.load(Ordering::Relaxed);
+            let total = track.decoder.shared.total_frames.load(Ordering::Relaxed);
             if total > 0 {
                 track.duration_sent = true;
                 duration = Some((track.id, track.start + total as f64 / rate));
@@ -563,10 +577,10 @@ impl Engine {
             return;
         }
         self.previews += 1;
-        let shared = SlotShared::new(PREVIEW_BIT | self.previews);
+        let shared = SlotShared::new(PREVIEW_BIT | self.previews, false);
         let capacity = (self.rate * BUFFER_SECONDS * 2) as usize;
         let (producer, consumer) = RingBuffer::<f32>::new(capacity);
-        decode::spawn(DecodeJob {
+        let decoder = decode::spawn(DecodeJob {
             url,
             start: start.max(0.0),
             out_rate: self.rate,
@@ -577,8 +591,8 @@ impl Engine {
         });
         let frames = ((until - start).max(0.0) * f64::from(self.rate)) as u64;
         self.mixer()
-            .start_preview(MixSlot::new(shared.clone(), consumer, 1.0), frames);
-        self.preview = Some(shared);
+            .start_preview(MixSlot::new(shared, consumer, 1.0), frames);
+        self.preview = Some(decoder);
         self.quiet_at = None;
         if let Some(output) = self.output.as_ref() {
             let _ = output.play();
@@ -590,8 +604,8 @@ impl Engine {
     }
 
     fn cancel_preview(&mut self) {
-        if let Some(shared) = self.preview.take() {
-            shared.cancel.store(true, Ordering::Relaxed);
+        if let Some(preview) = self.preview.take() {
+            preview.cancel();
         }
     }
 

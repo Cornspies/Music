@@ -317,8 +317,8 @@ function InvitesSection() {
                   <span className="ml-2 font-mono text-[11px] text-zinc-600">{inv.code.slice(0, 6)}…</span>
                 </p>
                 <p className="truncate text-xs text-zinc-500">
-                  {inv.status === "used" && inv.usedBy
-                    ? `used by ${inv.usedBy} ${inv.usedAt ? formatRelativeDate(inv.usedAt) : ""}`
+                  {inv.status === "used"
+                    ? `used by ${inv.usedBy ?? "a deleted account"} ${inv.usedAt ? formatRelativeDate(inv.usedAt) : ""}`
                     : inv.status === "pending"
                       ? inviteExpiry(inv.expiresAt)
                       : inv.status === "revoked" && inv.revokedAt
@@ -475,7 +475,11 @@ export function AdminView() {
       await admin.deleteUser(u.id)
       toast.success(`Deleted ${u.username} and their ${u.trackCount} upload${u.trackCount === 1 ? "" : "s"}`)
       await load()
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      const library = useLibraryStore.getState()
+      library.syncTracks().catch(() => {})
+      library.fetchPlaylists().catch(() => {})
+      library.fetchPublicPlaylists().catch(() => {})
+      library.fetchStats().catch(() => {})
     } catch (e) {
       toast.error((e as Error).message)
     } finally {

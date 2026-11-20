@@ -67,7 +67,7 @@ export function ResetPasswordView({ code, onDone }: { code: string; onDone: () =
         usePlayerStore.getState().stop()
         useLibraryStore.getState().reset()
       }
-      useAuthStore.setState({ token: data.token, user: data.user })
+      await useAuthStore.getState().signIn(data.token, data.user)
       toast.success("Password changed")
       window.history.replaceState(null, "", "/")
       onDone()

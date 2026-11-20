@@ -80,11 +80,18 @@ export function DiscoverView() {
         const list = await discover.imports()
         if (!alive) return
         setImports(list)
+        let finished = false
         for (const j of list) {
           if (!importActive(j) && !finishedSeen.current.has(j.id)) {
             finishedSeen.current.add(j.id)
-            useLibraryStore.getState().fetchAll().catch(() => {})
+            finished = true
           }
+        }
+        if (finished) {
+          const library = useLibraryStore.getState()
+          library.syncTracks().catch(() => {})
+          library.fetchPlaylists().catch(() => {})
+          library.fetchStats().catch(() => {})
         }
         if (list.some(importActive)) timer = setTimeout(poll, IMPORT_POLL_MS)
       } catch {
@@ -519,7 +526,9 @@ function ResultRow({ result, onAdded }: { result: DiscoverResult; onAdded: (t: T
       const track = await discover.add(result.source, result.id)
       onAdded(track)
       toast.success(`Added “${track.title}” to the library`)
-      useLibraryStore.getState().fetchAll().catch(() => {})
+      const library = useLibraryStore.getState()
+      library.addTrack(track)
+      library.fetchStats().catch(() => {})
     } catch (e) {
       toast.error((e as Error).message)
     } finally {

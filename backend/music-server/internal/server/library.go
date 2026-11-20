@@ -169,11 +169,7 @@ func (s *Server) libraryArtists(userID, filter string) ([]*Artist, error) {
 		if err := rows.Scan(&credit, &duration); err != nil {
 			return nil, err
 		}
-		names := splitArtists(dropPlaceholder(credit, "Unknown Artist"))
-		if len(names) == 0 {
-			names = []string{"Unknown Artist"}
-		}
-		for _, name := range names {
+		for _, name := range creditedArtists(credit) {
 			key := artistKey(name)
 			if filter != "" && !strings.Contains(key, filter) {
 				continue
@@ -208,6 +204,90 @@ func (s *Server) libraryArtists(userID, filter string) ([]*Artist, error) {
 		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 	})
 	return out, nil
+}
+
+func creditedArtists(credit string) []string {
+	names := splitArtists(dropPlaceholder(credit, "Unknown Artist"))
+	if len(names) == 0 {
+		return []string{"Unknown Artist"}
+	}
+	return names
+}
+
+// artistCount is len(libraryArtists(userID, "")) without building the list:
+// a credit that repeats is only taken apart once.
+func (s *Server) artistCount(userID string) (int, error) {
+	rows, err := s.db.Query(`SELECT t.artist FROM tracks t WHERE `+visibleTo("t.user_id"), userID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	credits := map[string]bool{}
+	keys := map[string]bool{}
+	for rows.Next() {
+		var credit string
+		if err := rows.Scan(&credit); err != nil {
+			return 0, err
+		}
+		if credits[credit] {
+			continue
+		}
+		credits[credit] = true
+		for _, name := range creditedArtists(credit) {
+			keys[artistKey(name)] = true
+		}
+	}
+	return len(keys), rows.Err()
+}
+
+// recentlyPlayedIDs returns the ten tracks the listener played last, newest
+// first. It reads the plays from the newest back and stops once ten tracks
+// are known, instead of grouping the whole history. play_stats is no
+// shortcut here: its last_played_at is stamped separately from the play, and
+// counts carried over from before the history have no plays behind them.
+func (s *Server) recentlyPlayedIDs(userID string) ([]string, error) {
+	const limit = 10
+	rows, err := s.db.Query(`
+                SELECT pe.track_id, pe.played_at
+                FROM play_events pe CROSS JOIN tracks t ON t.id = pe.track_id
+                WHERE pe.user_id = ? AND `+visibleTo("t.user_id")+`
+                ORDER BY pe.played_at DESC`, userID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type lastPlay struct{ id, at string }
+	var found []lastPlay
+	seen := map[string]bool{}
+	for rows.Next() {
+		var p lastPlay
+		if err := rows.Scan(&p.id, &p.at); err != nil {
+			return nil, err
+		}
+		if len(found) >= limit && p.at != found[limit-1].at {
+			break
+		}
+		if !seen[p.id] {
+			seen[p.id] = true
+			found = append(found, p)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Tracks last played in the same second come out by id, as they did from
+	// the grouped query.
+	slices.SortFunc(found, func(a, b lastPlay) int {
+		if a.at != b.at {
+			return strings.Compare(b.at, a.at)
+		}
+		return strings.Compare(a.id, b.id)
+	})
+	ids := make([]string, 0, limit)
+	for _, p := range found[:min(len(found), limit)] {
+		ids = append(ids, p.id)
+	}
+	return ids, nil
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -306,8 +386,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "stats tracks", err)
 		return
 	}
-	if artists, err := s.libraryArtists(u.ID, ""); err == nil {
-		artistCount = len(artists)
+	if n, err := s.artistCount(u.ID); err == nil {
+		artistCount = n
 	}
 	if err := s.db.QueryRow(`SELECT COUNT(1) FROM favorites WHERE user_id = ?`, u.ID).Scan(&favoriteCount); err != nil {
 		s.internalErr(w, "stats favorites", err)
@@ -337,9 +417,12 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	stats["favoriteCount"] = favoriteCount
 	stats["playlistCount"] = playlistCount
 
-	rows, err := s.db.Query(trackSelect+`
-                WHERE COALESCE(ps.plays, 0) > 0
-                ORDER BY ps.plays DESC, t.created_at DESC LIMIT 10`, trackSelectArgs(u.ID)...)
+	// Driven from play_stats, whose (user_id, plays DESC) index gives the
+	// order. The last two terms spell out the order in which rows equal in
+	// the first two used to come out of the scan over tracks.
+	rows, err := s.db.Query(strings.Replace(trackSelect, "\nFROM tracks t", "\nFROM play_stats top CROSS JOIN tracks t ON t.id = top.track_id", 1)+`
+                WHERE top.user_id = ? AND top.plays > 0
+                ORDER BY top.plays DESC, t.created_at DESC, t.user_id, t.rowid LIMIT 10`, append(trackSelectArgs(u.ID), u.ID)...)
 	if err != nil {
 		s.internalErr(w, "stats most played", err)
 		return
@@ -356,24 +439,15 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	stats["mostPlayed"] = mostPlayed
 
-	recent, err := s.db.Query(strings.Replace(trackSelect, "\nFROM tracks t", ",\n       pe.played_at\nFROM tracks t", 1)+`
-                JOIN (SELECT track_id, MAX(played_at) AS played_at FROM play_events
-                      WHERE user_id = ? GROUP BY track_id) pe ON pe.track_id = t.id
-                ORDER BY pe.played_at DESC LIMIT 10`, append(trackSelectArgs(u.ID), u.ID)...)
+	recentIDs, err := s.recentlyPlayedIDs(u.ID)
 	if err != nil {
 		s.internalErr(w, "stats recently played", err)
 		return
 	}
-	defer recent.Close()
-	recentlyPlayed := []*Track{}
-	for recent.Next() {
-		var playedAt string
-		t, _, _, err := scanTrackWith(recent.Scan, &playedAt)
-		if err != nil {
-			s.internalErr(w, "scan recently played", err)
-			return
-		}
-		recentlyPlayed = append(recentlyPlayed, t)
+	recentlyPlayed, err := s.tracksByIDs(u.ID, recentIDs)
+	if err != nil {
+		s.internalErr(w, "scan recently played", err)
+		return
 	}
 	stats["recentlyPlayed"] = recentlyPlayed
 

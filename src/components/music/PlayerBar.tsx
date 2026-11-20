@@ -41,6 +41,28 @@ const SEEK_SLIDER_CLASS =
 const VOLUME_SLIDER_CLASS =
   "h-8 cursor-pointer [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:transition-[height] hover:[&_[data-slot=slider-track]]:h-1.5 [&_[data-slot=slider-range]]:bg-zinc-400 hover:[&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-zinc-300 [&_[data-slot=slider-thumb]]:cursor-grab"
 
+const VOLUME_STEP = 0.05
+
+// Turns the volume with the mouse wheel. One notch of a wheel is one step: it
+// arrives as 40 px or more (WebKit, Chromium) or as 3 lines (Firefox).
+// Touchpads and high-resolution wheels send many smaller events.
+function volumeWheel(el: HTMLElement | null) {
+  if (!el) return
+  const onWheel = (e: WheelEvent) => {
+    // Ctrl with the wheel, or a pinch on a touchpad, zooms the page.
+    if (e.ctrlKey || e.deltaY === 0) return
+    e.preventDefault()
+    const perNotch =
+      e.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? 40 : e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 3 : 1
+    const steps = Math.max(-1, Math.min(1, -e.deltaY / perNotch))
+    const player = usePlayerStore.getState()
+    player.setVolume(player.volume + steps * VOLUME_STEP)
+  }
+  // Not React's onWheel: that listener is passive and can't keep the page from scrolling.
+  el.addEventListener("wheel", onWheel, { passive: false })
+  return () => el.removeEventListener("wheel", onWheel)
+}
+
 function LyricsToggle() {
   const open = useUIStore((s) => s.lyricsPanelOpen)
   return (
@@ -383,7 +405,7 @@ export function PlayerBar() {
           >
             <ListMusic className="size-4" />
           </ControlButton>
-          <div className="flex min-w-0 items-center gap-2 pl-2">
+          <div ref={volumeWheel} className="flex min-w-0 items-center gap-2 pl-2">
             <ControlButton
               label={muted ? "Unmute" : "Mute"}
               onClick={() => usePlayerStore.getState().toggleMute()}

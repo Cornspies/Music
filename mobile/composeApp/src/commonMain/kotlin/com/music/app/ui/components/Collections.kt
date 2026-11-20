@@ -55,8 +55,9 @@ private fun initials(name: String): String =
 fun ArtistAvatar(name: String, size: Dp, modifier: Modifier = Modifier, picture: String? = null) {
     val model = LocalAppModel.current
     val tracks = model.tracks
-    val cover = remember(tracks, name) {
-        tracks?.filter { it.hasCover && hasArtist(it.artist, name) }?.maxByOrNull { it.plays }
+    val cover = remember(tracks, name, picture) {
+        if (!picture.isNullOrBlank()) null
+        else tracks?.filter { it.hasCover && hasArtist(it.artist, name) }?.maxByOrNull { it.plays }
     }
     Box(
         modifier

@@ -32,7 +32,7 @@ export function PlaylistView() {
     let cancelled = false
     const load = async () => {
       try {
-        const d = await api<PlaylistDetail>(`/api/playlists/${viewArg}`)
+        const d = await api<PlaylistDetail>(`/api/playlists/${encodeURIComponent(viewArg)}`)
         if (!cancelled) setDetail(d)
       } catch (e) {
         if (!cancelled) setError((e as Error).message)

@@ -1,6 +1,6 @@
 # Runs a release bundle extracted to /opt/music as the "music" user. The
 # server finds its .env, web/ and data/ next to the executable, so no working
-# directory is needed. Install: README.md → Quick install → Run as a service.
+# directory is needed. Install: docs/server.md → Run as a service.
 [Unit]
 Description=Music server
 After=network-online.target

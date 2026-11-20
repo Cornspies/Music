@@ -105,8 +105,21 @@ func noteRegistration(r *http.Request) {
 	authLimiter.touch(limiterKey(r), func(rec *attemptRecord) { rec.registrations++ })
 }
 
+// clearAuthFailures forgets the wrong attempts from this address after a
+// success. Its sign-ups keep counting: a sign-in between them would otherwise
+// lift their limit.
 func clearAuthFailures(r *http.Request) {
-	authLimiter.clear(limiterKey(r))
+	key := limiterKey(r)
+	l := authLimiter
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if rec, ok := l.entries[key]; ok {
+		if rec.registrations == 0 {
+			delete(l.entries, key)
+		} else {
+			rec.count = 0
+		}
+	}
 }
 
 func accountLocked(key string) (bool, time.Duration) {
