@@ -386,9 +386,87 @@ impl Output {
 
 pub fn open(mixer: Arc<Mutex<Mixer>>, notify: Sender<Msg>) -> Result<Output, String> {
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| "no audio output device was found".to_string())?;
+    let err = match open_host(&host, &mixer, &notify) {
+        Ok(output) => return Ok(output),
+        Err(err) => err,
+    };
+    #[cfg(target_os = "linux")]
+    if host.id() != cpal::HostId::Alsa
+        && let Ok(alsa) = cpal::host_from_id(cpal::HostId::Alsa)
+        && let Ok(output) = open_host(&alsa, &mixer, &notify)
+    {
+        return Ok(output);
+    }
+    Err(err)
+}
+
+fn open_host(
+    host: &cpal::Host,
+    mixer: &Arc<Mutex<Mixer>>,
+    notify: &Sender<Msg>,
+) -> Result<Output, String> {
+    let mut first_error = None;
+    if let Some(device) = host.default_output_device() {
+        match open_device(&device, mixer, notify) {
+            Ok(output) => return Ok(output),
+            Err(err) => first_error = Some(err),
+        }
+    }
+    #[cfg(target_os = "linux")]
+    if host.id() == cpal::HostId::Alsa
+        && let Some(output) = open_alsa_fallback(host, mixer, notify)
+    {
+        return Ok(output);
+    }
+    Err(first_error.unwrap_or_else(|| "no audio output device was found".to_string()))
+}
+
+#[cfg(target_os = "linux")]
+fn open_alsa_fallback(
+    host: &cpal::Host,
+    mixer: &Arc<Mutex<Mixer>>,
+    notify: &Sender<Msg>,
+) -> Option<Output> {
+    let devices = host.devices().ok()?;
+    let mut candidates: Vec<(u8, cpal::Device)> = devices
+        .filter(|device| device.supports_output())
+        .filter_map(|device| alsa_fallback_rank(&device).map(|rank| (rank, device)))
+        .collect();
+    candidates.sort_by_key(|(rank, _)| *rank);
+    for (_, device) in candidates {
+        if let Ok(output) = open_device(&device, mixer, notify) {
+            return Some(output);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn alsa_fallback_rank(device: &cpal::Device) -> Option<u8> {
+    let id = device.id().ok()?;
+    alsa_pcm_rank(id.id())
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn alsa_pcm_rank(pcm: &str) -> Option<u8> {
+    if pcm == "pipewire" {
+        Some(0)
+    } else if pcm == "pulse" {
+        Some(1)
+    } else if pcm == "sysdefault" || pcm.starts_with("sysdefault:") {
+        Some(2)
+    } else if pcm.starts_with("plughw:") {
+        Some(3)
+    } else {
+        None
+    }
+}
+
+fn open_device(
+    device: &cpal::Device,
+    mixer: &Arc<Mutex<Mixer>>,
+    notify: &Sender<Msg>,
+) -> Result<Output, String> {
     let name = device
         .description()
         .map(|d| d.to_string())
@@ -418,11 +496,13 @@ pub fn open(mixer: Arc<Mutex<Mixer>>, notify: Sender<Msg>) -> Result<Output, Str
             buffer_size,
         };
         let built = match format {
-            SampleFormat::F32 => build::<f32>(&device, config, mixer.clone(), notify.clone()),
-            SampleFormat::I16 => build::<i16>(&device, config, mixer.clone(), notify.clone()),
-            SampleFormat::U16 => build::<u16>(&device, config, mixer.clone(), notify.clone()),
-            SampleFormat::I32 => build::<i32>(&device, config, mixer.clone(), notify.clone()),
-            SampleFormat::F64 => build::<f64>(&device, config, mixer.clone(), notify.clone()),
+            SampleFormat::F32 => build::<f32>(device, config, mixer.clone(), notify.clone()),
+            SampleFormat::I16 => build::<i16>(device, config, mixer.clone(), notify.clone()),
+            SampleFormat::U16 => build::<u16>(device, config, mixer.clone(), notify.clone()),
+            SampleFormat::I24 => build::<cpal::I24>(device, config, mixer.clone(), notify.clone()),
+            SampleFormat::I32 => build::<i32>(device, config, mixer.clone(), notify.clone()),
+            SampleFormat::U8 => build::<u8>(device, config, mixer.clone(), notify.clone()),
+            SampleFormat::F64 => build::<f64>(device, config, mixer.clone(), notify.clone()),
             other => Err(format!("the audio device wants {other} samples")),
         };
         match built {
@@ -480,7 +560,9 @@ where
             move |err: cpal::Error| {
                 if matches!(
                     err.kind(),
-                    ErrorKind::DeviceNotAvailable | ErrorKind::HostUnavailable
+                    ErrorKind::DeviceNotAvailable
+                        | ErrorKind::HostUnavailable
+                        | ErrorKind::StreamInvalidated
                 ) {
                     let _ = notify.try_send(Msg::DeviceError(err.to_string()));
                 }
@@ -488,4 +570,39 @@ where
             None,
         )
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::alsa_pcm_rank;
+
+    #[test]
+    fn alsa_fallback_prefers_sound_servers_over_hardware() {
+        assert_eq!(alsa_pcm_rank("pipewire"), Some(0));
+        assert_eq!(alsa_pcm_rank("pulse"), Some(1));
+        assert_eq!(alsa_pcm_rank("sysdefault"), Some(2));
+        assert_eq!(alsa_pcm_rank("sysdefault:CARD=Generic_1"), Some(2));
+        assert_eq!(alsa_pcm_rank("plughw:CARD=1,DEV=0"), Some(3));
+        assert_eq!(alsa_pcm_rank("default"), None);
+        assert_eq!(alsa_pcm_rank("hw:CARD=1,DEV=0"), None);
+        assert_eq!(alsa_pcm_rank("iec958:CARD=0,DEV=0"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires a running Linux audio server or hardware"]
+    fn opens_linux_output_and_plays() {
+        use super::{Mixer, open};
+        use crossbeam_channel::unbounded;
+        use std::sync::{Arc, Mutex};
+
+        let (tx, _rx) = unbounded();
+        let mixer = Arc::new(Mutex::new(Mixer::new(tx.clone())));
+        let out = open(mixer, tx).expect("open audio output");
+        assert!(!out.device.is_empty());
+        assert!(out.rate > 0);
+        assert!(out.channels > 0);
+        out.play().expect("start stream");
+        out.pause();
+    }
 }

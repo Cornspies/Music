@@ -2,6 +2,9 @@
 // A few points a listener would notice, newest version first. A version without
 // an entry shows nothing.
 export const WHATS_NEW: Record<string, string[]> = {
+  "0.5.1": [
+    "On Linux, audio plays directly through PipeWire and PulseAudio without extra ALSA setup",
+  ],
   "0.5.0": [
     "Scroll over the volume slider to change the volume",
     "Long queues open at once, and adding or editing a song no longer reloads the library",

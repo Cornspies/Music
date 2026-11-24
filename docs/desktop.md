@@ -72,8 +72,9 @@ sign-in screen says so.
 The Rust side plays the audio, not the webview: it streams the track from the
 server, decodes it (MP3, FLAC, WAV, AIFF, Ogg Vorbis, AAC and ALAC; tracks
 the server keeps a compatible copy of, such as Opus, play from that copy),
-converts it to the output device's sample rate and plays it with ALSA on Linux
-(which reaches PipeWire or PulseAudio) and WASAPI on Windows. Track changes are
+converts it to the output device's sample rate and plays it via PulseAudio on
+Linux (which connects directly to PipeWire via `pipewire-pulse` or PulseAudio,
+falling back to ALSA) and WASAPI on Windows. Track changes are
 gapless, crossfades and loudness normalisation work as in the web player, and
 the system media controls (MPRIS on Linux, the media overlay on Windows) show
 the track and control playback. The output device is released after 30 seconds
